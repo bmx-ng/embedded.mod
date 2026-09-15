@@ -46,8 +46,21 @@ _Static_assert(sizeof(BMXEmbeddedHeapBlock) % BMX_EMBEDDED_MEMORY_ALIGNMENT == 0
 #define BMX_EMBEDDED_HEAP_BLOCK_STRING 0x0020u
 #define BMX_EMBEDDED_HEAP_BLOCK_RAW 0x0040u
 
+#ifdef BMX_EMBEDDED_PLATFORM_ARENA_ACQUIRE
+static uint8_t *bmx_embedded_platform_arena;
+
+static uint8_t *bmx_embedded_arena_base(void) {
+    if (!bmx_embedded_platform_arena && BMX_EMBEDDED_PLATFORM_CONTEXT_VALID()) {
+        bmx_embedded_platform_arena = (uint8_t *)BMX_EMBEDDED_PLATFORM_ARENA_ACQUIRE(
+            BMX_EMBEDDED_ARENA_SIZE, BMX_EMBEDDED_MEMORY_ALIGNMENT);
+    }
+    return bmx_embedded_platform_arena;
+}
+#else
 static _Alignas(BMX_EMBEDDED_MEMORY_ALIGNMENT) uint8_t
     BMX_EMBEDDED_ARENA_STORAGE(bmx_embedded_arena)[BMX_EMBEDDED_ARENA_SIZE];
+#define bmx_embedded_arena_base() bmx_embedded_arena
+#endif
 
 static uint32_t bmx_embedded_arena_offset;
 static uint32_t bmx_embedded_arena_high_water_mark;
@@ -95,6 +108,7 @@ static uint32_t bmx_embedded_exception_unhandled_total;
 static uint32_t bmx_embedded_collection_total;
 static uint32_t bmx_embedded_automatic_collection_total;
 static uint32_t bmx_embedded_collection_active;
+static BMXEmbeddedExceptionFrame *bmx_embedded_collection_exception_boundary;
 static uint32_t bmx_embedded_last_reclaimed_objects;
 static uint32_t bmx_embedded_last_reclaimed_byte_total;
 static uint32_t bmx_embedded_last_reclaimed_arrays;
@@ -106,6 +120,27 @@ static uint32_t bmx_embedded_finalizer_invocation_total;
 static uint32_t bmx_embedded_last_finalized_objects;
 
 const BMXEmbeddedString bmx_embedded_empty_string = {0, NULL};
+static const uint16_t bmx_embedded_object_allocation_failure_data[] = {
+    'B','l','i','t','z','M','a','x',' ','O','b','j','e','c','t',' ','a','l','l','o','c','a','t','i','o','n',' ','f','a','i','l','e','d'
+};
+static const BMXEmbeddedString bmx_embedded_object_allocation_failure_string = {
+    (int32_t)(sizeof(bmx_embedded_object_allocation_failure_data) / sizeof(bmx_embedded_object_allocation_failure_data[0])),
+    bmx_embedded_object_allocation_failure_data
+};
+static const uint16_t bmx_embedded_array_allocation_failure_data[] = {
+    'B','l','i','t','z','M','a','x',' ','A','r','r','a','y',' ','a','l','l','o','c','a','t','i','o','n',' ','f','a','i','l','e','d'
+};
+static const BMXEmbeddedString bmx_embedded_array_allocation_failure_string = {
+    (int32_t)(sizeof(bmx_embedded_array_allocation_failure_data) / sizeof(bmx_embedded_array_allocation_failure_data[0])),
+    bmx_embedded_array_allocation_failure_data
+};
+static const uint16_t bmx_embedded_string_allocation_failure_data[] = {
+    'B','l','i','t','z','M','a','x',' ','S','t','r','i','n','g',' ','a','l','l','o','c','a','t','i','o','n',' ','f','a','i','l','e','d'
+};
+static const BMXEmbeddedString bmx_embedded_string_allocation_failure_string = {
+    (int32_t)(sizeof(bmx_embedded_string_allocation_failure_data) / sizeof(bmx_embedded_string_allocation_failure_data[0])),
+    bmx_embedded_string_allocation_failure_data
+};
 static const uint16_t bmx_embedded_invalid_utf16_data[] = {
     'F','a','i','l','e','d',' ','t','o',' ','c','r','e','a','t','e',' ','U','T','F','3','2','.',
     ' ','I','n','v','a','l','i','d',' ','U','T','F','-','1','6',' ','s','u','r','r','o','g','a','t','e','.'
@@ -116,6 +151,14 @@ static const BMXEmbeddedString bmx_embedded_invalid_utf16_string = {
 };
 BMXEmbeddedArray bmx_embedded_empty_array = {0, 0, BMX_EMBEDDED_ARRAY_ELEMENT_VALUE, 0, NULL, NULL};
 BMXEmbeddedObject bmx_embedded_null_object = {NULL};
+
+static _Noreturn void bmx_embedded_raise_allocation_failure(
+    const BMXEmbeddedString *exception, const char *panic_message) {
+    if (bmx_embedded_exception_frames && BMX_EMBEDDED_PLATFORM_CONTEXT_VALID()) {
+        bmx_embedded_exception_throw(bmx_embedded_exception_string(exception));
+    }
+    BMX_EMBEDDED_PLATFORM_PANIC(panic_message);
+}
 
 static uint32_t bmx_embedded_align_size(uint32_t bytes) {
     const uint32_t alignment = BMX_EMBEDDED_MEMORY_ALIGNMENT;
@@ -171,6 +214,8 @@ static void *bmx_embedded_heap_allocate(uint32_t bytes, uint32_t flags) {
     if (!bytes) return NULL;
     const uint32_t aligned_bytes = bmx_embedded_align_size(bytes);
     if (aligned_bytes < bytes) return NULL;
+    uint8_t *arena = bmx_embedded_arena_base();
+    if (!arena) return NULL;
 
     BMXEmbeddedHeapBlock *block = bmx_embedded_heap_free;
     while (block && block->state.capacity < aligned_bytes) block = block->state.free_next;
@@ -197,7 +242,7 @@ static void *bmx_embedded_heap_allocate(uint32_t bytes, uint32_t flags) {
         if (aligned_bytes > UINT32_MAX - sizeof(BMXEmbeddedHeapBlock)) return NULL;
         const uint32_t total_size = (uint32_t)sizeof(BMXEmbeddedHeapBlock) + aligned_bytes;
         if (total_size > BMX_EMBEDDED_ARENA_SIZE - bmx_embedded_arena_offset) return NULL;
-        block = (BMXEmbeddedHeapBlock *)&bmx_embedded_arena[bmx_embedded_arena_offset];
+        block = (BMXEmbeddedHeapBlock *)&arena[bmx_embedded_arena_offset];
         bmx_embedded_arena_offset += total_size;
         block->state.previous = bmx_embedded_heap_last;
         block->state.next = NULL;
@@ -241,7 +286,7 @@ void *bmx_embedded_arena_allocate(uint32_t bytes) {
 }
 
 uint32_t bmx_embedded_arena_capacity(void) {
-    return BMX_EMBEDDED_ARENA_SIZE;
+    return bmx_embedded_arena_base() ? BMX_EMBEDDED_ARENA_SIZE : 0u;
 }
 
 uint32_t bmx_embedded_arena_used(void) {
@@ -249,7 +294,7 @@ uint32_t bmx_embedded_arena_used(void) {
 }
 
 uint32_t bmx_embedded_arena_remaining(void) {
-    return BMX_EMBEDDED_ARENA_SIZE - bmx_embedded_arena_offset;
+    return bmx_embedded_arena_base() ? BMX_EMBEDDED_ARENA_SIZE - bmx_embedded_arena_offset : 0u;
 }
 
 uint32_t bmx_embedded_arena_high_water(void) {
@@ -275,7 +320,8 @@ BMXEmbeddedArray *bmx_embedded_array_new_1d(int32_t length, uint32_t element_siz
         (element_descriptor && element_descriptor->size != element_size) ||
         (element_kind != BMX_EMBEDDED_ARRAY_ELEMENT_VALUE && element_size != sizeof(void *))) {
         bmx_embedded_record_array_failure();
-        return &bmx_embedded_empty_array;
+        bmx_embedded_raise_allocation_failure(&bmx_embedded_array_allocation_failure_string,
+            "BlitzMax Array allocation failed");
     }
     if (!length) return &bmx_embedded_empty_array;
 
@@ -283,20 +329,23 @@ BMXEmbeddedArray *bmx_embedded_array_new_1d(int32_t length, uint32_t element_siz
     const uint32_t count = (uint32_t)length;
     if (count > (UINT32_MAX - header_size) / element_size) {
         bmx_embedded_record_array_failure();
-        return &bmx_embedded_empty_array;
+        bmx_embedded_raise_allocation_failure(&bmx_embedded_array_allocation_failure_string,
+            "BlitzMax Array allocation failed");
     }
 
     const uint32_t total_size = header_size + count * element_size;
     if (!BMX_EMBEDDED_PLATFORM_CONTEXT_VALID()) {
         bmx_embedded_record_arena_failure();
         bmx_embedded_record_array_failure();
-        return &bmx_embedded_empty_array;
+        bmx_embedded_raise_allocation_failure(&bmx_embedded_array_allocation_failure_string,
+            "BlitzMax Array allocation failed");
     }
     BMXEmbeddedArray *array = (BMXEmbeddedArray *)bmx_embedded_heap_allocate_with_collection(total_size, BMX_EMBEDDED_HEAP_BLOCK_ARRAY);
     if (!array) {
         bmx_embedded_record_arena_failure();
         bmx_embedded_record_array_failure();
-        return &bmx_embedded_empty_array;
+        bmx_embedded_raise_allocation_failure(&bmx_embedded_array_allocation_failure_string,
+            "BlitzMax Array allocation failed");
     }
     array->length = length;
     array->element_size = element_size;
@@ -485,6 +534,10 @@ void *bbMemExtend(void *memory, size_t size, size_t new_size) {
     if (!memory) return bbMemAlloc(new_size);
     if (!new_size) {
         bbMemFree(memory);
+        return NULL;
+    }
+    if (!BMX_EMBEDDED_PLATFORM_CONTEXT_VALID()) {
+        bmx_embedded_record_arena_failure();
         return NULL;
     }
     BMXEmbeddedHeapBlock *block = bmx_embedded_raw_block(memory);
@@ -685,17 +738,19 @@ void *bmx_embedded_object_allocate(const BMXEmbeddedTypeDescriptor *type) {
     if (!BMX_EMBEDDED_PLATFORM_CONTEXT_VALID()) {
         bmx_embedded_record_arena_failure();
         bmx_embedded_record_object_failure();
-        return &bmx_embedded_null_object;
+        bmx_embedded_raise_allocation_failure(&bmx_embedded_object_allocation_failure_string,
+            "BlitzMax Object allocation failed");
     }
     if (!bmx_embedded_type_descriptor_valid(type)) {
         bmx_embedded_record_object_failure();
-        return &bmx_embedded_null_object;
+        BMX_EMBEDDED_PLATFORM_PANIC("BlitzMax Object allocation descriptor is invalid");
     }
     BMXEmbeddedObject *object = (BMXEmbeddedObject *)bmx_embedded_heap_allocate_with_collection(type->instance_size, BMX_EMBEDDED_HEAP_BLOCK_OBJECT);
     if (!object) {
         bmx_embedded_record_arena_failure();
         bmx_embedded_record_object_failure();
-        return &bmx_embedded_null_object;
+        bmx_embedded_raise_allocation_failure(&bmx_embedded_object_allocation_failure_string,
+            "BlitzMax Object allocation failed");
     }
     memset(object, 0, type->instance_size);
     object->type = type;
@@ -790,6 +845,12 @@ int32_t bmx_embedded_object_compare(void *object, void *other) {
     return (left_value > right_value) - (left_value < right_value);
 }
 
+void *bmx_embedded_object_send_message(void *object, void *message, void *source) {
+    BMXEmbeddedObject *value = (BMXEmbeddedObject *)bmx_embedded_object_assert(object);
+    if (value->type->send_message) return value->type->send_message(value, message, source);
+    return &bmx_embedded_null_object;
+}
+
 static uint32_t bmx_embedded_mix32(uint32_t value) {
     value ^= value >> 16;
     value *= 0x85ebca6bu;
@@ -809,6 +870,23 @@ int32_t bmx_embedded_object_equals(void *object, void *other) {
     BMXEmbeddedObject *left = (BMXEmbeddedObject *)bmx_embedded_object_assert(object);
     if (left->type->equals) return left->type->equals(left, other);
     return object == other;
+}
+
+const BMXEmbeddedString *bmx_embedded_object_to_string(void *object) {
+    BMXEmbeddedObject *value = (BMXEmbeddedObject *)bmx_embedded_object_assert(object);
+    if (value->type->to_string) return value->type->to_string(value);
+    static const char digits[] = "0123456789abcdef";
+    char buffer[2u + sizeof(uintptr_t) * 2u + 1u];
+    char *cursor = buffer + sizeof(buffer);
+    uintptr_t address = (uintptr_t)object;
+    *--cursor = '\0';
+    do {
+        *--cursor = digits[address & 0x0fu];
+        address >>= 4;
+    } while (address);
+    *--cursor = 'x';
+    *--cursor = '0';
+    return bmx_embedded_string_from_c_string((const uint8_t *)cursor);
 }
 
 void *bmx_embedded_object_cast(void *object, const BMXEmbeddedTypeDescriptor *target) {
@@ -1010,6 +1088,79 @@ BMXEmbeddedException bmx_embedded_exception_catch(void) {
     return exception;
 }
 
+static void bmx_embedded_abort_collection(void) {
+    /* The longjmp bypasses the collector's normal epilogue. Preserve the
+       at-most-once flag on a finalizer already entered, but make untouched
+       pending finalizers eligible for a later collection. */
+    for (BMXEmbeddedHeapBlock *block = bmx_embedded_heap_first; block; block = block->state.next) {
+        block->state.flags &= ~BMX_EMBEDDED_HEAP_BLOCK_FINALIZER_PENDING;
+    }
+    bmx_embedded_finalizer_pending_objects = 0;
+    bmx_embedded_collection_exception_boundary = NULL;
+    bmx_embedded_collection_active = 0;
+}
+
+#define BMX_EMBEDDED_PANIC_MESSAGE_CAPACITY 256u
+
+static size_t bmx_embedded_panic_append_ascii(char *message, size_t offset, const char *text) {
+    const size_t capacity = BMX_EMBEDDED_PANIC_MESSAGE_CAPACITY;
+    while (text && *text && offset + 1u < capacity) message[offset++] = *text++;
+    message[offset] = '\0';
+    return offset;
+}
+
+static size_t bmx_embedded_panic_append_string(
+    char *message, size_t offset, const BMXEmbeddedString *text) {
+    size_t available = BMX_EMBEDDED_PANIC_MESSAGE_CAPACITY - offset;
+    bmx_embedded_string_to_utf8_string_buffer(text, (uint8_t *)message + offset, &available);
+    return offset + available;
+}
+
+static const BMXEmbeddedString *bmx_embedded_exception_description(BMXEmbeddedObject *object) {
+    const BMXEmbeddedString * volatile description = &bmx_embedded_empty_string;
+    BMXEmbeddedRootFrame root_frame;
+    BMXEmbeddedRootSlot root_slots[2] = {
+        { &object, BMX_EMBEDDED_ROOT_OBJECT, NULL },
+        { (void *)&description, BMX_EMBEDDED_ROOT_STRING, NULL }
+    };
+    BMXEmbeddedExceptionFrame diagnostic_frame;
+    bmx_embedded_root_frame_enter(&root_frame, root_slots, 2u);
+    bmx_embedded_exception_enter(&diagnostic_frame);
+    if (setjmp(diagnostic_frame.buffer) == 0) {
+        description = object->type->to_string(object);
+        bmx_embedded_exception_leave();
+    } else {
+        (void)bmx_embedded_exception_catch();
+        description = NULL;
+    }
+    bmx_embedded_root_frame_leave(&root_frame);
+    return description;
+}
+
+static _Noreturn void bmx_embedded_panic_unhandled(BMXEmbeddedException exception) {
+    char message[BMX_EMBEDDED_PANIC_MESSAGE_CAPACITY];
+    size_t offset = bmx_embedded_panic_append_ascii(message, 0u, "Unhandled BlitzMax exception");
+    if (exception.kind == BMX_EMBEDDED_EXCEPTION_STRING) {
+        offset = bmx_embedded_panic_append_ascii(message, offset, ": ");
+        (void)bmx_embedded_panic_append_string(message, offset, exception.value);
+    } else if (exception.kind == BMX_EMBEDDED_EXCEPTION_ARRAY) {
+        (void)bmx_embedded_panic_append_ascii(message, offset, " Array");
+    } else {
+        BMXEmbeddedObject *object = (BMXEmbeddedObject *)exception.value;
+        const BMXEmbeddedString *description = object->type->to_string ?
+            bmx_embedded_exception_description(object) : NULL;
+        if (description) {
+            offset = bmx_embedded_panic_append_ascii(message, offset, ": ");
+            offset = bmx_embedded_panic_append_string(message, offset, description);
+        }
+        if (!description) {
+            offset = bmx_embedded_panic_append_ascii(message, offset, " object: ");
+            (void)bmx_embedded_panic_append_ascii(message, offset, object->type->name);
+        }
+    }
+    BMX_EMBEDDED_PLATFORM_PANIC(message);
+}
+
 void bmx_embedded_exception_throw(BMXEmbeddedException exception) {
     bmx_embedded_exception_throw_total += 1u;
     int valid = exception.value && BMX_EMBEDDED_PLATFORM_CONTEXT_VALID();
@@ -1030,7 +1181,10 @@ void bmx_embedded_exception_throw(BMXEmbeddedException exception) {
     BMXEmbeddedExceptionFrame *frame = bmx_embedded_exception_frames;
     if (!frame) {
         bmx_embedded_exception_unhandled_total += 1u;
-        BMX_EMBEDDED_PLATFORM_PANIC("Unhandled BlitzMax core exception");
+        bmx_embedded_panic_unhandled(exception);
+    }
+    if (bmx_embedded_collection_active && frame == bmx_embedded_collection_exception_boundary) {
+        bmx_embedded_abort_collection();
     }
     bmx_embedded_exception_value = exception;
     bmx_embedded_root_frames = frame->root_snapshot;
@@ -1253,6 +1407,9 @@ uint32_t bmx_embedded_collect_objects(void) {
     }
 
     bmx_embedded_collection_active = 1u;
+    /* A handler entered by finalizer code may resume the same collection. An
+       exception reaching this pre-collection frame has escaped it. */
+    bmx_embedded_collection_exception_boundary = bmx_embedded_exception_frames;
     bmx_embedded_collection_total += 1u;
     bmx_embedded_last_reclaimed_objects = 0;
     bmx_embedded_last_reclaimed_byte_total = 0;
@@ -1264,6 +1421,7 @@ uint32_t bmx_embedded_collect_objects(void) {
     bmx_embedded_last_finalized_objects = 0;
     bmx_embedded_reachability_audit();
     if (bmx_embedded_invalid_references) {
+        bmx_embedded_collection_exception_boundary = NULL;
         bmx_embedded_collection_active = 0;
         bmx_embedded_record_object_failure();
         return 0;
@@ -1294,6 +1452,7 @@ uint32_t bmx_embedded_collect_objects(void) {
         /* Do not sweep during a finalizer cycle. A later collection starts a
            fresh reachability epoch, observes resurrection and field changes,
            and can reclaim only Objects whose finalizer has already run. */
+        bmx_embedded_collection_exception_boundary = NULL;
         bmx_embedded_collection_active = 0;
         return 0;
     }
@@ -1332,6 +1491,7 @@ uint32_t bmx_embedded_collect_objects(void) {
     bmx_embedded_unreachable_arrays = 0;
     bmx_embedded_reachable_strings = bmx_embedded_live_strings;
     bmx_embedded_unreachable_strings = 0;
+    bmx_embedded_collection_exception_boundary = NULL;
     bmx_embedded_collection_active = 0;
     return bmx_embedded_last_reclaimed_objects;
 }
@@ -1394,25 +1554,132 @@ uint32_t bmx_embedded_heap_largest_free_block(void) {
     return largest;
 }
 
+uint32_t bmx_embedded_heap_integrity_valid(void) {
+    if (!BMX_EMBEDDED_PLATFORM_CONTEXT_VALID()) return 0;
+
+    uint8_t *arena = bmx_embedded_arena_base();
+    if (!arena || ((uintptr_t)arena & (BMX_EMBEDDED_MEMORY_ALIGNMENT - 1u)) ||
+        bmx_embedded_arena_offset > BMX_EMBEDDED_ARENA_SIZE ||
+        bmx_embedded_arena_high_water_mark < bmx_embedded_arena_offset ||
+        bmx_embedded_arena_high_water_mark > BMX_EMBEDDED_ARENA_SIZE) return 0;
+
+    if (!bmx_embedded_arena_offset) {
+        return !bmx_embedded_heap_first && !bmx_embedded_heap_last && !bmx_embedded_heap_free;
+    }
+    if (bmx_embedded_heap_first != (BMXEmbeddedHeapBlock *)arena || !bmx_embedded_heap_last ||
+        bmx_embedded_arena_offset < sizeof(BMXEmbeddedHeapBlock)) return 0;
+
+    const uint8_t *const arena_end = arena + bmx_embedded_arena_offset;
+    const uint32_t allocation_kind_mask = BMX_EMBEDDED_HEAP_BLOCK_OBJECT |
+        BMX_EMBEDDED_HEAP_BLOCK_ARRAY | BMX_EMBEDDED_HEAP_BLOCK_STRING |
+        BMX_EMBEDDED_HEAP_BLOCK_RAW;
+    const uint32_t known_flag_mask = BMX_EMBEDDED_HEAP_BLOCK_FREE |
+        allocation_kind_mask | BMX_EMBEDDED_HEAP_BLOCK_FINALIZER_PENDING |
+        BMX_EMBEDDED_HEAP_BLOCK_FINALIZED;
+    uint8_t *cursor = arena;
+    BMXEmbeddedHeapBlock *previous = NULL;
+    uint32_t block_count = 0;
+    uint32_t free_block_count = 0;
+    uint32_t object_count = 0;
+    uint32_t array_count = 0;
+    uint32_t string_count = 0;
+    uint64_t object_bytes = 0;
+    uint64_t array_bytes = 0;
+    uint64_t string_bytes = 0;
+
+    while (cursor < arena_end) {
+        if ((uint32_t)(arena_end - cursor) < sizeof(BMXEmbeddedHeapBlock)) return 0;
+        BMXEmbeddedHeapBlock *block = (BMXEmbeddedHeapBlock *)cursor;
+        if (((uintptr_t)block & (BMX_EMBEDDED_MEMORY_ALIGNMENT - 1u)) ||
+            block->state.previous != previous ||
+            (block->state.capacity & (BMX_EMBEDDED_MEMORY_ALIGNMENT - 1u)) ||
+            !block->state.capacity || block->state.flags & ~known_flag_mask) return 0;
+
+        uint8_t *payload = (uint8_t *)(block + 1);
+        if (block->state.capacity > (uint32_t)(arena_end - payload)) return 0;
+        uint8_t *next_address = payload + block->state.capacity;
+        BMXEmbeddedHeapBlock *expected_next = next_address < arena_end ?
+            (BMXEmbeddedHeapBlock *)next_address : NULL;
+        if (block->state.next != expected_next) return 0;
+
+        const uint32_t allocation_kind = block->state.flags & allocation_kind_mask;
+        if (block->state.flags & BMX_EMBEDDED_HEAP_BLOCK_FREE) {
+            if (block->state.flags != BMX_EMBEDDED_HEAP_BLOCK_FREE ||
+                block->state.requested_size ||
+                (previous && (previous->state.flags & BMX_EMBEDDED_HEAP_BLOCK_FREE))) return 0;
+            free_block_count += 1u;
+        } else {
+            if (!allocation_kind || (allocation_kind & (allocation_kind - 1u)) ||
+                !block->state.requested_size || block->state.requested_size > block->state.capacity ||
+                ((block->state.flags & (BMX_EMBEDDED_HEAP_BLOCK_FINALIZER_PENDING |
+                    BMX_EMBEDDED_HEAP_BLOCK_FINALIZED)) &&
+                    allocation_kind != BMX_EMBEDDED_HEAP_BLOCK_OBJECT)) return 0;
+            if (allocation_kind == BMX_EMBEDDED_HEAP_BLOCK_OBJECT) {
+                object_count += 1u;
+                object_bytes += block->state.requested_size;
+            } else if (allocation_kind == BMX_EMBEDDED_HEAP_BLOCK_ARRAY) {
+                array_count += 1u;
+                array_bytes += block->state.requested_size;
+            } else if (allocation_kind == BMX_EMBEDDED_HEAP_BLOCK_STRING) {
+                string_count += 1u;
+                string_bytes += block->state.requested_size;
+            }
+        }
+
+        previous = block;
+        cursor = next_address;
+        block_count += 1u;
+    }
+
+    if (cursor != arena_end || previous != bmx_embedded_heap_last ||
+        object_count != bmx_embedded_live_objects || object_bytes != bmx_embedded_live_object_bytes ||
+        array_count != bmx_embedded_live_arrays || array_bytes != bmx_embedded_live_array_bytes ||
+        string_count != bmx_embedded_live_strings || string_bytes != bmx_embedded_live_string_bytes) return 0;
+
+    uint32_t listed_free_blocks = 0;
+    for (BMXEmbeddedHeapBlock *free_block = bmx_embedded_heap_free;
+        free_block; free_block = free_block->state.free_next) {
+        if (listed_free_blocks >= free_block_count) return 0;
+        uint32_t found = 0;
+        BMXEmbeddedHeapBlock *block = bmx_embedded_heap_first;
+        for (uint32_t index = 0; index < block_count; ++index, block = block->state.next) {
+            if (block == free_block) {
+                found = 1u;
+                break;
+            }
+        }
+        if (!found || free_block->state.flags != BMX_EMBEDDED_HEAP_BLOCK_FREE) return 0;
+        listed_free_blocks += 1u;
+    }
+    return listed_free_blocks == free_block_count;
+}
+
 static void bmx_embedded_record_string_failure(void) {
     __atomic_fetch_add(&bmx_embedded_string_failures, 1u, __ATOMIC_RELAXED);
 }
 
 static BMXEmbeddedString *bmx_embedded_string_new(int32_t length) {
-    if (length <= 0) return (BMXEmbeddedString *)&bmx_embedded_empty_string;
+    if (length < 0) {
+        bmx_embedded_record_string_failure();
+        bmx_embedded_raise_allocation_failure(&bmx_embedded_string_allocation_failure_string,
+            "BlitzMax String allocation failed");
+    }
+    if (!length) return (BMXEmbeddedString *)&bmx_embedded_empty_string;
     const uint32_t header_size = bmx_embedded_align_size((uint32_t)sizeof(BMXEmbeddedString));
     const uint32_t count = (uint32_t)length;
     if (count > (UINT32_MAX - header_size) / sizeof(uint16_t) || !BMX_EMBEDDED_PLATFORM_CONTEXT_VALID()) {
         bmx_embedded_record_arena_failure();
         bmx_embedded_record_string_failure();
-        return (BMXEmbeddedString *)&bmx_embedded_empty_string;
+        bmx_embedded_raise_allocation_failure(&bmx_embedded_string_allocation_failure_string,
+            "BlitzMax String allocation failed");
     }
     const uint32_t total_size = header_size + count * (uint32_t)sizeof(uint16_t);
     BMXEmbeddedString *text = (BMXEmbeddedString *)bmx_embedded_heap_allocate_with_collection(total_size, BMX_EMBEDDED_HEAP_BLOCK_STRING);
     if (!text) {
         bmx_embedded_record_arena_failure();
         bmx_embedded_record_string_failure();
-        return (BMXEmbeddedString *)&bmx_embedded_empty_string;
+        bmx_embedded_raise_allocation_failure(&bmx_embedded_string_allocation_failure_string,
+            "BlitzMax String allocation failed");
     }
     text->length = length;
     text->buf = (const uint16_t *)((uint8_t *)text + header_size);

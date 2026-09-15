@@ -110,7 +110,9 @@ typedef struct BMXEmbeddedInterfaceEntry {
     const BMXEmbeddedMethod *methods;
     uint32_t method_count;
 } BMXEmbeddedInterfaceEntry;
+typedef const BMXEmbeddedString *(*BMXEmbeddedObjectToString)(void *object);
 typedef int32_t (*BMXEmbeddedObjectCompare)(void *object, void *other);
+typedef void *(*BMXEmbeddedObjectSendMessage)(void *object, void *message, void *source);
 typedef uint32_t (*BMXEmbeddedObjectHashCode)(void *object);
 typedef int32_t (*BMXEmbeddedObjectEquals)(void *object, void *other);
 
@@ -134,7 +136,9 @@ typedef struct BMXEmbeddedTypeDescriptor {
     uint16_t flags;
     BMXEmbeddedTraceFunction trace;
     BMXEmbeddedFinalizer finalizer;
+    BMXEmbeddedObjectToString to_string;
     BMXEmbeddedObjectCompare compare;
+    BMXEmbeddedObjectSendMessage send_message;
     BMXEmbeddedObjectHashCode hash_code;
     BMXEmbeddedObjectEquals equals;
 } BMXEmbeddedTypeDescriptor;
@@ -244,6 +248,7 @@ const BMXEmbeddedString *bmx_embedded_string_slice(const BMXEmbeddedString *text
 const BMXEmbeddedString *bmx_embedded_string_from_char(int32_t character);
 int32_t bmx_embedded_string_asc(const BMXEmbeddedString *text);
 void bmx_embedded_debug_stop(void);
+int32_t bmx_embedded_millisecs(void);
 void bmx_embedded_delay(int32_t milliseconds);
 void bmx_embedded_udelay(int32_t microseconds);
 uint32_t bmx_embedded_string_failure_count(void);
@@ -365,8 +370,10 @@ static inline void *bmx_embedded_object_not_null(void *object) {
     return object;
 }
 int32_t bmx_embedded_object_compare(void *object, void *other);
+void *bmx_embedded_object_send_message(void *object, void *message, void *source);
 uint32_t bmx_embedded_object_hash_code(void *object);
 int32_t bmx_embedded_object_equals(void *object, void *other);
+const BMXEmbeddedString *bmx_embedded_object_to_string(void *object);
 void *bmx_embedded_object_cast(void *object, const BMXEmbeddedTypeDescriptor *target);
 const BMXEmbeddedMethod *bmx_embedded_type_methods(void *object, const BMXEmbeddedTypeDescriptor *target, uint32_t method_count);
 void *bmx_embedded_interface_cast(void *object, const BMXEmbeddedInterfaceDescriptor *target);
@@ -399,6 +406,7 @@ uint32_t bmx_embedded_finalizer_invocation_count(void);
 uint32_t bmx_embedded_last_finalized_object_count(void);
 uint32_t bmx_embedded_heap_reusable_bytes(void);
 uint32_t bmx_embedded_heap_largest_free_block(void);
+uint32_t bmx_embedded_heap_integrity_valid(void);
 void bmx_embedded_root_frame_enter(BMXEmbeddedRootFrame *frame, BMXEmbeddedRootSlot *slots, uint16_t slot_count);
 void bmx_embedded_root_frame_leave(BMXEmbeddedRootFrame *frame);
 uint32_t bmx_embedded_root_frame_count(void);
