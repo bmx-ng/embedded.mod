@@ -1,4 +1,17 @@
 .DS_Store
 **/.bmx/
+**/.generics/
 *.a
 *.o
+*.bmxbuild
+*.bmxbuild.stamp
+*.bin
+*.dis
+*.elf
+*.elf.map
+*.map
+*.hex
+*.uf2
+*.arm.i
+*.xtensa.i
+*.riscv32.i
