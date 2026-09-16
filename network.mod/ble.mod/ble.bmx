@@ -143,7 +143,7 @@ Type TBLEAdvertisement
 			If nextOffset > data.length Then Exit
 			If fieldLength > 0 And data[offset + 1] = fieldType Then
 				Local value:Byte[] = New Byte[fieldLength - 1]
-				If value.length Then MemCopy(value, Varptr data[offset + 2], value.length)
+				If value.length Then MemCopy(Varptr value[0], Varptr data[offset + 2], Size_T(value.length))
 				Return value
 			End If
 			offset = nextOffset
@@ -648,7 +648,7 @@ Type TBLEGATTCharacteristic
 		Local length:Int
 		If _BLEGATTGetValue(_identifier, Null, 0, length) <> 0 Then Return Null
 		Local value:Byte[] = New Byte[length]
-		If length And _BLEGATTGetValue(_identifier, value, value.length, length) <> 0 Then Return Null
+		If length And _BLEGATTGetValue(_identifier, Varptr value[0], UInt(value.length), length) <> 0 Then Return Null
 		Return value
 	End Method
 
@@ -876,12 +876,12 @@ Function _PollBLE:Object(hookId:Int, hookData:Object, context:Object)
 			Case BLENativeEventScanResult
 				Local advertisement:TBLEAdvertisement = New TBLEAdvertisement
 				advertisement.address = New Byte[6]
-				MemCopy(advertisement.address, nativeAddress, 6)
+				MemCopy(Varptr advertisement.address[0], Varptr nativeAddress[0], 6)
 				advertisement.addressType = addressType
 				advertisement.eventType = eventType
 				advertisement.rssi = rssi
 				advertisement.data = New Byte[dataLength]
-				If dataLength Then MemCopy(advertisement.data, nativeData, dataLength)
+				If dataLength Then MemCopy(Varptr advertisement.data[0], Varptr nativeData[0], Size_T(dataLength))
 				EmitEvent(CreateEvent(EVENT_BLESCANRESULT, BLEEventSource, rssi, addressType, eventType, 0, advertisement))
 			Case BLENativeEventScanComplete
 				EmitEvent(CreateEvent(EVENT_BLESCANCOMPLETE, BLEEventSource, status))
@@ -895,7 +895,7 @@ Function _PollBLE:Object(hookId:Int, hookData:Object, context:Object)
 				connection.addressType = addressType
 				connection.role = properties
 				connection.address = New Byte[6]
-				MemCopy(connection.address, nativeAddress, 6)
+				MemCopy(Varptr connection.address[0], Varptr nativeAddress[0], 6)
 				If kind = BLENativeEventConnected
 					connection.reason = 0
 					EmitEvent(CreateEvent(EVENT_BLECONNECTED, BLEEventSource, status, addressType, connectionHandle, 0, connection))
@@ -908,7 +908,7 @@ Function _PollBLE:Object(hookId:Int, hookData:Object, context:Object)
 				writeEvent.connectionHandle = connectionHandle
 				If attributeId > 0 And attributeId < _bleGATTCharacteristics.length Then writeEvent.characteristic = _bleGATTCharacteristics[attributeId]
 				writeEvent.value = New Byte[dataLength]
-				If dataLength Then MemCopy(writeEvent.value, nativeData, dataLength)
+				If dataLength Then MemCopy(Varptr writeEvent.value[0], Varptr nativeData[0], Size_T(dataLength))
 				Local writeSource:Object = writeEvent.characteristic
 				If Not writeSource Then writeSource = BLEEventSource
 				EmitEvent(CreateEvent(EVENT_BLEGATTWRITE, writeSource, dataLength, 0, connectionHandle, attributeId, writeEvent))
@@ -981,7 +981,7 @@ Function _PollBLE:Object(hookId:Int, hookData:Object, context:Object)
 				valueEvent.status = status
 				valueEvent.indication = indications
 				valueEvent.value = New Byte[dataLength]
-				If dataLength Then MemCopy(valueEvent.value, nativeData, dataLength)
+				If dataLength Then MemCopy(Varptr valueEvent.value[0], Varptr nativeData[0], Size_T(dataLength))
 				Local valueSource:Object = _FindBLEClientAttribute(connectionHandle, attributeId)
 				If kind = BLENativeEventReadComplete
 					EmitEvent(CreateEvent(EVENT_BLEREADCOMPLETE, valueSource, status, dataLength, ..
