@@ -11,8 +11,11 @@ work on the second core.
   It checks graph contents and reclamation, then holds a live graph through
   allocation pressure that forces automatic collections.
 
-Build either program from `BlitzMax-pico` with the same board and heap settings
-that the application will use. For a Pico 2 W with a 64 KiB managed heap:
+Build either program from the Pico or ESP32 SDK checkout with the same board
+and heap settings that the application will use. These examples use a 64 KiB
+managed heap:
+
+Pico 2 W, from `BlitzMax-pico`:
 
 ```sh
 ./bin/bmk makeapp -a -r -l pico -g arm -board pico2_w -heap 64k -o /private/tmp/gc_benchmark mod/embedded.mod/benchmarks/gc/gc_benchmark.bmx
@@ -33,6 +36,26 @@ also checks sample completeness, graph checks, checksum, and automatic
 collection count. Each collection case reports 12 microsecond samples.
 Enter BOOTSEL manually if the board's existing firmware does not respond to
 `picotool`'s reset request.
+
+ESP32-S3 44-pin N16R8, from `BlitzMax-esp32`:
+
+```sh
+./bin/bmk makeapp -a -r -l esp32 -g xtensa -board esp32s3_44pin_n16r8 -heap 64k -o /private/tmp/gc_benchmark mod/embedded.mod/benchmarks/gc/gc_benchmark.bmx
+./bin/bmk makeapp -a -r -l esp32 -g xtensa -board esp32s3_44pin_n16r8 -heap 64k -o /private/tmp/gc_varied mod/embedded.mod/benchmarks/gc/gc_varied.bmx
+```
+
+Connect the USB-C socket labelled `COM`. Set `ESPPORT` to its CH343P serial
+device and add `-x` to the build command to flash and verify. The ESP-IDF Tools
+Python includes `pyserial`; use it to reset the board and capture a complete
+run after flashing:
+
+```sh
+python mod/embedded.mod/benchmarks/gc/capture_esp32.py --port "$ESPPORT" --output benchmark.log
+python mod/embedded.mod/benchmarks/gc/capture_esp32.py --port "$ESPPORT" --output varied.log --marker GC_VARIED
+python3 mod/embedded.mod/benchmarks/gc/summarize.py benchmark.log varied.log
+```
+
+The ESP32 capture script also requires the corresponding `done=1` line.
 
 The original before/after measurements, raw logs, and comparison scripts are
 preserved in [`history/`](history/README.md). The legacy marker was removed
