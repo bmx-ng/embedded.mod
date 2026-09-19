@@ -46,6 +46,32 @@ Type TOOMConstructor
 	End Method
 End Type
 
+Type TReachabilityNode
+	Field next:TReachabilityNode
+	Field label:String
+	Field links:TReachabilityNode[]
+End Type
+
+Function ExerciseReachability:Int(objectsBefore:UInt)
+	' A cyclic Object chain with a managed Array and Strings exercises every
+	' queued block kind without depending on the heap's physical block order.
+	Local head:TReachabilityNode = New TReachabilityNode
+	Local cursor:TReachabilityNode = head
+	For Local index:Int = 0 Until 32
+		cursor.label = "node-" + index
+		If index < 31 Then
+			cursor.next = New TReachabilityNode
+			cursor = cursor.next
+		End If
+	Next
+	head.links = [cursor]
+	cursor.next = head
+	CollectObjects()
+	ReachabilityAudit()
+	Return head.links[0].next = head And cursor.label = "node-31" And ..
+		ObjectLiveCount() >= objectsBefore + 32 And InvalidReferenceCount() = 0 And HeapIntegrityValid()
+End Function
+
 Local rootFramesBefore:UInt = RootFrameCount()
 Local rootSlotsBefore:UInt = RootSlotCount()
 Local objectsBefore:UInt = ObjectLiveCount()
@@ -54,6 +80,8 @@ Local stringsBefore:UInt = StringLiveCount()
 Local throwsBefore:UInt = ExceptionThrowCount()
 Local catchesBefore:UInt = ExceptionCatchCount()
 Local checksPassed:Int = True
+checksPassed :& ExerciseReachability(objectsBefore)
+CollectObjects()
 
 Local described:TDescribedObject = New TDescribedObject
 checksPassed :& TestObjectToString(described) = "descriptor-ToString-hook"

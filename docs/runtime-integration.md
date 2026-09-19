@@ -23,6 +23,13 @@ blocks within a target-provided arena. Compiler-generated root frames describe
 live managed values precisely; native code which retains a managed Object past
 the call boundary must use `ObjectRootRetain()` and `ObjectRootRelease()`.
 
+The runtime has separate execution-context storage for root and exception
+frames, with one context compiled by default. The collector's mark queue
+reuses the existing link in allocated heap blocks and needs no extra heap
+storage. Multi-core managed entry remains disabled until allocation locking,
+root publication, and a collection rendezvous are implemented together;
+target context checks must continue to reject foreign cores or tasks.
+
 The collector tracks live and unreachable allocations, queues finalizers, and
 returns reusable blocks to the arena. `HeapIntegrityValid()` audits the
 physical block chain, free list, flags, bounds, alignment, and live-allocation
