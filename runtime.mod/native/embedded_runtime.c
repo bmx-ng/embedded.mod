@@ -17,6 +17,21 @@
 #define BMX_EMBEDDED_ROOT_CAPACITY 64u
 #endif
 
+/* A single context is compiled on ordinary embedded builds. Multi-core
+   targets can select two contexts once their entry and GC handshakes exist. */
+#ifndef BMX_EMBEDDED_MULTICORE
+#define BMX_EMBEDDED_MULTICORE 0
+#endif
+
+#if BMX_EMBEDDED_MULTICORE
+#define BMX_EMBEDDED_CONTEXT_CAPACITY 2u
+#ifndef BMX_EMBEDDED_PLATFORM_CONTEXT_INDEX
+#error "Multi-core embedded targets must provide a context index"
+#endif
+#else
+#define BMX_EMBEDDED_CONTEXT_CAPACITY 1u
+#endif
+
 #define BMX_EMBEDDED_MEMORY_ALIGNMENT 16u
 
 typedef union BMXEmbeddedHeapBlock BMXEmbeddedHeapBlock;
@@ -31,7 +46,6 @@ union BMXEmbeddedHeapBlock {
         uint32_t requested_size;
         uint32_t flags;
         uint32_t mark_epoch;
-        uint32_t scan_epoch;
     } state;
 };
 
@@ -95,15 +109,39 @@ static uint32_t bmx_embedded_reachable_arrays;
 static uint32_t bmx_embedded_unreachable_arrays;
 static uint32_t bmx_embedded_reachable_strings;
 static uint32_t bmx_embedded_unreachable_strings;
-static BMXEmbeddedRootFrame *bmx_embedded_root_frames;
-static uint32_t bmx_embedded_root_frame_total;
-static uint32_t bmx_embedded_root_slot_total;
-static BMXEmbeddedExceptionFrame *bmx_embedded_exception_frames;
-static BMXEmbeddedException bmx_embedded_exception_value;
-static uint32_t bmx_embedded_exception_depth_total;
+typedef struct BMXEmbeddedExecutionContext {
+    BMXEmbeddedRootFrame *root_frames;
+    uint32_t root_frame_total;
+    uint32_t root_slot_total;
+    BMXEmbeddedExceptionFrame *exception_frames;
+    BMXEmbeddedException exception_value;
+    uint32_t exception_depth_total;
+    uint32_t exception_max_depth_total;
+} BMXEmbeddedExecutionContext;
+
+static BMXEmbeddedExecutionContext bmx_embedded_contexts[BMX_EMBEDDED_CONTEXT_CAPACITY];
+
+static inline BMXEmbeddedExecutionContext *bmx_embedded_current_context(void) {
+#if BMX_EMBEDDED_MULTICORE
+    uint32_t index = (uint32_t)BMX_EMBEDDED_PLATFORM_CONTEXT_INDEX();
+    if (index >= BMX_EMBEDDED_CONTEXT_CAPACITY) {
+        BMX_EMBEDDED_PLATFORM_PANIC("BlitzMax invalid managed execution context");
+    }
+    return &bmx_embedded_contexts[index];
+#else
+    return &bmx_embedded_contexts[0];
+#endif
+}
+
+#define bmx_embedded_root_frames (bmx_embedded_current_context()->root_frames)
+#define bmx_embedded_root_frame_total (bmx_embedded_current_context()->root_frame_total)
+#define bmx_embedded_root_slot_total (bmx_embedded_current_context()->root_slot_total)
+#define bmx_embedded_exception_frames (bmx_embedded_current_context()->exception_frames)
+#define bmx_embedded_exception_value (bmx_embedded_current_context()->exception_value)
+#define bmx_embedded_exception_depth_total (bmx_embedded_current_context()->exception_depth_total)
+#define bmx_embedded_exception_max_depth_total (bmx_embedded_current_context()->exception_max_depth_total)
 static uint32_t bmx_embedded_exception_throw_total;
 static uint32_t bmx_embedded_exception_catch_total;
-static uint32_t bmx_embedded_exception_max_depth_total;
 static uint32_t bmx_embedded_exception_unhandled_total;
 static uint32_t bmx_embedded_collection_total;
 static uint32_t bmx_embedded_automatic_collection_total;
@@ -185,7 +223,6 @@ static BMXEmbeddedHeapBlock *bmx_embedded_heap_release(BMXEmbeddedHeapBlock *blo
     block->state.requested_size = 0;
     block->state.flags = BMX_EMBEDDED_HEAP_BLOCK_FREE;
     block->state.mark_epoch = 0;
-    block->state.scan_epoch = 0;
 
     BMXEmbeddedHeapBlock *next = block->state.next;
     if (next && (next->state.flags & BMX_EMBEDDED_HEAP_BLOCK_FREE)) {
@@ -233,7 +270,6 @@ static void *bmx_embedded_heap_allocate(uint32_t bytes, uint32_t flags) {
             remainder->state.requested_size = 0;
             remainder->state.flags = BMX_EMBEDDED_HEAP_BLOCK_FREE;
             remainder->state.mark_epoch = 0;
-            remainder->state.scan_epoch = 0;
             block->state.next = remainder;
             block->state.capacity = aligned_bytes;
             bmx_embedded_heap_free_add(remainder);
@@ -255,7 +291,6 @@ static void *bmx_embedded_heap_allocate(uint32_t bytes, uint32_t flags) {
     block->state.requested_size = bytes;
     block->state.flags = flags;
     block->state.mark_epoch = 0;
-    block->state.scan_epoch = 0;
     bmx_embedded_arena_allocations += 1u;
     if (bmx_embedded_arena_offset > bmx_embedded_arena_high_water_mark) bmx_embedded_arena_high_water_mark = bmx_embedded_arena_offset;
     return block + 1;
@@ -1207,7 +1242,18 @@ typedef struct BMXEmbeddedReachabilityContext {
     uint32_t reachable_arrays;
     uint32_t reachable_strings;
     uint32_t invalid;
+    BMXEmbeddedHeapBlock *queue_first;
+    BMXEmbeddedHeapBlock *queue_last;
 } BMXEmbeddedReachabilityContext;
+
+static void bmx_embedded_mark_enqueue(BMXEmbeddedReachabilityContext *context, BMXEmbeddedHeapBlock *block) {
+    /* free_next is unused for allocated blocks and doubles as the mark link.
+       The queue therefore needs no separate storage, even on a full heap. */
+    block->state.free_next = NULL;
+    if (context->queue_last) context->queue_last->state.free_next = block;
+    else context->queue_first = block;
+    context->queue_last = block;
+}
 
 static void bmx_embedded_mark_reference(void *reference, void *context_value) {
     if (!reference || reference == &bmx_embedded_null_object) return;
@@ -1220,6 +1266,7 @@ static void bmx_embedded_mark_reference(void *reference, void *context_value) {
     if (block->state.mark_epoch != context->epoch) {
         block->state.mark_epoch = context->epoch;
         context->reachable += 1u;
+        bmx_embedded_mark_enqueue(context, block);
     }
 }
 
@@ -1236,6 +1283,7 @@ static void bmx_embedded_mark_array(void *reference, void *context_value) {
     if (block->state.mark_epoch != context->epoch) {
         block->state.mark_epoch = context->epoch;
         context->reachable_arrays += 1u;
+        bmx_embedded_mark_enqueue(context, block);
     }
 }
 
@@ -1279,41 +1327,41 @@ uint32_t bmx_embedded_reachability_audit(void) {
     if (!bmx_embedded_reachability_epoch) {
         for (BMXEmbeddedHeapBlock *block = bmx_embedded_heap_first; block; block = block->state.next) {
             block->state.mark_epoch = 0;
-            block->state.scan_epoch = 0;
         }
         bmx_embedded_reachability_epoch = 1u;
     }
 
-    BMXEmbeddedReachabilityContext context = {bmx_embedded_reachability_epoch, 0, 0, 0, 0};
+    BMXEmbeddedReachabilityContext context = {bmx_embedded_reachability_epoch, 0, 0, 0, 0, NULL, NULL};
     for (uint32_t index = 0; index < BMX_EMBEDDED_ROOT_CAPACITY; ++index) {
         if (bmx_embedded_object_roots[index]) bmx_embedded_mark_reference(bmx_embedded_object_roots[index], &context);
     }
-    for (BMXEmbeddedRootFrame *frame = bmx_embedded_root_frames; frame; frame = frame->previous) {
-        for (uint16_t index = 0; index < frame->slot_count; ++index) {
-            BMXEmbeddedRootSlot *slot = &frame->slots[index];
-            if (!slot->address) continue;
-            if (slot->kind == BMX_EMBEDDED_ROOT_OBJECT) bmx_embedded_mark_reference(*(void **)slot->address, &context);
-            else if (slot->kind == BMX_EMBEDDED_ROOT_ARRAY) bmx_embedded_mark_array(*(void **)slot->address, &context);
-            else if (slot->kind == BMX_EMBEDDED_ROOT_STRING) bmx_embedded_mark_string(*(void **)slot->address, &context);
-            else if (slot->kind == BMX_EMBEDDED_ROOT_STRUCT) bmx_embedded_mark_value(slot->address, slot->descriptor, &context);
-            else if (slot->kind == BMX_EMBEDDED_ROOT_EXCEPTION) {
-                BMXEmbeddedException *exception = (BMXEmbeddedException *)slot->address;
-                if (exception->kind == BMX_EMBEDDED_EXCEPTION_OBJECT) bmx_embedded_mark_reference(exception->value, &context);
-                else if (exception->kind == BMX_EMBEDDED_EXCEPTION_ARRAY) bmx_embedded_mark_array(exception->value, &context);
-                else if (exception->kind == BMX_EMBEDDED_EXCEPTION_STRING) bmx_embedded_mark_string(exception->value, &context);
-                else if (exception->kind != BMX_EMBEDDED_EXCEPTION_NONE) context.invalid += 1u;
+    for (uint32_t context_index = 0; context_index < BMX_EMBEDDED_CONTEXT_CAPACITY; ++context_index) {
+        for (BMXEmbeddedRootFrame *frame = bmx_embedded_contexts[context_index].root_frames; frame; frame = frame->previous) {
+            for (uint16_t index = 0; index < frame->slot_count; ++index) {
+                BMXEmbeddedRootSlot *slot = &frame->slots[index];
+                if (!slot->address) continue;
+                if (slot->kind == BMX_EMBEDDED_ROOT_OBJECT) bmx_embedded_mark_reference(*(void **)slot->address, &context);
+                else if (slot->kind == BMX_EMBEDDED_ROOT_ARRAY) bmx_embedded_mark_array(*(void **)slot->address, &context);
+                else if (slot->kind == BMX_EMBEDDED_ROOT_STRING) bmx_embedded_mark_string(*(void **)slot->address, &context);
+                else if (slot->kind == BMX_EMBEDDED_ROOT_STRUCT) bmx_embedded_mark_value(slot->address, slot->descriptor, &context);
+                else if (slot->kind == BMX_EMBEDDED_ROOT_EXCEPTION) {
+                    BMXEmbeddedException *exception = (BMXEmbeddedException *)slot->address;
+                    if (exception->kind == BMX_EMBEDDED_EXCEPTION_OBJECT) bmx_embedded_mark_reference(exception->value, &context);
+                    else if (exception->kind == BMX_EMBEDDED_EXCEPTION_ARRAY) bmx_embedded_mark_array(exception->value, &context);
+                    else if (exception->kind == BMX_EMBEDDED_EXCEPTION_STRING) bmx_embedded_mark_string(exception->value, &context);
+                    else if (exception->kind != BMX_EMBEDDED_EXCEPTION_NONE) context.invalid += 1u;
+                }
+                else context.invalid += 1u;
             }
-            else context.invalid += 1u;
         }
     }
 
-    int pending;
-    do {
-        pending = 0;
-        for (BMXEmbeddedHeapBlock *block = bmx_embedded_heap_first; block; block = block->state.next) {
-            if ((block->state.flags & BMX_EMBEDDED_HEAP_BLOCK_FREE) || !(block->state.flags & BMX_EMBEDDED_HEAP_BLOCK_OBJECT)) continue;
-            if (block->state.mark_epoch != context.epoch || block->state.scan_epoch == context.epoch) continue;
-            block->state.scan_epoch = context.epoch;
+    while (context.queue_first) {
+        BMXEmbeddedHeapBlock *block = context.queue_first;
+        context.queue_first = block->state.free_next;
+        if (!context.queue_first) context.queue_last = NULL;
+        block->state.free_next = NULL;
+        if (block->state.flags & BMX_EMBEDDED_HEAP_BLOCK_OBJECT) {
             BMXEmbeddedObject *object = (BMXEmbeddedObject *)(block + 1);
             const BMXEmbeddedTypeDescriptor *type = object->type;
             for (uint32_t index = 0; index < type->reference_count; ++index) {
@@ -1336,12 +1384,7 @@ uint32_t bmx_embedded_reachability_audit(void) {
                 }
             }
             if (type->flags & BMX_EMBEDDED_TYPE_FLAG_CUSTOM_TRACE) type->trace(object, bmx_embedded_mark_reference, &context);
-            pending = 1;
-        }
-        for (BMXEmbeddedHeapBlock *block = bmx_embedded_heap_first; block; block = block->state.next) {
-            if ((block->state.flags & BMX_EMBEDDED_HEAP_BLOCK_FREE) || !(block->state.flags & BMX_EMBEDDED_HEAP_BLOCK_ARRAY)) continue;
-            if (block->state.mark_epoch != context.epoch || block->state.scan_epoch == context.epoch) continue;
-            block->state.scan_epoch = context.epoch;
+        } else if (block->state.flags & BMX_EMBEDDED_HEAP_BLOCK_ARRAY) {
             BMXEmbeddedArray *array = (BMXEmbeddedArray *)(block + 1);
             if (array->element_kind == BMX_EMBEDDED_ARRAY_ELEMENT_OBJECT) {
                 const uint32_t header_size = bmx_embedded_align_size((uint32_t)sizeof(BMXEmbeddedArray));
@@ -1358,9 +1401,8 @@ uint32_t bmx_embedded_reachability_audit(void) {
                     bmx_embedded_mark_value(elements + (uint32_t)index * array->element_size, array->element_descriptor, &context);
                 }
             }
-            pending = 1;
         }
-    } while (pending);
+    }
 
     bmx_embedded_reachable_objects = context.reachable;
     bmx_embedded_unreachable_objects = bmx_embedded_live_objects - context.reachable;
