@@ -15,7 +15,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--port", required=True)
     parser.add_argument("--output", required=True)
-    parser.add_argument("--marker", choices=("GC_BENCH", "GC_VARIED"), default="GC_BENCH")
+    parser.add_argument("--marker", choices=("GC_BENCH", "GC_VARIED", "GC_SCALE"), default="GC_BENCH")
     parser.add_argument("--timeout", type=float, default=30.0)
     args = parser.parse_args()
 

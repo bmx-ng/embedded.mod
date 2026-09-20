@@ -1244,6 +1244,8 @@ typedef struct BMXEmbeddedReachabilityContext {
     uint32_t invalid;
     BMXEmbeddedHeapBlock *queue_first;
     BMXEmbeddedHeapBlock *queue_last;
+    BMXEmbeddedHeapBlock *lookup_cursor_low;
+    BMXEmbeddedHeapBlock *lookup_cursor_high;
 } BMXEmbeddedReachabilityContext;
 
 static void bmx_embedded_mark_enqueue(BMXEmbeddedReachabilityContext *context, BMXEmbeddedHeapBlock *block) {
@@ -1255,15 +1257,53 @@ static void bmx_embedded_mark_enqueue(BMXEmbeddedReachabilityContext *context, B
     context->queue_last = block;
 }
 
+static BMXEmbeddedHeapBlock *bmx_embedded_mark_allocation(
+    const void *reference, uint32_t kind, BMXEmbeddedReachabilityContext *context) {
+    BMXEmbeddedHeapBlock *first = bmx_embedded_heap_first;
+    if (!first) return NULL;
+
+    /* Block payloads are in address order. Reject flash literals and other
+       non-heap pointers before touching a block. Two temporary cursors keep
+       nearby references cheap even when tracing alternates between ends. */
+    const uintptr_t address = (uintptr_t)reference;
+    const uintptr_t base = (uintptr_t)first;
+    if (address < base + sizeof(BMXEmbeddedHeapBlock) ||
+        address - base >= bmx_embedded_arena_offset ||
+        address % BMX_EMBEDDED_MEMORY_ALIGNMENT) return NULL;
+
+    BMXEmbeddedHeapBlock *low = context->lookup_cursor_low;
+    BMXEmbeddedHeapBlock *high = context->lookup_cursor_high;
+    const uintptr_t low_address = (uintptr_t)(low + 1);
+    const uintptr_t high_address = (uintptr_t)(high + 1);
+    const uintptr_t low_distance = address >= low_address ? address - low_address : low_address - address;
+    const uintptr_t high_distance = address >= high_address ? address - high_address : high_address - address;
+    BMXEmbeddedHeapBlock **cursor = high_distance < low_distance ?
+        &context->lookup_cursor_high : &context->lookup_cursor_low;
+    BMXEmbeddedHeapBlock *block = *cursor;
+    if (address > (uintptr_t)(block + 1)) {
+        while (block->state.next && (uintptr_t)(block->state.next + 1) <= address) block = block->state.next;
+    } else {
+        while (block->state.previous && (uintptr_t)(block + 1) > address) block = block->state.previous;
+    }
+    *cursor = block;
+    if ((uintptr_t)(block + 1) != address ||
+        (block->state.flags & (BMX_EMBEDDED_HEAP_BLOCK_FREE | kind)) != kind) return NULL;
+    return block;
+}
+
 static void bmx_embedded_mark_reference(void *reference, void *context_value) {
     if (!reference || reference == &bmx_embedded_null_object) return;
     BMXEmbeddedReachabilityContext *context = (BMXEmbeddedReachabilityContext *)context_value;
-    BMXEmbeddedHeapBlock *block = bmx_embedded_object_allocation(reference);
-    if (!block || !bmx_embedded_type_descriptor_valid(((BMXEmbeddedObject *)reference)->type)) {
+    BMXEmbeddedHeapBlock *block = bmx_embedded_mark_allocation(reference, BMX_EMBEDDED_HEAP_BLOCK_OBJECT, context);
+    if (!block) {
         context->invalid += 1u;
         return;
     }
     if (block->state.mark_epoch != context->epoch) {
+        if (!bmx_embedded_type_descriptor_valid(((BMXEmbeddedObject *)reference)->type)) {
+            context->invalid += 1u;
+            return;
+        }
         block->state.mark_epoch = context->epoch;
         context->reachable += 1u;
         bmx_embedded_mark_enqueue(context, block);
@@ -1273,14 +1313,18 @@ static void bmx_embedded_mark_reference(void *reference, void *context_value) {
 static void bmx_embedded_mark_array(void *reference, void *context_value) {
     if (!reference || reference == &bmx_embedded_empty_array) return;
     BMXEmbeddedReachabilityContext *context = (BMXEmbeddedReachabilityContext *)context_value;
-    BMXEmbeddedHeapBlock *block = bmx_embedded_array_allocation(reference);
+    BMXEmbeddedHeapBlock *block = bmx_embedded_mark_allocation(reference, BMX_EMBEDDED_HEAP_BLOCK_ARRAY, context);
     BMXEmbeddedArray *array = (BMXEmbeddedArray *)reference;
-    if (!block || array->element_kind > BMX_EMBEDDED_ARRAY_ELEMENT_OBJECT ||
-        (array->element_kind != BMX_EMBEDDED_ARRAY_ELEMENT_VALUE && array->element_size != sizeof(void *))) {
+    if (!block) {
         context->invalid += 1u;
         return;
     }
     if (block->state.mark_epoch != context->epoch) {
+        if (array->element_kind > BMX_EMBEDDED_ARRAY_ELEMENT_OBJECT ||
+            (array->element_kind != BMX_EMBEDDED_ARRAY_ELEMENT_VALUE && array->element_size != sizeof(void *))) {
+            context->invalid += 1u;
+            return;
+        }
         block->state.mark_epoch = context->epoch;
         context->reachable_arrays += 1u;
         bmx_embedded_mark_enqueue(context, block);
@@ -1289,11 +1333,11 @@ static void bmx_embedded_mark_array(void *reference, void *context_value) {
 
 static void bmx_embedded_mark_string(const void *reference, void *context_value) {
     if (!reference || reference == &bmx_embedded_empty_string) return;
-    BMXEmbeddedHeapBlock *block = bmx_embedded_string_allocation(reference);
+    BMXEmbeddedReachabilityContext *context = (BMXEmbeddedReachabilityContext *)context_value;
+    BMXEmbeddedHeapBlock *block = bmx_embedded_mark_allocation(reference, BMX_EMBEDDED_HEAP_BLOCK_STRING, context);
     /* Compiler-emitted literals live in flash rather than the managed heap and
        are permanent. Only heap-backed Strings participate in marking. */
     if (!block) return;
-    BMXEmbeddedReachabilityContext *context = (BMXEmbeddedReachabilityContext *)context_value;
     if (block->state.mark_epoch != context->epoch) {
         block->state.mark_epoch = context->epoch;
         context->reachable_strings += 1u;
@@ -1331,7 +1375,11 @@ uint32_t bmx_embedded_reachability_audit(void) {
         bmx_embedded_reachability_epoch = 1u;
     }
 
-    BMXEmbeddedReachabilityContext context = {bmx_embedded_reachability_epoch, 0, 0, 0, 0, NULL, NULL};
+    BMXEmbeddedReachabilityContext context = {
+        .epoch = bmx_embedded_reachability_epoch,
+        .lookup_cursor_low = bmx_embedded_heap_first,
+        .lookup_cursor_high = bmx_embedded_heap_last
+    };
     for (uint32_t index = 0; index < BMX_EMBEDDED_ROOT_CAPACITY; ++index) {
         if (bmx_embedded_object_roots[index]) bmx_embedded_mark_reference(bmx_embedded_object_roots[index], &context);
     }
