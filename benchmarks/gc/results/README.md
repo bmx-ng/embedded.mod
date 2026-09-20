@@ -1,5 +1,8 @@
 # Collector hardware checks
 
+The [linear sweep results](sweep_results.md) measure the next collector
+improvements against the merged two-cursor implementation.
+
 The [larger-heap scaling test](scale_results.md) compares the previous lookup
 with two temporary cursors on Pico 2 W and ESP32-S3 hardware.
 

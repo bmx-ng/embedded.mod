@@ -11,6 +11,7 @@ CASES = {
     "GC_BENCH": ("live_backward_chain", "reclaim_garbage"),
     "GC_VARIED": ("empty", "forward_chain", "wide_shared", "mixed_cycle", "reclaim_mixed"),
     "GC_SCALE": ("forward", "zigzag"),
+    "GC_SWEEP": ("all_live", "contiguous", "fragmented", "raw_survivors"),
 }
 
 
@@ -69,6 +70,9 @@ def summarize(path: Path) -> None:
         nodes = int(metadata.get("nodes", 0))
         if not checks or nodes < 32 or int(metadata.get("checksum", 0)) != nodes * (nodes + 1):
             raise ValueError(f"{path}: scale graph checks failed")
+
+    if marker == "GC_SWEEP" and (not checks or int(metadata.get("nodes", 0)) < 1):
+        raise ValueError(f"{path}: sweep checks failed")
 
     arena = metadata.get("arena", metadata.get("arena_capacity"))
     print(f"{path.name}: {marker}, arena {arena} bytes" +
