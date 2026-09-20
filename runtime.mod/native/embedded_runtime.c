@@ -254,10 +254,30 @@ static void *bmx_embedded_heap_allocate(uint32_t bytes, uint32_t flags) {
     uint8_t *arena = bmx_embedded_arena_base();
     if (!arena) return NULL;
 
+    /* Retain the predecessor while searching, so unlinking the first fit
+       does not require another walk from the free-list head. */
+    BMXEmbeddedHeapBlock *previous_free = NULL;
     BMXEmbeddedHeapBlock *block = bmx_embedded_heap_free;
-    while (block && block->state.capacity < aligned_bytes) block = block->state.free_next;
+    if (block && block->state.capacity < aligned_bytes) {
+        /* Check two successors per iteration, retaining the predecessor on
+           exit instead of copying it for every skipped block. */
+        for (;;) {
+            BMXEmbeddedHeapBlock *next = block->state.free_next;
+            if (!next || next->state.capacity >= aligned_bytes) {
+                previous_free = block;
+                block = next;
+                break;
+            }
+            block = next->state.free_next;
+            if (!block || block->state.capacity >= aligned_bytes) {
+                previous_free = next;
+                break;
+            }
+        }
+    }
     if (block) {
-        bmx_embedded_heap_free_remove(block);
+        if (previous_free) previous_free->state.free_next = block->state.free_next;
+        else bmx_embedded_heap_free = block->state.free_next;
         const uint32_t minimum_remainder = (uint32_t)sizeof(BMXEmbeddedHeapBlock) + (uint32_t)_Alignof(max_align_t);
         if (block->state.capacity >= aligned_bytes + minimum_remainder) {
             BMXEmbeddedHeapBlock *remainder = (BMXEmbeddedHeapBlock *)((uint8_t *)(block + 1) + aligned_bytes);

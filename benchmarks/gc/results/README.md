@@ -1,5 +1,8 @@
 # Collector hardware checks
 
+The [allocation-search results](allocation_results.md) compare one-pass
+allocation search with the merged allocator on both boards.
+
 The [linear sweep results](sweep_results.md) measure the next collector
 improvements against the merged two-cursor implementation.
 

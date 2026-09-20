@@ -82,3 +82,11 @@ of reclaimed storage. `summarize.py` validates 12 samples per case. See the
 Build `tests/embedded_gc_sweep_conformance.bmx` with a 64 KiB heap to exercise
 finalizer resurrection, exception recovery, and interleaved survivors. Capture
 with `--marker GC_CHECK`; success prints `checks=pass` and `done=1`.
+
+For allocation search, build `allocation_search.bmx` with a 64 KiB heap and
+capture with `--marker ALLOC_SEARCH`. `summarize.py` reports batches of 32
+allocation attempts and a separate 2,048-step allocation/free/write workload.
+See [allocation results](results/allocation_results.md) for paired measurements,
+validation, and the distinction between focused and mixed-workload gains.
+The host selection/unlinking checks run with
+`python3 tests/run_allocation_search_host.py` (Clang with sanitizers).
