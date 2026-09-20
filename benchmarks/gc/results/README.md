@@ -1,8 +1,11 @@
 # Collector hardware checks
 
-## Local reference lookup — 2026-09-20
+The [larger-heap scaling test](scale_results.md) compares the previous lookup
+with two temporary cursors on Pico 2 W and ESP32-S3 hardware.
 
-The marker now searches from its last matched block in address order and
+## Single-cursor lookup trial — 2026-09-20
+
+The first lookup trial searched from its last matched block in address order and
 rejects pointers outside the arena before looking at heap blocks. These
 collector-only changes add no heap metadata. Both boards passed the varied
 graph and heap checks, checksum 3154, and 15 automatic collections. The
@@ -24,9 +27,9 @@ below; the backward-chain figures are from the original queue runs in
 [Pico backward chain](lookup_pico2w_benchmark.log), and
 [ESP32-S3 backward chain](lookup_s3_benchmark.log).
 
-The cursor can still traverse much of the heap for references that jump
-between distant blocks. It trades that worst-case scan for no persistent
-index or allocation cost.
+That cursor could still traverse much of the heap for references that jumped
+between distant blocks. The two-cursor scaling test above addresses this
+particular pattern with one extra temporary pointer.
 
 ## Queue-only baseline — 2026-09-19
 

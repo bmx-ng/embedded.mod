@@ -1,6 +1,6 @@
 # Embedded GC benchmarks
 
-Both programs use the production mark-queue collector. They perform internal
+The programs use the production mark-queue collector. They perform internal
 heap checks and print one completion marker on success. Neither runs managed
 work on the second core.
 
@@ -10,6 +10,9 @@ work on the second core.
   with shared references, a cycle with Strings and Arrays, and mixed garbage.
   It checks graph contents and reclamation, then holds a live graph through
   allocation pressure that forces automatic collections.
+- `gc_scale.bmx` sizes its live node graph from the configured heap and
+  measures forward and alternating-end links. It exposes how reference lookup
+  changes as the number of blocks grows.
 
 Build either program from the Pico or ESP32 SDK checkout with the same board
 and heap settings that the application will use. These examples use a 64 KiB
@@ -63,3 +66,9 @@ after those runs; current builds use the queue directly.
 
 The [queue-only hardware check](results/README.md) records the current build's
 serial output and timings.
+
+For the scaling benchmark, build `gc_scale.bmx` with a 64 KiB or 256 KiB heap
+on either board and pass `--marker GC_SCALE` to the corresponding capture
+script. `summarize.py` validates its eight samples per case. The
+[scaling results](results/scale_results.md) compare the previous lookup with
+the two-cursor collector on the attached boards.
