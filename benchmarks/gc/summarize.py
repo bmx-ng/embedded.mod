@@ -8,6 +8,7 @@ from pathlib import Path
 
 
 CASES = {
+    "ALLOC_SEARCH": ("head", "middle", "tail", "split", "miss", "churn"),
     "GC_BENCH": ("live_backward_chain", "reclaim_garbage"),
     "GC_VARIED": ("empty", "forward_chain", "wide_shared", "mixed_cycle", "reclaim_mixed"),
     "GC_SCALE": ("forward", "zigzag"),
@@ -73,6 +74,10 @@ def summarize(path: Path) -> None:
 
     if marker == "GC_SWEEP" and (not checks or int(metadata.get("nodes", 0)) < 1):
         raise ValueError(f"{path}: sweep checks failed")
+
+    if marker == "ALLOC_SEARCH" and (not checks or int(metadata.get("holes", 0)) < 2 or
+            metadata.get("batch") != "32" or metadata.get("churn_steps") != "2048"):
+        raise ValueError(f"{path}: allocation checks failed")
 
     arena = metadata.get("arena", metadata.get("arena_capacity"))
     print(f"{path.name}: {marker}, arena {arena} bytes" +
