@@ -15,7 +15,7 @@ def main():
     parser.add_argument("output", help="raw serial log destination")
     parser.add_argument("--port", required=True, help="USB serial device")
     parser.add_argument("--picotool", default=os.environ.get("PICOTOOL", "picotool"))
-    parser.add_argument("--marker", choices=("GC_BENCH", "GC_VARIED", "GC_SCALE"), default="GC_BENCH")
+    parser.add_argument("--marker", choices=("GC_BENCH", "GC_VARIED", "GC_SCALE", "GC_SWEEP", "GC_CHECK"), default="GC_BENCH")
     parser.add_argument("--timeout", type=float, default=45.0)
     args = parser.parse_args()
 

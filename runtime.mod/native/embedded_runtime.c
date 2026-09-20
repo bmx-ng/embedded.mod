@@ -1517,6 +1517,14 @@ uint32_t bmx_embedded_collect_objects(void) {
         return 0;
     }
 
+    /* Nothing can be finalized or reclaimed when every managed allocation is
+       reachable. Avoid walking the heap again in this common case. */
+    if (!bmx_embedded_unreachable_objects && !bmx_embedded_unreachable_arrays && !bmx_embedded_unreachable_strings) {
+        bmx_embedded_collection_exception_boundary = NULL;
+        bmx_embedded_collection_active = 0;
+        return 0;
+    }
+
     /* Queue every newly unreachable finalizable Object before invoking any
        user code. Heap order is intentionally the only ordering guarantee. */
     for (BMXEmbeddedHeapBlock *block = bmx_embedded_heap_first; block; block = block->state.next) {
@@ -1547,8 +1555,15 @@ uint32_t bmx_embedded_collect_objects(void) {
         return 0;
     }
 
+    /* Rebuild the free list while sweeping in physical order. Calling the
+       individual release path here repeatedly searches the old free list,
+       making reclamation quadratic on fragmented heaps. No callbacks run
+       during this pass, so the free list can be rebuilt in place. */
+    bmx_embedded_heap_free = NULL;
+    BMXEmbeddedHeapBlock *free_run = NULL;
     BMXEmbeddedHeapBlock *block = bmx_embedded_heap_first;
     while (block) {
+        BMXEmbeddedHeapBlock *next = block->state.next;
         if (!(block->state.flags & BMX_EMBEDDED_HEAP_BLOCK_FREE) &&
             block->state.mark_epoch != bmx_embedded_reachability_epoch &&
             (block->state.flags & (BMX_EMBEDDED_HEAP_BLOCK_OBJECT | BMX_EMBEDDED_HEAP_BLOCK_ARRAY | BMX_EMBEDDED_HEAP_BLOCK_STRING))) {
@@ -1569,10 +1584,25 @@ uint32_t bmx_embedded_collect_objects(void) {
                 bmx_embedded_live_strings -= 1u;
                 bmx_embedded_live_string_bytes -= reclaimed_bytes;
             }
-            block = bmx_embedded_heap_release(block)->state.next;
-        } else {
-            block = block->state.next;
+            block->state.requested_size = 0;
+            block->state.flags = BMX_EMBEDDED_HEAP_BLOCK_FREE;
+            block->state.mark_epoch = 0;
         }
+        if (block->state.flags & BMX_EMBEDDED_HEAP_BLOCK_FREE) {
+            if (free_run) {
+                free_run->state.capacity += (uint32_t)sizeof(BMXEmbeddedHeapBlock) + block->state.capacity;
+                free_run->state.next = next;
+                if (next) next->state.previous = free_run;
+                else bmx_embedded_heap_last = free_run;
+            } else {
+                free_run = block;
+                block->state.free_next = bmx_embedded_heap_free;
+                bmx_embedded_heap_free = block;
+            }
+        } else {
+            free_run = NULL;
+        }
+        block = next;
     }
 
     bmx_embedded_reachable_objects = bmx_embedded_live_objects;

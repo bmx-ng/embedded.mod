@@ -72,3 +72,13 @@ on either board and pass `--marker GC_SCALE` to the corresponding capture
 script. `summarize.py` validates its eight samples per case. The
 [scaling results](results/scale_results.md) compare the previous lookup with
 the two-cursor collector on the attached boards.
+
+For sweep and fragmentation measurements, build `gc_sweep.bmx` with a 64 KiB
+or 256 KiB heap and capture with `--marker GC_SWEEP`. It checks all-live and
+unreachable objects, fragmentation, surviving manual allocations, and reuse
+of reclaimed storage. `summarize.py` validates 12 samples per case. See the
+[sweep results](results/sweep_results.md) for measurements and limitations.
+
+Build `tests/embedded_gc_sweep_conformance.bmx` with a 64 KiB heap to exercise
+finalizer resurrection, exception recovery, and interleaved survivors. Capture
+with `--marker GC_CHECK`; success prints `checks=pass` and `done=1`.
