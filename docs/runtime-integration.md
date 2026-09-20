@@ -29,6 +29,10 @@ reuses the existing link in allocated heap blocks and needs no extra heap
 storage. Multi-core managed entry remains disabled until allocation locking,
 root publication, and a collection rendezvous are implemented together;
 target context checks must continue to reject foreign cores or tasks.
+During marking, reference lookup starts at the last matched heap block and
+walks the address-ordered block chain in the required direction. Pointers
+outside the arena are rejected before a block lookup. This uses one temporary
+cursor per collection and adds no heap metadata.
 
 The collector tracks live and unreachable allocations, queues finalizers, and
 returns reusable blocks to the arena. `HeapIntegrityValid()` audits the
