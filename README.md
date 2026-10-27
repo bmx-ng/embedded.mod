@@ -76,6 +76,7 @@ and other capabilities that do not share equivalent semantics.
 | `Embedded.IO.BufferedUART` | A managed receive buffer and `TStream`-compatible, line-oriented UART access |
 | `Embedded.Hardware.Watchdog` | Enable, feed, disable, timeout validation, status, and reset detection |
 | `Embedded.Network.WiFi` | Station initialization, scanning, joining, link state, and IPv4 configuration |
+| `Embedded.Network.Ethernet` | Wired-link lifecycle and events, DHCP waiting, IPv4 and MAC details, speed, and duplex state |
 | `Embedded.Network.BLE` | Scanning, advertising, connections, GATT client/server operation, security, bonding, MTU, and PHY controls |
 | `Embedded.Random` | Device entropy through the standard `Random.Core` generator API, plus raw values and buffer filling |
 | `Embedded.System.Time` | Monotonic microsecond/millisecond clocks and minimum-duration sleeps |
@@ -97,7 +98,7 @@ enter arbitrary BlitzMax code. Target adapters copy bounded data into native
 queues. `PollSystem()` or `WaitSystem()` later converts those records into
 managed events in the application context.
 
-This affects GPIO events, Wi-Fi, BLE, and similar asynchronous services. An
+This affects GPIO events, Wi-Fi, Ethernet, BLE, and similar asynchronous services. An
 application using them must keep servicing the system event loop. The relevant
 modules expose dropped-event counters where queue pressure can lose records.
 
