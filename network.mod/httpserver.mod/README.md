@@ -47,7 +47,8 @@ and streams and permits `Start()` again.
 
 The supplied [device example](examples/device_api.bmx) has a status/JSON route,
 a token-protected GPIO route, LittleFS static files on both targets and
-optional SD static files on ESP32. Set Wi-Fi credentials, a random token and a
+optional SD static files on ESP32, plus a bounded POST echo used by device
+tests. Set Wi-Fi credentials, a random token and a
 board-safe GPIO pin in a local copy. Pico builds with a 32 KiB managed heap and
 a reserved storage area are recommended for this example. ESP32 LittleFS needs
 the board's `storage` partition; SD requires a board with configured SDMMC.
@@ -79,8 +80,12 @@ the affected connection is closed.
 fragmented requests, method and framing errors, limits, slow clients,
 concurrency, disconnects, streamed files, traversal and repeated start/stop.
 Set `BMX_BMK` to the desired build tool if necessary. The device example builds
-for Pico W and ESP32-S3. On-device wire and allocation-pressure runs are still
-required before declaring cross-target behavioural equivalence.
+for Pico W and ESP32-S3. After flashing a locally configured example, run
+`python3 tests/test_httpserver_device.py BOARD_IP` against each board. Pass
+`--static-path /files/large.txt --static-sha256 HASH` to check a known file on
+LittleFS, or `/sd/...` on an ESP32 SD mount. On-device wire and
+allocation-pressure runs are still required before declaring cross-target
+behavioural equivalence.
 
 Keep-alive, chunked transfer, range/cache responses, upload streaming, SSE,
 WebSockets, multipart, authentication helpers, captive-portal workflows and OTA

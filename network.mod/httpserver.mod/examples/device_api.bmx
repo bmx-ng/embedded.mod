@@ -27,6 +27,12 @@ Type TStatusHandler Implements IHTTPHandler
 	End Method
 End Type
 
+Type TEchoHandler Implements IHTTPHandler
+	Method Handle(request:THTTPRequest, response:THTTPResponse)
+		response.Text(request.BodyText())
+	End Method
+End Type
+
 Type TGPIOHandler Implements IHTTPHandler
 	Method Handle(request:THTTPRequest, response:THTTPResponse)
 		If request.Header("X-Device-Token") <> ControlToken Then
@@ -65,6 +71,7 @@ If Not LittleFSIsMounted() Then RuntimeError "LittleFS mount failed"
 Local server:THTTPServer = THTTPServer.Create()
 If Not server Then RuntimeError "HTTP server configuration failed"
 server.Route("GET", "/status", New TStatusHandler)
+server.Route("POST", "/echo", New TEchoHandler)
 server.Route("POST", "/gpio/:pin", New TGPIOHandler)
 server.Static("/files/", "littlefs::/www/")
 ?esp32
