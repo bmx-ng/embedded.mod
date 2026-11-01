@@ -52,8 +52,8 @@ a token-protected GPIO route, LittleFS static files on both targets and
 optional SD static files on ESP32, plus a bounded POST echo used by device
 tests. Fill in `examples/device_api.local.bmx` with the Wi-Fi name, password,
 a random control token and a board-safe GPIO pin. This file is ignored by Git;
-build it instead of the tracked example. Pico builds with a 32 KiB managed heap
-and a reserved storage area are recommended for this example. ESP32 LittleFS needs
+build it instead of the tracked example. The Pico 2 W device run used a 128 KiB
+managed heap and a reserved storage area. ESP32 LittleFS needs
 the board's `storage` partition; SD requires a board with configured SDMMC.
 GPIO control starts disabled (`EnableGPIO = False`) so the HTTP routes can be
 tested without switching a physical pin. Enable it only after checking the
@@ -89,9 +89,9 @@ Set `BMX_BMK` to the desired build tool if necessary. The device example builds
 for Pico W and ESP32-S3. After flashing a locally configured example, run
 `python3 tests/test_httpserver_device.py BOARD_IP` against each board. Pass
 `--static-path /files/large.txt --static-sha256 HASH` to check a known file on
-LittleFS, or `/sd/...` on an ESP32 SD mount. On-device wire and
-allocation-pressure runs are still required before declaring cross-target
-behavioural equivalence.
+LittleFS, or `/sd/...` on an ESP32 SD mount. The device wire tests pass on a
+Pico 2 W and ESP32-S3. Static transfers were skipped because neither device
+had a fixture file; an on-device allocation-pressure run is also still needed.
 
 Keep-alive, chunked transfer, range/cache responses, upload streaming, SSE,
 WebSockets, multipart, authentication helpers, captive-portal workflows and OTA
