@@ -52,9 +52,14 @@ a token-protected GPIO route, LittleFS static files on both targets and
 optional SD static files on ESP32, plus a bounded POST echo used by device
 tests. Fill in `examples/device_api.local.bmx` with the Wi-Fi name, password,
 a random control token and a board-safe GPIO pin. This file is ignored by Git;
-build it instead of the tracked example. The Pico 2 W device run used a 128 KiB
-managed heap and a reserved storage area. ESP32 LittleFS needs
+build it instead of the tracked example. A 128 KiB managed heap was used for
+the sustained Pico 2 W and ESP32-S3 device runs. Pico LittleFS also needs a
+reserved storage area. ESP32 LittleFS needs
 the board's `storage` partition; SD requires a board with configured SDMMC.
+The generic `esp32s3_n16r8_littlefs128` profile reserves 128 KiB for LittleFS
+at flash offset `0x210000`, while keeping the NVS and application start
+offsets of `esp32s3_n16r8`. This space holds static files; the HTTP server
+does not need a storage partition for dynamic routes.
 GPIO control starts disabled (`EnableGPIO = False`) so the HTTP routes can be
 tested without switching a physical pin. Enable it only after checking the
 specific board's pinout. Static routes are registered when their storage mounts.
@@ -89,9 +94,12 @@ Set `BMX_BMK` to the desired build tool if necessary. The device example builds
 for Pico W and ESP32-S3. After flashing a locally configured example, run
 `python3 tests/test_httpserver_device.py BOARD_IP` against each board. Pass
 `--static-path /files/large.txt --static-sha256 HASH` to check a known file on
-LittleFS, or `/sd/...` on an ESP32 SD mount. The device wire tests pass on a
-Pico 2 W and ESP32-S3. Static transfers were skipped because neither device
-had a fixture file; an on-device allocation-pressure run is also still needed.
+LittleFS, or `/sd/...` on an ESP32 SD mount. The device wire tests, including
+a 16 KiB LittleFS transfer checked by SHA-256, pass on a Pico 2 W and ESP32-S3.
+Mixed status, maximum-size echo and file-transfer runs passed 150 requests on
+Pico 2 W and 300 requests on ESP32-S3 with 128 KiB heaps. A 64 KiB ESP32-S3
+run dropped a connection during the same mix; higher connection limits and
+larger configured buffers still need a separate memory-pressure check.
 
 Keep-alive, chunked transfer, range/cache responses, upload streaming, SSE,
 WebSockets, multipart, authentication helpers, captive-portal workflows and OTA
