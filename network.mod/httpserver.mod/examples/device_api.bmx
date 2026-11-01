@@ -20,10 +20,15 @@ Const NetworkName:String = "<ssid>"
 Const NetworkPassword:String = "<password>"
 Const ControlToken:String = "<random-secret>"
 Const ControlPin:UInt = 4 ' Select a safe output pin for the actual board.
+Const EnableGPIO:Int = False ' Enable only after confirming the board pinout.
 
 Type TStatusHandler Implements IHTTPHandler
 	Method Handle(request:THTTPRequest, response:THTTPResponse)
-		response.Json("{~qstatus~q:~qok~q,~qpin~q:" + GPIOGetOutput(ControlPin) + "}")
+		If EnableGPIO Then
+			response.Json("{~qstatus~q:~qok~q,~qpin~q:" + GPIOGetOutput(ControlPin) + "}")
+		Else
+			response.Json("{~qstatus~q:~qok~q}")
+		End If
 	End Method
 End Type
 
@@ -59,21 +64,24 @@ If NetworkName = "<ssid>" Or ControlToken = "<random-secret>" Then ..
 	RuntimeError "Configure the Wi-Fi credentials and control token in a local copy"
 If WiFiInitialize(WiFiCountryUK) <> 0 Then RuntimeError "Wi-Fi initialization failed"
 If WiFiConnectWait(NetworkName, NetworkPassword) <> 0 Then RuntimeError "Wi-Fi connection failed"
-If Not GPIOIsOutputCapable(ControlPin) Or Not GPIOInit(ControlPin) Or ..
-	Not GPIOSetOutput(ControlPin) Then RuntimeError "Control pin is unavailable"
+If EnableGPIO Then
+	If Not GPIOIsOutputCapable(ControlPin) Or Not GPIOInit(ControlPin) Or ..
+		Not GPIOSetOutput(ControlPin) Then RuntimeError "Control pin is unavailable"
+End If
 
+Local hasFiles:Int
 ?pico
-If Not MountLittleFS() Then RuntimeError "LittleFS mount failed"
+hasFiles = MountLittleFS()
 ?esp32
-If Not LittleFSIsMounted() Then RuntimeError "LittleFS mount failed"
+hasFiles = LittleFSIsMounted()
 ?
 
 Local server:THTTPServer = THTTPServer.Create()
 If Not server Then RuntimeError "HTTP server configuration failed"
 server.Route("GET", "/status", New TStatusHandler)
 server.Route("POST", "/echo", New TEchoHandler)
-server.Route("POST", "/gpio/:pin", New TGPIOHandler)
-server.Static("/files/", "littlefs::/www/")
+If EnableGPIO Then server.Route("POST", "/gpio/:pin", New TGPIOHandler)
+If hasFiles Then server.Static("/files/", "littlefs::/www/")
 ?esp32
 If MountSDCard() Then server.Static("/sd/", "sd::/www/")
 ?

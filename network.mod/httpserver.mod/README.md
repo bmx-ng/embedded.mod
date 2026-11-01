@@ -55,6 +55,9 @@ a random control token and a board-safe GPIO pin. This file is ignored by Git;
 build it instead of the tracked example. Pico builds with a 32 KiB managed heap
 and a reserved storage area are recommended for this example. ESP32 LittleFS needs
 the board's `storage` partition; SD requires a board with configured SDMMC.
+GPIO control starts disabled (`EnableGPIO = False`) so the HTTP routes can be
+tested without switching a physical pin. Enable it only after checking the
+specific board's pinout. Static routes are registered when their storage mounts.
 
 ## Resource defaults
 
