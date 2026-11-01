@@ -50,9 +50,10 @@ a planned restart.
 The supplied [device example](examples/device_api.bmx) has a status/JSON route,
 a token-protected GPIO route, LittleFS static files on both targets and
 optional SD static files on ESP32, plus a bounded POST echo used by device
-tests. Set Wi-Fi credentials, a random token and a
-board-safe GPIO pin in a local copy. Pico builds with a 32 KiB managed heap and
-a reserved storage area are recommended for this example. ESP32 LittleFS needs
+tests. Fill in `examples/device_api.local.bmx` with the Wi-Fi name, password,
+a random control token and a board-safe GPIO pin. This file is ignored by Git;
+build it instead of the tracked example. Pico builds with a 32 KiB managed heap
+and a reserved storage area are recommended for this example. ESP32 LittleFS needs
 the board's `storage` partition; SD requires a board with configured SDMMC.
 
 ## Resource defaults
