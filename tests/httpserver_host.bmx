@@ -8,6 +8,8 @@ Import BRL.System
 Import BRL.SystemDefault
 Import Embedded.Network.HTTPServer
 
+Global restartRequested:Int
+
 Type TStatusHandler Implements IHTTPHandler
 	Method Handle(request:THTTPRequest, response:THTTPResponse)
 		response.Json("{~qstatus~q:~qok~q}")
@@ -38,6 +40,13 @@ Type TFixedHandler Implements IHTTPHandler
 	End Method
 End Type
 
+Type TRestartHandler Implements IHTTPHandler
+	Method Handle(request:THTTPRequest, response:THTTPResponse)
+		response.Text("restarting")
+		restartRequested = True
+	End Method
+End Type
+
 If AppArgs.length < 3 Then RuntimeError "expected port and document root"
 Local config:THTTPServerConfig = New THTTPServerConfig
 config.port = AppArgs[1].ToInt()
@@ -51,6 +60,7 @@ If Not server.Route("POST", "/echo", New TEchoHandler) Then RuntimeError "route 
 If Not server.Route("GET", "/gpio/:pin", New TParamHandler) Then RuntimeError "route failed"
 If Not server.Route("GET", "/gpio/fixed", New TFixedHandler) Then RuntimeError "route failed"
 If Not server.Route("GET", "/query", New TQueryHandler) Then RuntimeError "route failed"
+If Not server.Route("GET", "/restart", New TRestartHandler) Then RuntimeError "route failed"
 If Not server.Static("/assets/", AppArgs[2]) Then RuntimeError "static route failed"
 If Not server.Start() Then RuntimeError server.LastError()
 server.Stop()
@@ -60,5 +70,10 @@ If Not server.Start() Then RuntimeError "second restart failed: " + server.LastE
 While True
 	PollSystem()
 	server.Service(8)
+	If restartRequested And server.ActiveConnections() = 0 Then
+		server.Stop()
+		If Not server.Start() Then RuntimeError "restart after request failed: " + server.LastError()
+		restartRequested = False
+	End If
 	Delay(1)
 Wend

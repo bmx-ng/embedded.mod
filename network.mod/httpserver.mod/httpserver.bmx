@@ -311,9 +311,11 @@ Type THTTPServer
 		If Not settings Then settings = New THTTPServerConfig
 		If settings.maxConnections < 1 Or settings.maxConnections > 4 Or ..
 			settings.port < 0 Or settings.port > 65535 Or ..
-			settings.maxRoutes < 1 Or settings.maxHeaderBytes < 128 Or ..
+			settings.maxRoutes < 1 Or settings.maxRoutes > 64 Or ..
+			settings.maxHeaderBytes < 128 Or ..
 			settings.maxHeaderBytes > 4096 Or settings.maxBodyBytes < 0 Or ..
 			settings.maxBodyBytes > 8192 Or settings.maxResponseBodyBytes < 0 Or ..
+			settings.maxResponseBodyBytes > 8192 Or ..
 			settings.ioBufferBytes < 64 Or settings.ioBufferBytes > 2048 Or ..
 			settings.maxHeaders < 1 Or settings.maxHeaders > 32 Or ..
 			settings.maxRequestLine < 16 Or ..
@@ -364,10 +366,19 @@ Type THTTPServer
 		Return _lastError
 	End Method
 
+	Method ActiveConnections:Int()
+		Local count:Int
+		For Local conn:THTTPConnection = EachIn connections
+			If conn Then count :+ 1
+		Next
+		Return count
+	End Method
+
 	Method Start:Int()
 		If listener Then Return True
 		listener = TSocket.CreateTCP()
 		If Not listener Then _lastError = "socket creation failed"; Return False
+		listener.SetSockOpt(SOL_SOCKET, SO_REUSEADDR, True)
 		If Not listener.Bind(config.port) Or Not listener.Listen(config.maxConnections) Then
 			_lastError = "socket bind or listen failed"
 			listener.Close()

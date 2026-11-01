@@ -150,6 +150,15 @@ class HTTPServerWireTests(unittest.TestCase):
         self.assertIn(b"405 Method Not Allowed", response)
         self.assertIn(b"Allow: GET, HEAD", response)
 
+    def test_restart_after_serving(self):
+        self.assertIn(b"200 OK", self.exchange(
+            b"GET /restart HTTP/1.1\r\nHost: local\r\n\r\n"
+        ))
+        time.sleep(0.05)
+        self.assertIn(b"200 OK", self.exchange(
+            b"GET /status HTTP/1.1\r\nHost: local\r\n\r\n"
+        ))
+
 
 if __name__ == "__main__":
     if len(sys.argv) != 2:

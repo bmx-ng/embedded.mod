@@ -43,7 +43,9 @@ Call it frequently on the managed application task or Pico core 0. Network
 reads and writes return immediately when the socket is not ready. A filesystem
 operation or application handler can still take time; handlers should avoid
 blocking and use streams for large files. `Stop()` closes all active sockets
-and streams and permits `Start()` again.
+and streams and permits `Start()` again. Routes are registered before `Start()`;
+`ActiveConnections()` helps an application wait until responses complete before
+a planned restart.
 
 The supplied [device example](examples/device_api.bmx) has a status/JSON route,
 a token-protected GPIO route, LittleFS static files on both targets and
