@@ -4,8 +4,9 @@
 #include <stdatomic.h>
 #include <stdint.h>
 
-/* Internal Stage 1 protocol. No managed worker or collector uses this yet.
-   A target adapter supplies a wait callback and binds each slot to one task.
+/* Internal Stage 1 protocol. The opt-in host runtime uses one collector and
+   one root-only worker. A target adapter supplies a wait callback and binds
+   each slot to one task.
    The two-slot limit deliberately matches the initial two-mutator design. */
 #define BMX_EMBEDDED_GC_HANDSHAKE_CAPACITY 2u
 

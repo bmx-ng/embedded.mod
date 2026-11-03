@@ -9,6 +9,15 @@
 extern "C" {
 #endif
 
+#if defined(BMX_EMBEDDED_MULTICORE) && BMX_EMBEDDED_MULTICORE
+/* Internal Stage 1 entry points. The runtime owner initializes before any
+   worker starts; the target adapter binds the returned slot to that task. */
+void bmx_embedded_gc_multicore_initialize(void);
+uint32_t bmx_embedded_gc_multicore_register(void);
+int32_t bmx_embedded_gc_multicore_unregister(void);
+void bmx_embedded_gc_poll(void);
+#endif
+
 /* Abstract method thunks emitted by bcc2 call the BRL.Blitz trap directly. */
 void brl_blitz_NullMethodError(void);
 

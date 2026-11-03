@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run precise-root collector stress under host address and undefined-behavior sanitizers."""
+"""Run precise-root and internal handshake stress under host sanitizers."""
 
 import argparse
 from pathlib import Path
@@ -67,6 +67,25 @@ def main():
             str(tests / "embedded_gc_handshake_host.c"), dead_strip,
             "-o", str(handshake)], check=True)
         subprocess.run([str(handshake)], check=True)
+
+        multicore = temporary / "multicore"
+        (multicore / "blitzmax").mkdir(parents=True)
+        (multicore / "blitzmax" / "embedded_platform.h").write_text(
+            "#include <sched.h>\n#include <stdlib.h>\n#include <stdint.h>\n"
+            "extern _Thread_local unsigned bmx_test_context_slot;\n"
+            "#define BMX_EMBEDDED_PLATFORM_CONTEXT_VALID() (bmx_test_context_slot < 2u)\n"
+            "#define BMX_EMBEDDED_PLATFORM_CONTEXT_INDEX() bmx_test_context_slot\n"
+            "#define BMX_EMBEDDED_PLATFORM_GC_WAIT() sched_yield()\n"
+            "#define BMX_EMBEDDED_PLATFORM_PANIC(message) abort()\n"
+            "#define BMX_EMBEDDED_ARENA_STORAGE(name) name\n"
+        )
+        (multicore / "embedded_runtime_test.c").write_text(source)
+        integrated = temporary / "gc_multicore_runtime_test"
+        subprocess.run(common[:1] + ["-I" + str(multicore)] + common[1:] + ["-pthread",
+            str(native / "embedded_gc_handshake.c"),
+            str(tests / "embedded_gc_multicore_runtime_host.c"), dead_strip,
+            "-o", str(integrated)], check=True)
+        subprocess.run([str(integrated)], check=True)
 
 
 if __name__ == "__main__":
