@@ -17,6 +17,10 @@
 #define BMX_EMBEDDED_ROOT_CAPACITY 64u
 #endif
 
+#ifndef BMX_EMBEDDED_GC_VALIDATE_AFTER_COLLECTION
+#define BMX_EMBEDDED_GC_VALIDATE_AFTER_COLLECTION 0
+#endif
+
 /* A single context is compiled on ordinary embedded builds. Multi-core
    targets can select two contexts once their entry and GC handshakes exist. */
 #ifndef BMX_EMBEDDED_MULTICORE
@@ -1153,6 +1157,10 @@ static void bmx_embedded_abort_collection(void) {
     bmx_embedded_finalizer_pending_objects = 0;
     bmx_embedded_collection_exception_boundary = NULL;
     bmx_embedded_collection_active = 0;
+#if BMX_EMBEDDED_GC_VALIDATE_AFTER_COLLECTION
+    if (!bmx_embedded_heap_integrity_valid())
+        BMX_EMBEDDED_PLATFORM_PANIC("BlitzMax heap invalid after aborted collection");
+#endif
 }
 
 #define BMX_EMBEDDED_PANIC_MESSAGE_CAPACITY 256u
@@ -1534,6 +1542,10 @@ uint32_t bmx_embedded_collect_objects(void) {
         bmx_embedded_collection_exception_boundary = NULL;
         bmx_embedded_collection_active = 0;
         bmx_embedded_record_object_failure();
+#if BMX_EMBEDDED_GC_VALIDATE_AFTER_COLLECTION
+        if (!bmx_embedded_heap_integrity_valid())
+            BMX_EMBEDDED_PLATFORM_PANIC("BlitzMax heap invalid after failed collection");
+#endif
         return 0;
     }
 
@@ -1542,6 +1554,10 @@ uint32_t bmx_embedded_collect_objects(void) {
     if (!bmx_embedded_unreachable_objects && !bmx_embedded_unreachable_arrays && !bmx_embedded_unreachable_strings) {
         bmx_embedded_collection_exception_boundary = NULL;
         bmx_embedded_collection_active = 0;
+#if BMX_EMBEDDED_GC_VALIDATE_AFTER_COLLECTION
+        if (!bmx_embedded_heap_integrity_valid())
+            BMX_EMBEDDED_PLATFORM_PANIC("BlitzMax heap invalid after all-live collection");
+#endif
         return 0;
     }
 
@@ -1572,6 +1588,10 @@ uint32_t bmx_embedded_collect_objects(void) {
            and can reclaim only Objects whose finalizer has already run. */
         bmx_embedded_collection_exception_boundary = NULL;
         bmx_embedded_collection_active = 0;
+#if BMX_EMBEDDED_GC_VALIDATE_AFTER_COLLECTION
+        if (!bmx_embedded_heap_integrity_valid())
+            BMX_EMBEDDED_PLATFORM_PANIC("BlitzMax heap invalid after finalizer collection");
+#endif
         return 0;
     }
 
@@ -1633,6 +1653,10 @@ uint32_t bmx_embedded_collect_objects(void) {
     bmx_embedded_unreachable_strings = 0;
     bmx_embedded_collection_exception_boundary = NULL;
     bmx_embedded_collection_active = 0;
+#if BMX_EMBEDDED_GC_VALIDATE_AFTER_COLLECTION
+    if (!bmx_embedded_heap_integrity_valid())
+        BMX_EMBEDDED_PLATFORM_PANIC("BlitzMax heap invalid after sweep");
+#endif
     return bmx_embedded_last_reclaimed_objects;
 }
 

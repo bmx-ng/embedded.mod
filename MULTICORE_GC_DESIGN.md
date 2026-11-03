@@ -1,6 +1,6 @@
 # Embedded managed multicore: audit and design decision
 
-Status: design for discussion, 2026-11-03. No multicore managed execution is enabled by this document. Line references below refer to the audited checkout; the compiler and target modules are separate repositories.
+Status: design approved for staged work, 2026-11-03. No multicore managed execution is enabled yet. Line references below refer to the audited checkout; the compiler and target modules are separate repositories.
 
 ## Decision
 
@@ -85,4 +85,4 @@ MicroPython is a useful comparison, not a template: its docs identify thread sta
 
 Instrument collection phase times (request-to-last-ack, root scan, trace, sweep, finalizers), maximum poll gap, allocator lock hold/wait, heap free-largest-block and fragmentation, failure reason, per-task state and violations. Record percentiles and maxima under fixed arena sizes and identical workloads, including 64/256 KiB where supported. Expected initial multicore overhead: one context/registry entry and one worker stack per task, target lock/semaphore state, poll code and synchronization on every shared allocation; precise bytes and flash cost require compiled builds. Stage 1 pauses can grow with a blocked non-safe task; Stage 2 STW tracing/sweep time grows with live graph/heap. No hard-real-time, lock-free-collector or pause-free guarantee follows from this plan.
 
-The immediate next action after review is Stage 0 in the embedded runtime and compiler test repositories, followed by a Stage 1 internal branch. Do not push or publish a multicore API before the Stage 2 gate.
+Stage 0 progress: `tests/run_gc_roots_host.py` runs optimized host stress under address/undefined-behavior sanitizers, exercising precise root churn, Object/Array/String exhaustion, and the existing sweep/finalizer/exception conformance. `BMX_EMBEDDED_GC_VALIDATE_AFTER_COLLECTION=1` enables heap validation on every collection exit, including finalizer exception escape; ordinary builds compile these checks out. The existing allocation-search host test and compiler IR test pass. Remaining Stage 0 work includes target hardware baselines, compiler liveness checks with newly emitted polls, and fault injection at collector phase boundaries. Do not push or publish a multicore API before the Stage 2 gate.
