@@ -17,3 +17,5 @@ Reproduction from the corresponding target distribution root:
 ```
 
 The second command runs only from `BlitzMax-esp32`; the first runs only from `BlitzMax-pico`. Flash/RAM use reported by the builders depends on the board and linker script. Hardware latency, allocation throughput, pause duration and soak results remain open Stage 0 measurements.
+
+The combined `BlitzMax-bcc2` checkout's current `bin/bmk` rejected an unrelated newer ESP32 board profile field (`resource.ethernet.mdc`) before configuring a Pico build. Its `bmk_src` source recognizes that field, so the combined checkout's bmk binary appears stale. Refresh that tool before using the combined checkout for multicore integration builds. The target-distribution baseline builds above completed without modifying tracked files.
