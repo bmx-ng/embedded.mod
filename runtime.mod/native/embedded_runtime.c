@@ -139,6 +139,13 @@ static BMXEmbeddedExecutionContext bmx_embedded_contexts[BMX_EMBEDDED_CONTEXT_CA
 static BMXEmbeddedGCHandshake bmx_embedded_handshake = { .registry_lock = ATOMIC_FLAG_INIT };
 static uint32_t bmx_embedded_handshake_initialized;
 
+#ifdef BMX_EMBEDDED_PLATFORM_GC_BIND
+static int bmx_embedded_gc_bind_slot(unsigned slot, void *unused) {
+    (void)unused;
+    return BMX_EMBEDDED_PLATFORM_GC_BIND(slot);
+}
+#endif
+
 static void bmx_embedded_gc_wait(void *unused) {
     (void)unused;
     BMX_EMBEDDED_PLATFORM_GC_WAIT();
@@ -152,8 +159,14 @@ void bmx_embedded_gc_multicore_initialize(void) {
 
 uint32_t bmx_embedded_gc_multicore_register(void) {
     unsigned slot;
+#ifdef BMX_EMBEDDED_PLATFORM_GC_BIND
+    if (!bmx_embedded_handshake_initialized ||
+        !bmx_embedded_gc_task_register_bound(&bmx_embedded_handshake, &slot,
+            bmx_embedded_gc_bind_slot, NULL)) return UINT32_MAX;
+#else
     if (!bmx_embedded_handshake_initialized ||
         !bmx_embedded_gc_task_register(&bmx_embedded_handshake, &slot)) return UINT32_MAX;
+#endif
     return slot;
 }
 
@@ -163,7 +176,11 @@ int32_t bmx_embedded_gc_multicore_unregister(void) {
     if (slot >= BMX_EMBEDDED_CONTEXT_CAPACITY ||
         bmx_embedded_contexts[slot].root_frames ||
         bmx_embedded_contexts[slot].exception_frames) return 0;
-    return bmx_embedded_gc_task_unregister(&bmx_embedded_handshake, slot);
+    if (!bmx_embedded_gc_task_unregister(&bmx_embedded_handshake, slot)) return 0;
+#ifdef BMX_EMBEDDED_PLATFORM_GC_UNBIND
+    BMX_EMBEDDED_PLATFORM_GC_UNBIND(slot);
+#endif
+    return 1;
 }
 
 void bmx_embedded_gc_poll(void) {

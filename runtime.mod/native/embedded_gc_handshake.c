@@ -23,7 +23,8 @@ void bmx_embedded_gc_handshake_init(BMXEmbeddedGCHandshake *handshake) {
     }
 }
 
-int bmx_embedded_gc_task_register(BMXEmbeddedGCHandshake *handshake, unsigned *slot) {
+int bmx_embedded_gc_task_register_bound(BMXEmbeddedGCHandshake *handshake,
+    unsigned *slot, BMXEmbeddedGCBind bind, void *argument) {
     if (!slot) return 0;
     bmx_gc_lock(handshake);
     if (atomic_load_explicit(&handshake->request_epoch, memory_order_relaxed)) {
@@ -33,6 +34,12 @@ int bmx_embedded_gc_task_register(BMXEmbeddedGCHandshake *handshake, unsigned *s
     for (unsigned index = 0; index < BMX_EMBEDDED_GC_HANDSHAKE_CAPACITY; ++index) {
         if (atomic_load_explicit(&handshake->state[index], memory_order_relaxed) != BMX_EMBEDDED_GC_TASK_EMPTY)
             continue;
+        /* Bind before publishing RUNNING while a stop request is excluded by
+           the registry lock. A failed bind leaves the slot unregistered. */
+        if (bind && !bind(index, argument)) {
+            bmx_gc_unlock(handshake);
+            return 0;
+        }
         atomic_store_explicit(&handshake->acknowledgement[index], 0u, memory_order_relaxed);
         atomic_store_explicit(&handshake->state[index], BMX_EMBEDDED_GC_TASK_RUNNING, memory_order_release);
         *slot = index;
@@ -41,6 +48,10 @@ int bmx_embedded_gc_task_register(BMXEmbeddedGCHandshake *handshake, unsigned *s
     }
     bmx_gc_unlock(handshake);
     return 0;
+}
+
+int bmx_embedded_gc_task_register(BMXEmbeddedGCHandshake *handshake, unsigned *slot) {
+    return bmx_embedded_gc_task_register_bound(handshake, slot, NULL, NULL);
 }
 
 int bmx_embedded_gc_task_unregister(BMXEmbeddedGCHandshake *handshake, unsigned slot) {

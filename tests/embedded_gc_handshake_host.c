@@ -16,6 +16,12 @@ static void yield_task(void *unused) {
     sched_yield();
 }
 
+static int reject_worker_bind(unsigned slot, void *unused) {
+    (void)unused;
+    assert(slot == 1u);
+    return 0;
+}
+
 static void await_observed(int expected) {
     for (unsigned attempt = 0; attempt < 1000000u; ++attempt) {
         if (atomic_load_explicit(&observed, memory_order_acquire) == expected) return;
@@ -57,6 +63,11 @@ int main(void) {
     bmx_embedded_gc_handshake_init(&handshake);
     unsigned owner;
     assert(bmx_embedded_gc_task_register(&handshake, &owner));
+    unsigned rejected;
+    assert(!bmx_embedded_gc_task_register_bound(&handshake, &rejected,
+        reject_worker_bind, NULL));
+    assert(atomic_load_explicit(&handshake.state[1], memory_order_acquire) ==
+        BMX_EMBEDDED_GC_TASK_EMPTY);
     pthread_t thread;
     assert(!pthread_create(&thread, NULL, worker, NULL));
     await_observed(10);

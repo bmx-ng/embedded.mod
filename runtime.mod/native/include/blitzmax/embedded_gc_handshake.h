@@ -27,9 +27,12 @@ typedef struct BMXEmbeddedGCHandshake {
 } BMXEmbeddedGCHandshake;
 
 typedef void (*BMXEmbeddedGCWait)(void *argument);
+typedef int (*BMXEmbeddedGCBind)(unsigned slot, void *argument);
 
 void bmx_embedded_gc_handshake_init(BMXEmbeddedGCHandshake *handshake);
 int bmx_embedded_gc_task_register(BMXEmbeddedGCHandshake *handshake, unsigned *slot);
+int bmx_embedded_gc_task_register_bound(BMXEmbeddedGCHandshake *handshake,
+    unsigned *slot, BMXEmbeddedGCBind bind, void *argument);
 int bmx_embedded_gc_task_unregister(BMXEmbeddedGCHandshake *handshake, unsigned slot);
 void bmx_embedded_gc_task_poll(BMXEmbeddedGCHandshake *handshake, unsigned slot,
     BMXEmbeddedGCWait wait, void *argument);
