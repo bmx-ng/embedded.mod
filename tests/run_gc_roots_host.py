@@ -60,6 +60,14 @@ def main():
         subprocess.run(common + [str(wrapper), dead_strip, "-o", str(sweep)], check=True)
         subprocess.run([str(sweep)], check=True)
 
+        # Stage 1 internal protocol test. It has no target integration yet,
+        # and deliberately cannot enable managed workers in firmware.
+        handshake = temporary / "gc_handshake_test"
+        subprocess.run(common + ["-pthread", str(native / "embedded_gc_handshake.c"),
+            str(tests / "embedded_gc_handshake_host.c"), dead_strip,
+            "-o", str(handshake)], check=True)
+        subprocess.run([str(handshake)], check=True)
+
 
 if __name__ == "__main__":
     main()
