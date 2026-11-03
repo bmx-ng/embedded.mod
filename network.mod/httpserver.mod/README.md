@@ -103,8 +103,12 @@ run dropped a connection during the same mix. For the largest configured limits
 transfer buffers), run `tests/test_httpserver_pressure.py BOARD_IP` with an
 image built for those settings. Ten four-client rounds, interrupted bodies,
 recovery and a static-file checksum passed on Pico 2 W with a 384 KiB managed
-heap. Smaller Pico heaps dropped connections at those limits. The ordinary
-example still uses the smaller resource defaults above.
+heap. The same test passed on ESP32-S3 with a 512 KiB managed heap in PSRAM
+(`-heap-region psram -heap 512k`). Smaller Pico heaps and ESP32-S3 internal
+SRAM heaps of 128 and 192 KiB dropped connections at those limits. A 256 KiB
+ESP32-S3 internal SRAM heap could not start. The ordinary example still uses
+the smaller resource defaults above and passed its device wire tests again
+after restoration on both boards.
 
 Keep-alive, chunked transfer, range/cache responses, upload streaming, SSE,
 WebSockets, multipart, authentication helpers, captive-portal workflows and OTA
