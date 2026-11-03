@@ -98,8 +98,13 @@ LittleFS, or `/sd/...` on an ESP32 SD mount. The device wire tests, including
 a 16 KiB LittleFS transfer checked by SHA-256, pass on a Pico 2 W and ESP32-S3.
 Mixed status, maximum-size echo and file-transfer runs passed 150 requests on
 Pico 2 W and 300 requests on ESP32-S3 with 128 KiB heaps. A 64 KiB ESP32-S3
-run dropped a connection during the same mix; higher connection limits and
-larger configured buffers still need a separate memory-pressure check.
+run dropped a connection during the same mix. For the largest configured limits
+(four connections, 4 KiB headers, 8 KiB request and response bodies, and 2 KiB
+transfer buffers), run `tests/test_httpserver_pressure.py BOARD_IP` with an
+image built for those settings. Ten four-client rounds, interrupted bodies,
+recovery and a static-file checksum passed on Pico 2 W with a 384 KiB managed
+heap. Smaller Pico heaps dropped connections at those limits. The ordinary
+example still uses the smaller resource defaults above.
 
 Keep-alive, chunked transfer, range/cache responses, upload streaming, SSE,
 WebSockets, multipart, authentication helpers, captive-portal workflows and OTA
