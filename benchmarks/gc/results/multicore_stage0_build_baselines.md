@@ -31,6 +31,17 @@ The attached Pico 2 (RP2350 ARM) passed the [on-device sweep conformance test](m
 
 The standard benchmark's 120,000 ordinary update rounds took 772,005 µs with the expected checksum, providing a mutator-work baseline. Its heap high-water mark was 6,560 bytes. These are per-case benchmark durations, not maximum application pause guarantees. The sweep timing and standard benchmark use different graphs and should be compared only with their corresponding post-change runs.
 
-The attached ESP32-S3 (USB Serial/JTAG, revision v0.2) accepted and verified the 64 KiB conformance firmware. A repeating diagnostic variant also flashed and verified. However, resetting through `/dev/cu.usbmodem101` repeatedly entered the ROM download monitor (`boot:0x0 (DOWNLOAD(USB/UART0))`), and no application `GC_CHECK` output was captured. This is a serial/boot capture limitation; it does not establish a GC pass or failure on the ESP32. On-device ESP32 conformance and timing, allocation throughput, broader fault injection, and long soaks remain open Stage 0 measurements.
+The attached ESP32-S3 (USB Serial/JTAG, revision v0.2) passed the [sweep conformance check](multicore_stage0_esp32s3_conformance.log) and completed the [sweep timing log](multicore_stage0_esp32s3_sweep.log) and [standard GC benchmark log](multicore_stage0_esp32s3_benchmark.log). The conformance image was a temporary diagnostic variant that ran the same C check and repeated its success marker; the timing images used the existing benchmark sources unchanged. All used release, 64 KiB, single-core builds from `BlitzMax-esp32`. `summarize.py` validated both timing logs and the standard benchmark checksum.
+
+| ESP32-S3 case | Median | p95 |
+| --- | ---: | ---: |
+| Sweep: all live | 502 µs | 504 µs |
+| Sweep: contiguous free | 183 µs | 183 µs |
+| Sweep: fragmented free | 242.5 µs | 243 µs |
+| Sweep: raw survivors | 246 µs | 246 µs |
+| GC: live backward chain | 199 µs | 208 µs |
+| GC: reclaim garbage | 249 µs | 265 µs |
+
+The ESP32 standard benchmark's 120,000 ordinary update rounds took 2,744,619 µs with the expected checksum; heap high-water mark was 6,560 bytes. These durations are baselines for the same image on this target, not a cross-device performance claim. Opening the USB Serial/JTAG monitor, then physically pressing RESET with BOOT untouched, reliably booted the application. Software control-line resets had entered the ROM download monitor, so automated capture on this port still needs a working reset method. Allocation throughput, broader fault injection, and long soaks remain open Stage 0 measurements.
 
 The combined `BlitzMax-bcc2` checkout's current `bin/bmk` rejected an unrelated newer ESP32 board profile field (`resource.ethernet.mdc`) before configuring a Pico build. Its `bmk_src` source recognizes that field, so the combined checkout's bmk binary appears stale. Refresh that tool before using the combined checkout for multicore integration builds. The target-distribution baseline builds above completed without modifying tracked files.
