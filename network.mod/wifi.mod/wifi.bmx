@@ -194,7 +194,7 @@ Function WiFiConnectWait:Int(ssid:String, password:String = "", ..
 		Wend
 		If attempt < attempts Then
 			WiFiDisconnect()
-			Delay retryDelay
+			Delay Int(Min(retryDelay, UInt($7fffffff)))
 		End If
 	Next
 	If lastStatus < 0 Then Return lastStatus
