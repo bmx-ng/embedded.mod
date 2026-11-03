@@ -80,6 +80,26 @@ int main(void) {
     bmx_embedded_collect_objects();
     check_heap();
     assert(bmx_embedded_object_live_count() == 0);
+
+    /* An invalid precise edge must abort collection before sweeping. Once
+       repaired, the same reachable object remains usable. */
+    root = (HostNode *)bmx_embedded_object_allocate(&node_type);
+    assert(root);
+    root->serial = 700;
+    root->next = (HostNode *)(uintptr_t)0x1234u;
+    const uint32_t live_before_invalid = bmx_embedded_object_live_count();
+    assert(bmx_embedded_collect_objects() == 0);
+    assert(bmx_embedded_invalid_reference_count() > 0);
+    assert(bmx_embedded_object_live_count() == live_before_invalid);
+    assert(bmx_embedded_heap_integrity_valid());
+    root->next = root;
+    bmx_embedded_collect_objects();
+    check_heap();
+    assert(root->serial == 700);
+    root = NULL;
+    bmx_embedded_collect_objects();
+    check_heap();
+    assert(bmx_embedded_object_live_count() == 0);
     bmx_embedded_root_frame_leave(&frame);
 
     /* Fill every reusable block and the arena tail with non-collectable raw
