@@ -5,14 +5,22 @@
 #include <stdio.h>
 
 static int reject_allocation(void);
+static int abort_collection(unsigned phase);
 #define BMX_EMBEDDED_GC_TEST_REJECT_ALLOCATION() reject_allocation()
+#define BMX_EMBEDDED_GC_TEST_ABORT_COLLECTION(phase) abort_collection(phase)
 #define BMX_EMBEDDED_ARENA_SIZE (128u * 1024u)
 #include "embedded_runtime_test.c"
 
 static unsigned reject_budget;
+static int abort_phase = -1;
 static int reject_allocation(void) {
     if (!reject_budget) return 0;
     --reject_budget;
+    return 1;
+}
+static int abort_collection(unsigned phase) {
+    if ((int)phase != abort_phase) return 0;
+    abort_phase = -1;
     return 1;
 }
 
@@ -110,6 +118,24 @@ int main(void) {
     check_heap();
     assert(bmx_embedded_object_live_count() == 0);
     bmx_embedded_root_frame_leave(&frame);
+
+    /* A failed collection before or after marking must never sweep with a
+       partial epoch; the following successful collection must still reclaim. */
+    for (int phase = 0; phase < 2; ++phase) {
+        HostNode *abandoned = (HostNode *)bmx_embedded_object_allocate(&node_type);
+        assert(abandoned);
+        abandoned->next = abandoned;
+        abandoned = NULL;
+        const uint32_t live_before_abort = bmx_embedded_object_live_count();
+        abort_phase = phase;
+        assert(bmx_embedded_collect_objects() == 0);
+        assert(abort_phase == -1);
+        assert(bmx_embedded_object_live_count() == live_before_abort);
+        check_heap();
+        assert(bmx_embedded_collect_objects() == 1);
+        assert(bmx_embedded_object_live_count() == live_before_abort - 1);
+        check_heap();
+    }
 
     /* Force failure of the first allocation attempt, then of both attempts.
        These exercise automatic collection/retry without relying on arena size

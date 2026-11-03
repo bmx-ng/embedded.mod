@@ -1541,7 +1541,34 @@ uint32_t bmx_embedded_collect_objects(void) {
     bmx_embedded_last_reclaimed_string_byte_total = 0;
     bmx_embedded_finalizer_pending_objects = 0;
     bmx_embedded_last_finalized_objects = 0;
+#ifdef BMX_EMBEDDED_GC_TEST_ABORT_COLLECTION
+    /* Test-only pre-mark abort: no root or heap state has been changed. */
+    if (BMX_EMBEDDED_GC_TEST_ABORT_COLLECTION(0)) {
+        bmx_embedded_collection_exception_boundary = NULL;
+        bmx_embedded_collection_active = 0;
+        bmx_embedded_record_object_failure();
+#if BMX_EMBEDDED_GC_VALIDATE_AFTER_COLLECTION
+        if (!bmx_embedded_heap_integrity_valid())
+            BMX_EMBEDDED_PLATFORM_PANIC("BlitzMax heap invalid after pre-mark abort");
+#endif
+        return 0;
+    }
+#endif
     bmx_embedded_reachability_audit();
+#ifdef BMX_EMBEDDED_GC_TEST_ABORT_COLLECTION
+    /* Test-only post-mark abort: the next audit advances the mark epoch, so
+       neither survivors nor garbage can be swept from this partial cycle. */
+    if (BMX_EMBEDDED_GC_TEST_ABORT_COLLECTION(1)) {
+        bmx_embedded_collection_exception_boundary = NULL;
+        bmx_embedded_collection_active = 0;
+        bmx_embedded_record_object_failure();
+#if BMX_EMBEDDED_GC_VALIDATE_AFTER_COLLECTION
+        if (!bmx_embedded_heap_integrity_valid())
+            BMX_EMBEDDED_PLATFORM_PANIC("BlitzMax heap invalid after post-mark abort");
+#endif
+        return 0;
+    }
+#endif
     if (bmx_embedded_invalid_references) {
         bmx_embedded_collection_exception_boundary = NULL;
         bmx_embedded_collection_active = 0;
