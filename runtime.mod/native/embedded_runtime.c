@@ -253,6 +253,10 @@ static BMXEmbeddedHeapBlock *bmx_embedded_heap_release(BMXEmbeddedHeapBlock *blo
 
 static void *bmx_embedded_heap_allocate(uint32_t bytes, uint32_t flags) {
     if (!bytes) return NULL;
+#ifdef BMX_EMBEDDED_GC_TEST_REJECT_ALLOCATION
+    /* Host fault injection only. Ordinary builds do not emit this branch. */
+    if (BMX_EMBEDDED_GC_TEST_REJECT_ALLOCATION()) return NULL;
+#endif
     const uint32_t aligned_bytes = bmx_embedded_align_size(bytes);
     if (aligned_bytes < bytes) return NULL;
     uint8_t *arena = bmx_embedded_arena_base();

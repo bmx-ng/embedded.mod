@@ -4,8 +4,17 @@
 #include <stdint.h>
 #include <stdio.h>
 
+static int reject_allocation(void);
+#define BMX_EMBEDDED_GC_TEST_REJECT_ALLOCATION() reject_allocation()
 #define BMX_EMBEDDED_ARENA_SIZE (128u * 1024u)
 #include "embedded_runtime_test.c"
+
+static unsigned reject_budget;
+static int reject_allocation(void) {
+    if (!reject_budget) return 0;
+    --reject_budget;
+    return 1;
+}
 
 typedef struct HostNode {
     BMXEmbeddedObject object;
@@ -101,6 +110,39 @@ int main(void) {
     check_heap();
     assert(bmx_embedded_object_live_count() == 0);
     bmx_embedded_root_frame_leave(&frame);
+
+    /* Force failure of the first allocation attempt, then of both attempts.
+       These exercise automatic collection/retry without relying on arena size
+       or fragmentation to choose the interleaving. */
+    for (unsigned kind = 0; kind < 3; ++kind) {
+        reject_budget = 1;
+        uint32_t automatic_before = bmx_embedded_automatic_collection_count();
+        void *recovered = kind == 0 ? (void *)bmx_embedded_object_allocate(&node_type) :
+            kind == 1 ? (void *)bmx_embedded_array_new_1d(8, sizeof(void *),
+                BMX_EMBEDDED_ARRAY_ELEMENT_OBJECT, NULL, NULL) :
+            (void *)bmx_embedded_string_allocate(8);
+        assert(recovered && reject_budget == 0);
+        assert(bmx_embedded_automatic_collection_count() == automatic_before + 1);
+        bmx_embedded_collect_objects();
+        check_heap();
+
+        reject_budget = 2;
+        automatic_before = bmx_embedded_automatic_collection_count();
+        BMXEmbeddedExceptionFrame injected_failure;
+        bmx_embedded_exception_enter(&injected_failure);
+        if (setjmp(injected_failure.buffer) == 0) {
+            if (kind == 0) (void)bmx_embedded_object_allocate(&node_type);
+            else if (kind == 1) (void)bmx_embedded_array_new_1d(8, sizeof(void *),
+                BMX_EMBEDDED_ARRAY_ELEMENT_OBJECT, NULL, NULL);
+            else (void)bmx_embedded_string_allocate(8);
+            assert(!"two rejected attempts must throw");
+        }
+        BMXEmbeddedException injected = bmx_embedded_exception_catch();
+        assert(injected.kind == BMX_EMBEDDED_EXCEPTION_STRING);
+        assert(reject_budget == 0);
+        assert(bmx_embedded_automatic_collection_count() == automatic_before + 1);
+        check_heap();
+    }
 
     /* Fill every reusable block and the arena tail with non-collectable raw
        memory. Each managed allocation must throw its own prebuilt exception
