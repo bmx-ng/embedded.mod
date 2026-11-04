@@ -151,6 +151,12 @@ static BMXEmbeddedExecutionContext bmx_embedded_contexts[BMX_EMBEDDED_CONTEXT_CA
 #if BMX_EMBEDDED_MULTICORE
 static BMXEmbeddedGCHandshake bmx_embedded_handshake = { .registry_lock = ATOMIC_FLAG_INIT };
 static atomic_flag bmx_embedded_allocator_lock = ATOMIC_FLAG_INIT;
+#if defined(BMX_EMBEDDED_GC_PERF_COUNTERS) && BMX_EMBEDDED_GC_PERF_COUNTERS
+static uint32_t bmx_embedded_lock_entries[BMX_EMBEDDED_CONTEXT_CAPACITY];
+static uint32_t bmx_embedded_lock_contended[BMX_EMBEDDED_CONTEXT_CAPACITY];
+static uint32_t bmx_embedded_lock_spins[BMX_EMBEDDED_CONTEXT_CAPACITY];
+static uint32_t bmx_embedded_lock_pending_spins[BMX_EMBEDDED_CONTEXT_CAPACITY];
+#endif
 static uint32_t bmx_embedded_handshake_initialized;
 #if defined(BMX_EMBEDDED_PLATFORM_GC_WORKER_START) && defined(BMX_EMBEDDED_PLATFORM_GC_WORKER_JOIN)
 enum {
@@ -166,12 +172,60 @@ static void *bmx_embedded_worker_argument;
 #endif
 
 static void bmx_embedded_allocator_lock_enter(void) {
+#if defined(BMX_EMBEDDED_GC_PERF_COUNTERS) && BMX_EMBEDDED_GC_PERF_COUNTERS
+    unsigned slot = (unsigned)BMX_EMBEDDED_PLATFORM_CONTEXT_INDEX();
+    uint32_t spins = 0;
+    while (atomic_flag_test_and_set_explicit(&bmx_embedded_allocator_lock, memory_order_acquire)) ++spins;
+    if (slot < BMX_EMBEDDED_CONTEXT_CAPACITY) bmx_embedded_lock_pending_spins[slot] = spins;
+#else
     while (atomic_flag_test_and_set_explicit(&bmx_embedded_allocator_lock, memory_order_acquire)) {}
+#endif
 }
 
 static void bmx_embedded_allocator_lock_leave(void) {
     atomic_flag_clear_explicit(&bmx_embedded_allocator_lock, memory_order_release);
+#if defined(BMX_EMBEDDED_GC_PERF_COUNTERS) && BMX_EMBEDDED_GC_PERF_COUNTERS
+    unsigned slot = (unsigned)BMX_EMBEDDED_PLATFORM_CONTEXT_INDEX();
+    if (slot < BMX_EMBEDDED_CONTEXT_CAPACITY) {
+        uint32_t spins = bmx_embedded_lock_pending_spins[slot];
+        ++bmx_embedded_lock_entries[slot];
+        bmx_embedded_lock_contended[slot] += spins != 0u;
+        bmx_embedded_lock_spins[slot] += spins;
+    }
+#endif
 }
+
+#if defined(BMX_EMBEDDED_GC_PERF_COUNTERS) && BMX_EMBEDDED_GC_PERF_COUNTERS
+void bmx_embedded_gc_allocator_lock_counters_reset(void) {
+    for (unsigned slot = 0; slot < BMX_EMBEDDED_CONTEXT_CAPACITY; ++slot) {
+        bmx_embedded_lock_entries[slot] = 0;
+        bmx_embedded_lock_contended[slot] = 0;
+        bmx_embedded_lock_spins[slot] = 0;
+        bmx_embedded_lock_pending_spins[slot] = 0;
+    }
+}
+
+uint32_t bmx_embedded_gc_allocator_lock_entries(void) {
+    uint32_t total = 0;
+    for (unsigned slot = 0; slot < BMX_EMBEDDED_CONTEXT_CAPACITY; ++slot)
+        total += bmx_embedded_lock_entries[slot];
+    return total;
+}
+
+uint32_t bmx_embedded_gc_allocator_lock_contended(void) {
+    uint32_t total = 0;
+    for (unsigned slot = 0; slot < BMX_EMBEDDED_CONTEXT_CAPACITY; ++slot)
+        total += bmx_embedded_lock_contended[slot];
+    return total;
+}
+
+uint32_t bmx_embedded_gc_allocator_lock_spins(void) {
+    uint32_t total = 0;
+    for (unsigned slot = 0; slot < BMX_EMBEDDED_CONTEXT_CAPACITY; ++slot)
+        total += bmx_embedded_lock_spins[slot];
+    return total;
+}
+#endif
 
 static uint32_t bmx_embedded_allocator_stat_read(const uint32_t *value) {
     bmx_embedded_allocator_lock_enter();

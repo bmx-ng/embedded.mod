@@ -1,0 +1,3 @@
+GC_ALLOC,done=1
+GC_ALLOC,format=1,mode=1,arena=65536,arena_high_water=6240,case=owner,allocations=16384,allocation_us=55654,collection_us=12539,instrumented=1,lock_entries=16384,lock_contended=0,lock_spins=0,checksum=2621440
+GC_ALLOC,format=1,mode=1,arena=65536,arena_high_water=6240,case=parallel,allocations=32768,owner_allocation_us=63878,worker_allocation_us=64541,wall_us=65363,collection_us=23279,instrumented=1,lock_entries=32768,lock_contended=13322,lock_spins=39822,checksum=5242880

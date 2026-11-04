@@ -16,6 +16,14 @@ void bmx_embedded_gc_multicore_initialize(void);
 uint32_t bmx_embedded_gc_multicore_register(void);
 int32_t bmx_embedded_gc_multicore_unregister(void);
 void bmx_embedded_gc_poll(void);
+#if defined(BMX_EMBEDDED_GC_PERF_COUNTERS) && BMX_EMBEDDED_GC_PERF_COUNTERS
+/* Benchmark-only allocator lock counters. Build every C unit with the same
+   define; ordinary firmware does not contain these counters. */
+void bmx_embedded_gc_allocator_lock_counters_reset(void);
+uint32_t bmx_embedded_gc_allocator_lock_entries(void);
+uint32_t bmx_embedded_gc_allocator_lock_contended(void);
+uint32_t bmx_embedded_gc_allocator_lock_spins(void);
+#endif
 /* A registered worker may block in native code only after publishing every
    live managed handle in a root frame. It must not access the managed heap
    until leave returns; leave waits for any active collection to finish. */
