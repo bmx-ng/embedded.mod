@@ -1,5 +1,6 @@
 #include <stdatomic.h>
 #include <stdint.h>
+#include <stdio.h>
 
 #include "blitzmax/embedded_runtime.h"
 
@@ -108,7 +109,8 @@ static int wait_stage(LifecycleJob *job) {
     return 0;
 }
 
-int32_t bmx_embedded_gc_stage2_worker_lifecycle_device_test(void) {
+int32_t bmx_embedded_gc_stage2_worker_lifecycle_device_test(uint32_t cycles) {
+    if (!cycles || cycles > 1000000u) return 11;
     bmx_embedded_gc_multicore_initialize();
     if (bmx_embedded_gc_multicore_register() != 0u) return 1;
     if (!bmx_embedded_arena_capacity()) return 2;
@@ -116,7 +118,7 @@ int32_t bmx_embedded_gc_stage2_worker_lifecycle_device_test(void) {
     uint32_t objects = bmx_embedded_object_live_count();
     uint32_t arrays = bmx_embedded_array_live_count();
     uint32_t strings = bmx_embedded_string_live_count();
-    for (unsigned repeat = 0; repeat < 16u; ++repeat) {
+    for (uint32_t repeat = 0; repeat < cycles; ++repeat) {
         LifecycleJob job = {.value = repeat + 1u, .throw_exception = repeat == 7u};
         atomic_init(&job.stage, 0u);
         atomic_init(&job.release, 0u);
@@ -140,6 +142,10 @@ int32_t bmx_embedded_gc_stage2_worker_lifecycle_device_test(void) {
             bmx_embedded_array_live_count() != arrays ||
             bmx_embedded_string_live_count() != strings ||
             !bmx_embedded_heap_integrity_valid()) return 10;
+        uint32_t progress_interval = cycles >= 100000u ? 100000u : 1000u;
+        if (cycles >= 1000u && (repeat + 1u) % progress_interval == 0u)
+            printf("GC_STAGE2_SOAK,progress=%lu/%lu\n",
+                (unsigned long)(repeat + 1u), (unsigned long)cycles);
     }
     return 0;
 }

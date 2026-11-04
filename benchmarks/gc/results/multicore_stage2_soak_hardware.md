@@ -1,0 +1,7 @@
+# Stage 2 worker lifecycle soak
+
+The [fixture](../../../tests/embedded_gc_stage2_soak_device.bmx) repeated the runtime-owned worker lifecycle one million times with a 64 KiB managed arena. Every job allocated and rooted an Object, Array and String; caught oversized allocation failures for each kind; survived an owner collection; then joined and verified reclamation and heap integrity. The eighth job threw through the top-level worker boundary, and later jobs checked that the worker could start again.
+
+On 2026-11-04, the Pico 2 (RP2350 ARM) image reported `GC_STAGE2_SOAK,format=1,cycles=1000000,oom=pass,exception=pass,reclaim=pass,duration_us=67796682,done=1`. The ESP32-S3 image reported the same pass fields with `duration_us=321275253`. Both images were flashed, verified and observed over serial. The Pico took 67.8 seconds and the ESP32-S3 took 321.3 seconds, about 4.74 times as long. This workload is dominated by worker startup, scheduling, join, and repeated OOM checks; it does not isolate collector throughput.
+
+For context, the earlier [single-core baseline](multicore_stage0_build_baselines.md) measured a 120,000-round ordinary update benchmark at 0.772 seconds on Pico 2 and 2.745 seconds on ESP32-S3, about 3.56 times as long. Its matched GC sweep cases were closer: the ESP32-S3 medians were roughly 1.12–1.38 times the Pico 2 medians. These are timings for the attached boards and fixed workloads, not general device rankings.
