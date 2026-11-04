@@ -32,6 +32,13 @@ uint64_t bmx_embedded_gc_allocator_lock_wait_us(void);
    until leave returns; leave waits for any active collection to finish. */
 int32_t bmx_embedded_gc_enter_native_safe(void);
 int32_t bmx_embedded_gc_leave_native_safe(void);
+/* Enter native-safe only when both transfer buffers are outside the managed
+   arena or lie within live, noncollectable MemAlloc payloads. The caller owns
+   each buffer until the transfer returns and must not free or resize it during
+   the call. Array-backed pointers keep the worker RUNNING. A zero byte range
+   is ignored. */
+int32_t bmx_embedded_gc_enter_native_safe_for_buffers(const void *first,
+    size_t first_bytes, const void *second, size_t second_bytes);
 /* Internal worker lifecycle. The argument is native data; any managed value
    it names must be rooted by the owner until the worker establishes its own
    root. Join returns 1 on success, -1 after a worker exception, and 0 while

@@ -444,6 +444,49 @@ int32_t bmx_embedded_gc_enter_native_safe(void) {
     return bmx_embedded_gc_task_enter_native_safe(&bmx_embedded_handshake, slot);
 }
 
+static int bmx_embedded_gc_buffer_stable(const void *buffer, size_t bytes) {
+    if (!bytes) return 1;
+    if (!buffer) return 0;
+    uintptr_t first = (uintptr_t)buffer;
+    if (bytes > UINTPTR_MAX - first) return 0;
+    uintptr_t last = first + bytes;
+    uint8_t *arena = bmx_embedded_arena_base();
+    if (!arena) return 0;
+    uintptr_t arena_first = (uintptr_t)arena;
+    if (BMX_EMBEDDED_ARENA_SIZE > UINTPTR_MAX - arena_first) return 0;
+    if (last <= arena_first || first >= arena_first + BMX_EMBEDDED_ARENA_SIZE)
+        return 1;
+    if (first < arena_first || last > arena_first + BMX_EMBEDDED_ARENA_SIZE)
+        return 0;
+
+    /* MemAlloc blocks share the arena with collectable objects, but remain
+       allocated until MemFree. Only the requested payload is valid I/O memory.
+       The worker is still running here, so a collection cannot sweep the
+       block list; the allocator lock excludes concurrent allocation. */
+    int stable = 0;
+    bmx_embedded_allocator_lock_enter();
+    for (BMXEmbeddedHeapBlock *block = bmx_embedded_heap_first; block;
+            block = block->state.next) {
+        uintptr_t payload = (uintptr_t)(block + 1);
+        if (payload > first) break;
+        if (block->state.flags == BMX_EMBEDDED_HEAP_BLOCK_RAW &&
+                first - payload <= block->state.requested_size &&
+                bytes <= block->state.requested_size - (first - payload)) {
+            stable = 1;
+            break;
+        }
+    }
+    bmx_embedded_allocator_lock_leave();
+    return stable;
+}
+
+int32_t bmx_embedded_gc_enter_native_safe_for_buffers(const void *first,
+        size_t first_bytes, const void *second, size_t second_bytes) {
+    if (!bmx_embedded_gc_buffer_stable(first, first_bytes) ||
+            !bmx_embedded_gc_buffer_stable(second, second_bytes)) return 0;
+    return bmx_embedded_gc_enter_native_safe();
+}
+
 int32_t bmx_embedded_gc_leave_native_safe(void) {
     if (!BMX_EMBEDDED_PLATFORM_CONTEXT_VALID()) return 0;
     unsigned slot = (unsigned)BMX_EMBEDDED_PLATFORM_CONTEXT_INDEX();

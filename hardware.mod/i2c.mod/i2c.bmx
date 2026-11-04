@@ -7,6 +7,9 @@ Rem
 bbdoc: Portable I2C master controllers for embedded targets.
 about: The combined write/read operation performs an atomic repeated-Start
 transaction and is the portable way to read a device register.
+Transfer buffers are Byte Ptr memory owned by the caller until the call returns.
+MemAlloc memory is suitable for multicore transfers. If a pointer refers to
+array data, keep the array referenced for the entire call.
 End Rem
 Module Embedded.Hardware.I2C
 ?embedded

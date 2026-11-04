@@ -10,10 +10,13 @@ core/task. JoinManagedWorker returns 1 after normal completion, -1 after an
 uncaught worker exception, or 0 while it is still running. Only the owner
 task may start or join. Shared managed values require an explicit atomic
 handoff and precise roots; ordinary shared field writes are not synchronized.
-Worker sleeps and scalar UART waits can overlap owner collection. Blocking
-calls that retain a raw buffer pointer, such as UART, I2C, SPI, stdio and
-filesystem transfers, are not yet certified for managed workers and can make
-an owner collection time out while the call is blocked.
+Worker sleeps and scalar UART waits can overlap owner collection. On Pico,
+blocking UART, I2C and SPI transfers can also overlap collection when every
+buffer is outside the managed arena or allocated with MemAlloc. Keep each
+buffer alive until the call returns. An array-backed pointer keeps the worker
+running, so collection waits for that transfer to finish; keep the array
+referenced throughout the call. Stdio and filesystem transfers still need
+their own native-blocking audit.
 End Rem
 Module Embedded.Runtime.Worker
 ?embedded

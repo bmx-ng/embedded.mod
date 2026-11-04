@@ -16,6 +16,15 @@ static atomic_uint api_job;
 static atomic_uint api_ready;
 static atomic_uint api_release;
 static atomic_uint api_failed;
+static atomic_uintptr_t api_buffer;
+
+void bmx_stage2_api_set_buffer(void *buffer) {
+    atomic_store_explicit(&api_buffer, (uintptr_t)buffer, memory_order_release);
+}
+
+void *bmx_stage2_api_get_buffer(void) {
+    return (void *)atomic_load_explicit(&api_buffer, memory_order_acquire);
+}
 
 void bmx_stage2_api_set_job(uint32_t job) {
     atomic_store_explicit(&api_ready, 0u, memory_order_relaxed);
