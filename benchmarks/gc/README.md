@@ -93,3 +93,11 @@ See [allocation results](results/allocation_results.md) for paired measurements,
 validation, and the distinction between focused and mixed-workload gains.
 The host selection/unlinking checks run with
 `python3 tests/run_allocation_search_host.py` (Clang with sanitizers).
+
+For a multicore stop-the-world pause baseline, build `gc_pause.bmx` with
+`-gc-multicore` and a 64 KiB or 256 KiB SRAM arena. It checks live forward and
+alternating-link graphs, contiguous and fragmented garbage, and a polling
+worker. Each case reports twelve whole collection-call samples. See the
+[pause results](results/multicore_pause_baseline.md) and four raw captures.
+Pass `--marker GC_PAUSE` to either capture script; the Pico capture starts at
+the next complete repeated result block when the USB serial port opens late.

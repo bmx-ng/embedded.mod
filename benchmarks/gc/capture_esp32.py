@@ -15,7 +15,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--port", required=True)
     parser.add_argument("--output", required=True)
-    parser.add_argument("--marker", choices=("GC_BENCH", "GC_VARIED", "GC_SCALE", "GC_SWEEP", "GC_CHECK", "ALLOC_SEARCH"), default="GC_BENCH")
+    parser.add_argument("--marker", choices=("GC_BENCH", "GC_VARIED", "GC_SCALE", "GC_SWEEP", "GC_CHECK", "ALLOC_SEARCH", "GC_ALLOC", "GC_IRREG", "GC_PAUSE"), default="GC_BENCH")
     parser.add_argument("--timeout", type=float, default=30.0)
     args = parser.parse_args()
 
@@ -35,9 +35,18 @@ def main():
                 if not line:
                     continue
                 print(line, flush=True)
-                if line.startswith(f"{args.marker},format=1,"):
+                new_block = line.startswith(f"{args.marker},format=1,")
+                if args.marker == "GC_ALLOC":
+                    new_block = new_block and ",case=owner," in line
+                elif args.marker == "GC_IRREG":
+                    new_block = new_block and ",case=0," in line
+                if args.marker in ("GC_ALLOC", "GC_IRREG", "GC_PAUSE") and new_block:
+                    lines = [line]
                     started = True
-                if started:
+                elif new_block:
+                    started = True
+                    lines.append(line)
+                elif started:
                     lines.append(line)
                 if started and line == f"{args.marker},done=1":
                     with open(args.output, "w", encoding="utf-8") as output:
