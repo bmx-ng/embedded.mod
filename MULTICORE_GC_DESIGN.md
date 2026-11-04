@@ -1,6 +1,6 @@
 # Embedded managed multicore: audit and design decision
 
-Status: Stage 1 internal prototype complete; Stage 2 in progress, 2026-11-04. Multicore managed execution remains opt-in and restricted to internal experiments. The table under "Current implementation and boundaries" records the pre-implementation audit; its line references refer to that checkout. The compiler and target modules are separate repositories.
+Status: Stage 2 internal functional gate complete, 2026-11-04. Multicore managed execution remains opt-in. The table under "Current implementation and boundaries" records the pre-implementation audit; its line references refer to that checkout. The compiler and target modules are separate repositories.
 
 ## Decision
 
@@ -122,3 +122,19 @@ The runtime now exposes opt-in `enter_native_safe` and `leave_native_safe` calls
 The runtime now also owns an internal worker entry and join path. It registers and binds the target task before invoking a native managed entry, catches an escaping exception at a top-level boundary, requires all worker frames to be gone before unregistration, and joins target resources before another start. A bounded join can return while a job is still running. Pico reserves core 1 and resets it after join; ESP32 creates a pinned FreeRTOS task, waits for its post-entry suspension, then deletes it. The [host lifecycle test](tests/embedded_gc_stage2_worker_lifecycle_host.c) passes 32 jobs with a failed start, Object/Array/String worker OOM and an exception under both sanitizer modes. The [device check](benchmarks/gc/results/multicore_stage2_worker_lifecycle_hardware.md) passes 16 repeated jobs and all three worker OOM paths on Pico 2 and ESP32-S3.
 
 The [one-million-job soak](benchmarks/gc/results/multicore_stage2_soak_hardware.md) passed on both boards, including repeated worker OOM, exception recovery, collections and reclamation. The [cross-core event, managed callback and hardware interrupt checks](benchmarks/gc/results/multicore_stage2_events_hardware.md) passed 100,000 ordered native records, 10,000 managed callbacks and 1,000 ISR-produced records per board while collecting. The S3 callback gate rejected both registered-worker and unregistered-task attempts, then accepted owner dispatch. Pico's deferred event queue now uses a multicore-only lock in addition to interrupt masking. A [managed worker API](benchmarks/gc/results/multicore_stage2_managed_api_hardware.md) passed 100 generated BlitzMax jobs on each board. The [10,000-round stress fixture](benchmarks/gc/results/multicore_stage2_stress_hardware.md) exercised concurrent allocation, cycles, root churn, atomic handoff, mutation, OOM and reclamation on both boards. It exposed a worker-exit/collection overlap, now fixed and forced by a host sanitizer test. A [fragmented-heap OOM matrix](benchmarks/gc/results/multicore_stage2_oom_matrix_hardware.md) passed on both boards, including arena failure and recovery. Detailed phase timings remain to be measured.
+
+## Stage 2 completion
+
+The internal functional gate in the table above is met as of 2026-11-04:
+
+| Gate | Evidence |
+| --- | --- |
+| Runtime-created managed worker, task-local exceptions and reuse | The [managed API check](benchmarks/gc/results/multicore_stage2_managed_api_hardware.md) passed 100 generated BlitzMax jobs on both boards; the [lifecycle soak](benchmarks/gc/results/multicore_stage2_soak_hardware.md) passed one million native jobs per board with worker OOM and exception recovery. |
+| Concurrent allocation, cycles, root churn, publication and mutation | The [stress check](benchmarks/gc/results/multicore_stage2_stress_hardware.md) passed 10,000 rounds per board, with Object/Array/String allocation on both tasks, a self-cycle, atomic handoff, ordered mutation and reclamation after every round. |
+| Native block and re-entry | The [native-safe host test](tests/embedded_gc_stage2_native_safe_host.c) passed under both sanitizer modes, and the [managed allocator device check](benchmarks/gc/results/multicore_stage2_managed_allocator_hardware.md) passed on both boards. |
+| Interrupts and deferred managed callbacks | The [event checks](benchmarks/gc/results/multicore_stage2_events_hardware.md) passed 100,000 cross-core records, 10,000 managed callbacks and 1,000 hardware IRQ records per board. The S3 callback gate rejected worker and unrelated-task re-entry. |
+| OOM fault matrix and recovery | The [fragmentation matrix](benchmarks/gc/results/multicore_stage2_oom_matrix_hardware.md) passed Object/Array/String failure despite total free space, raw arena failure and subsequent recovery on both boards. The stress and lifecycle fixtures exercise worker-local failure paths. |
+| Long soaks and adverse interleavings | The million-job soak completed without a lost object or deadlock. Stress testing found and fixed a worker-exit/collection overlap. The [host lifecycle test](tests/embedded_gc_stage2_worker_lifecycle_host.c) now forces that overlap and passes under ThreadSanitizer; the corrected board images pass. |
+| Default performance mode | The [single-core benchmark rerun](benchmarks/gc/results/multicore_stage2_singlecore_performance.md) matches the Stage 0 baseline within measurement noise on both boards. |
+
+The collector remains stop-the-world and cooperative. Shared mutable fields still need application-level synchronization. Collection phase timing, allocator contention and 256 KiB workload measurements remain useful before considering Stage 3; they are not a reason to add per-core allocation state without evidence.
