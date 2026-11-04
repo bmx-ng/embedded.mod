@@ -278,6 +278,35 @@ int32_t bmx_embedded_gc_worker_start(BMXEmbeddedGCWorkerEntry entry, void *argum
 #endif
 }
 
+#if defined(BMX_EMBEDDED_PLATFORM_GC_WORKER_START) && defined(BMX_EMBEDDED_PLATFORM_GC_WORKER_JOIN)
+static void (*bmx_embedded_managed_worker_function)(void);
+
+static void bmx_embedded_managed_worker_call(void *unused) {
+    (void)unused;
+    bmx_embedded_managed_worker_function();
+}
+
+int32_t bmx_embedded_gc_worker_start_function(void (*entry)(void)) {
+    if (!entry || !BMX_EMBEDDED_PLATFORM_CONTEXT_VALID() ||
+            (unsigned)BMX_EMBEDDED_PLATFORM_CONTEXT_INDEX() != 0u) return 0;
+    bmx_embedded_gc_multicore_initialize();
+    unsigned state = atomic_load_explicit(&bmx_embedded_handshake.state[0],
+        memory_order_acquire);
+    if (state == BMX_EMBEDDED_GC_TASK_EMPTY) {
+        if (bmx_embedded_gc_multicore_register() != 0u) return 0;
+    } else if (state != BMX_EMBEDDED_GC_TASK_RUNNING) return 0;
+    if (atomic_load_explicit(&bmx_embedded_worker_state,
+            memory_order_acquire) != BMX_EMBEDDED_WORKER_IDLE) return 0;
+    bmx_embedded_managed_worker_function = entry;
+    return bmx_embedded_gc_worker_start(bmx_embedded_managed_worker_call, NULL);
+}
+#else
+int32_t bmx_embedded_gc_worker_start_function(void (*entry)(void)) {
+    (void)entry;
+    return 0;
+}
+#endif
+
 int32_t bmx_embedded_gc_worker_join(uint32_t wait_budget) {
 #if defined(BMX_EMBEDDED_PLATFORM_GC_WORKER_START) && defined(BMX_EMBEDDED_PLATFORM_GC_WORKER_JOIN)
     if (!BMX_EMBEDDED_PLATFORM_CONTEXT_VALID() ||
@@ -337,6 +366,18 @@ static void bmx_embedded_gc_require_heap_owner(void) {
 }
 #else
 #define BMX_EMBEDDED_ALLOCATOR_STAT(value) (value)
+#endif
+
+#if !BMX_EMBEDDED_MULTICORE
+int32_t bmx_embedded_gc_worker_start_function(void (*entry)(void)) {
+    (void)entry;
+    return 0;
+}
+
+int32_t bmx_embedded_gc_worker_join(uint32_t wait_budget) {
+    (void)wait_budget;
+    return 0;
+}
 #endif
 
 static inline BMXEmbeddedExecutionContext *bmx_embedded_current_context(void) {

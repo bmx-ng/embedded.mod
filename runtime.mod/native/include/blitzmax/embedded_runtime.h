@@ -27,8 +27,11 @@ int32_t bmx_embedded_gc_leave_native_safe(void);
    the worker is still running. An invalid worker teardown is fatal. */
 typedef void (*BMXEmbeddedGCWorkerEntry)(void *argument);
 int32_t bmx_embedded_gc_worker_start(BMXEmbeddedGCWorkerEntry entry, void *argument);
-int32_t bmx_embedded_gc_worker_join(uint32_t wait_budget);
 #endif
+/* Managed no-argument worker. The owner is registered on first use in
+   multicore mode; ordinary single-core builds return 0. */
+int32_t bmx_embedded_gc_worker_start_function(void (*entry)(void));
+int32_t bmx_embedded_gc_worker_join(uint32_t wait_budget);
 
 /* Abstract method thunks emitted by bcc2 call the BRL.Blitz trap directly. */
 void brl_blitz_NullMethodError(void);
