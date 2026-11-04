@@ -1,0 +1,16 @@
+# Stage 3 Pico 2 allocator lock cost
+
+Measured on 2026-11-04 on the attached Pico 2, with a 64 KiB SRAM arena, release multicore mode, and the [allocation fixture](../gc_allocation.bmx). The fixture allocates 16,384 small Objects on one task, then 32,768 on two tasks in 256 synchronized batches. Every image passed its allocation, checksum, collection and heap-integrity checks. The existing Stage 3 shared-allocator image took 52,909 µs for owner-only allocation and 62,515 µs for parallel wall time without profiling.
+
+| Diagnostic image | Owner-only allocation | Parallel wall time | Contended acquisitions / 32,768 | Failed spins | Accumulated lock wait | One million uncontended lock pairs |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Counter-only | 54,982 µs | 64,207 µs | 13,577 (41.4%) | 40,732 | — | 73,335 µs |
+| Counter + hardware timer | 59,055 µs | 70,425 µs | 13,398 (40.9%) | 33,599 | 6,462 µs | 73,336 µs |
+
+The timed image reads the Pico hardware's 32-bit microsecond timer immediately before each lock attempt and again after a contended acquisition. It accumulates elapsed time per core **after** unlocking. Uncontended acquisitions contribute zero to the wait total. The timer has 1 µs resolution per read; the summed value is an estimate, and the reads perturb scheduling. In particular, they add about 4.1 ms to owner-only allocation and 6.2 ms to parallel wall time relative to the counter-only image. The 6,462 µs is summed over both cores, so it must not be compared directly with a single wall-clock interval as though all waiting occurred in series. It is about 0.48 µs per contended acquisition in this instrumented run.
+
+The one-million-pair loop uses a separate C11 `atomic_flag` with acquire/release ordering while only the owner runs. Its 73 ns per pair **includes** loop overhead, so it is an upper estimate for an uncontended atomic pair in this setting, not an exact runtime lock cost. Even charging that full amount to every acquisition gives about 1.2 ms for the owner-only workload or 2.4 ms across both tasks. The shared allocator performs other metadata work inside the lock; this loop does not measure that work.
+
+The 40% failed-spin fraction therefore overstates the performance problem: many collisions are brief. Removing the lock can save only the time spent taking it and waiting for it; a replacement must pay for its own metadata, synchronization, memory reservation and collection flushes. The tested [8- and 32-block per-core caches](multicore_stage3_allocation_cache_trial.md) added 7.7–12.9 ms to the unprofiled parallel wall time, more than the observed lock wait and uncontended lock-pair cost justify for this small-Object workload. Keep the shared allocator. Reconsider per-core allocation only if an irregular-size or rate workload shows a larger measured lock cost and a prototype passes the throughput and memory gate.
+
+Reproduce with a clean Pico 2 release build of `gc_allocation.bmx` using `-gc-multicore -heap 64k`. Set `BMX_EMBEDDED_GC_PERF_COUNTERS=1` for the counter-only image, and additionally `BMX_EMBEDDED_GC_PERF_TIME=1` for the timed image. Both switches are benchmark diagnostics; ordinary and single-core builds do not include this timing code.

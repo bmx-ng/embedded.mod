@@ -19,6 +19,9 @@ static void benchmark_yield(void) { taskYIELD(); }
 
 static atomic_uint requested_batch;
 static atomic_uint completed_batch;
+#if defined(PICO_ON_DEVICE) && PICO_ON_DEVICE && defined(BMX_EMBEDDED_GC_PERF_COUNTERS) && BMX_EMBEDDED_GC_PERF_COUNTERS
+static atomic_flag benchmark_uncontended_lock = ATOMIC_FLAG_INIT;
+#endif
 /* Written by the worker and read only after join. Avoid a 64-bit atomic on
    targets where the compiler would need a libatomic helper. */
 static uint64_t worker_allocation_us;
@@ -77,6 +80,33 @@ uint32_t bmx_gc_allocation_lock_contended(void) {
 uint32_t bmx_gc_allocation_lock_spins(void) {
 #if defined(BMX_EMBEDDED_GC_PERF_COUNTERS) && BMX_EMBEDDED_GC_PERF_COUNTERS
     return bmx_embedded_gc_allocator_lock_spins();
+#else
+    return 0u;
+#endif
+}
+uint64_t bmx_gc_allocation_lock_wait_us(void) {
+#if defined(BMX_EMBEDDED_GC_PERF_TIME) && BMX_EMBEDDED_GC_PERF_TIME
+    return bmx_embedded_gc_allocator_lock_wait_us();
+#else
+    return 0u;
+#endif
+}
+int32_t bmx_gc_allocation_timed(void) {
+#if defined(BMX_EMBEDDED_GC_PERF_TIME) && BMX_EMBEDDED_GC_PERF_TIME
+    return 1;
+#else
+    return 0;
+#endif
+}
+uint32_t bmx_gc_allocation_lock_pair_million_us(void) {
+#if defined(PICO_ON_DEVICE) && PICO_ON_DEVICE && defined(BMX_EMBEDDED_GC_PERF_COUNTERS) && BMX_EMBEDDED_GC_PERF_COUNTERS
+    uint32_t started = time_us_32();
+    for (uint32_t index = 0; index < 1000000u; ++index) {
+        while (atomic_flag_test_and_set_explicit(&benchmark_uncontended_lock,
+                memory_order_acquire)) {}
+        atomic_flag_clear_explicit(&benchmark_uncontended_lock, memory_order_release);
+    }
+    return time_us_32() - started;
 #else
     return 0u;
 #endif

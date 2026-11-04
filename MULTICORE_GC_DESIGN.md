@@ -1,6 +1,6 @@
 # Embedded managed multicore: audit and design decision
 
-Status: Stage 2 internal functional gate complete, 2026-11-04. A first Stage 3 per-core allocation cache trial failed its throughput gate and was not retained. Multicore managed execution remains opt-in. The table under "Current implementation and boundaries" records the pre-implementation audit; its line references refer to that checkout. The compiler and target modules are separate repositories.
+Status: Stage 2 internal functional gate complete, 2026-11-04. A first Stage 3 per-core allocation cache trial failed its throughput gate and was not retained. Pico 2 lock-cost measurements explain why the high failed-spin fraction alone did not predict a cache benefit. Multicore managed execution remains opt-in. The table under "Current implementation and boundaries" records the pre-implementation audit; its line references refer to that checkout. The compiler and target modules are separate repositories.
 
 ## Decision
 
@@ -141,4 +141,4 @@ The collector remains stop-the-world and cooperative. Shared mutable fields stil
 
 ## Stage 3 allocation cache trial
 
-A Pico 2 [per-core cache trial](benchmarks/gc/results/multicore_stage3_allocation_cache_trial.md) reserved small Object blocks in groups of 8 or 32. Both completed hardware variants were slower than the matched shared allocator (12.4% and 20.6% longer parallel wall time). The experimental code was removed; the Stage 2 allocator remains in use. This is a no-go for this cache design. Before another allocator design, measure lock wait time directly and test irregular allocation sizes and rates; the Stage 2 failed-spin fraction alone does not establish time lost to contention.
+A Pico 2 [per-core cache trial](benchmarks/gc/results/multicore_stage3_allocation_cache_trial.md) reserved small Object blocks in groups of 8 or 32. Both completed hardware variants were slower than the matched shared allocator (12.4% and 20.6% longer parallel wall time). The experimental code was removed; the Stage 2 allocator remains in use. [Direct lock-cost diagnostics](benchmarks/gc/results/multicore_stage3_lock_cost_pico2.md) found about 6.5 ms of accumulated two-core wait across 32,768 allocations despite a 41% failed-spin fraction, and an uncontended atomic pair took at most about 73 ns in a separate loop. Timing instrumentation itself slowed the fixture, so these are estimates. This is a no-go for the tested cache design and workload. An irregular-size or rate workload must show a larger actual lock cost before another allocator design is justified.

@@ -14,6 +14,9 @@ Extern "C"
     Function LockEntries:UInt() = "bmx_gc_allocation_lock_entries"
     Function LockContended:UInt() = "bmx_gc_allocation_lock_contended"
     Function LockSpins:UInt() = "bmx_gc_allocation_lock_spins"
+    Function LockWaitUs:ULong() = "bmx_gc_allocation_lock_wait_us"
+    Function Timed:Int() = "bmx_gc_allocation_timed"
+    Function LockPairMillionUs:UInt() = "bmx_gc_allocation_lock_pair_million_us"
     Function SetRequest(batch:UInt) = "bmx_gc_allocation_request"
     Function Request:UInt() = "bmx_gc_allocation_requested"
     Function SetCompleted(batch:UInt) = "bmx_gc_allocation_complete"
@@ -84,6 +87,7 @@ Local ownerChecksum:UInt = checksum
 Local ownerLockEntries:UInt = LockEntries()
 Local ownerLockContended:UInt = LockContended()
 Local ownerLockSpins:UInt = LockSpins()
+Local ownerLockWaitUs:ULong = LockWaitUs()
 Local parallelOwnerUs:ULong
 Local parallelWorkerUs:ULong
 Local parallelWallUs:ULong
@@ -92,6 +96,7 @@ Local parallelChecksum:UInt
 Local parallelLockEntries:UInt
 Local parallelLockContended:UInt
 Local parallelLockSpins:UInt
+Local parallelLockWaitUs:ULong
 
 If BenchmarkMulticore() Then
     ' The worker is started once and stays alive for every batch. Each task
@@ -122,6 +127,7 @@ If BenchmarkMulticore() Then
     parallelLockEntries = LockEntries()
     parallelLockContended = LockContended()
     parallelLockSpins = LockSpins()
+    parallelLockWaitUs = LockWaitUs()
 End If
 
 If ArenaFailureCount() <> baselineFailures Or ..
@@ -131,6 +137,7 @@ If ArenaFailureCount() <> baselineFailures Or ..
     Not HeapIntegrityValid() Or InvalidReferenceCount() <> 0 Then ..
     RuntimeError "Allocation benchmark heap check failed"
 Local benchmarkHighWater:UInt = ArenaHighWater()
+Local lockPairMillionUs:UInt = LockPairMillionUs()
 Print "GC_ALLOC,done=1"
 
 While True
@@ -140,9 +147,12 @@ While True
         ",allocation_us=" + ownerAllocationUs + ..
         ",collection_us=" + ownerCollectionUs + ..
         ",instrumented=" + Instrumented() + ..
+        ",timed=" + Timed() + ..
         ",lock_entries=" + ownerLockEntries + ..
         ",lock_contended=" + ownerLockContended + ..
         ",lock_spins=" + ownerLockSpins + ..
+        ",lock_wait_us=" + ownerLockWaitUs + ..
+        ",lock_pair_million_us=" + lockPairMillionUs + ..
         ",checksum=" + ownerChecksum
     If BenchmarkMulticore() Then
         Print "GC_ALLOC,format=1,mode=1,arena=" + ArenaCapacity() + ..
@@ -153,9 +163,12 @@ While True
             ",wall_us=" + parallelWallUs + ..
             ",collection_us=" + parallelCollectionUs + ..
             ",instrumented=" + Instrumented() + ..
+            ",timed=" + Timed() + ..
             ",lock_entries=" + parallelLockEntries + ..
             ",lock_contended=" + parallelLockContended + ..
             ",lock_spins=" + parallelLockSpins + ..
+            ",lock_wait_us=" + parallelLockWaitUs + ..
+            ",lock_pair_million_us=" + lockPairMillionUs + ..
             ",checksum=" + parallelChecksum
     End If
     Print "GC_ALLOC,done=1"

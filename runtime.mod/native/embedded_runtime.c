@@ -5,6 +5,13 @@
 #include "blitzmax/embedded_runtime.h"
 #include "blitzmax/embedded_platform.h"
 
+#if defined(BMX_EMBEDDED_GC_PERF_TIME) && BMX_EMBEDDED_GC_PERF_TIME
+#if !defined(PICO_ON_DEVICE) || !PICO_ON_DEVICE || !defined(BMX_EMBEDDED_GC_PERF_COUNTERS) || !BMX_EMBEDDED_GC_PERF_COUNTERS
+#error "Allocator lock timing requires Pico and GC performance counters"
+#endif
+#include "hardware/timer.h"
+#endif
+
 #if BMX_EMBEDDED_MULTICORE
 #include "blitzmax/embedded_gc_handshake.h"
 #ifndef BMX_EMBEDDED_PLATFORM_GC_WAIT
@@ -156,6 +163,10 @@ static uint32_t bmx_embedded_lock_entries[BMX_EMBEDDED_CONTEXT_CAPACITY];
 static uint32_t bmx_embedded_lock_contended[BMX_EMBEDDED_CONTEXT_CAPACITY];
 static uint32_t bmx_embedded_lock_spins[BMX_EMBEDDED_CONTEXT_CAPACITY];
 static uint32_t bmx_embedded_lock_pending_spins[BMX_EMBEDDED_CONTEXT_CAPACITY];
+#if defined(BMX_EMBEDDED_GC_PERF_TIME) && BMX_EMBEDDED_GC_PERF_TIME
+static uint64_t bmx_embedded_lock_wait_us[BMX_EMBEDDED_CONTEXT_CAPACITY];
+static uint32_t bmx_embedded_lock_pending_wait_us[BMX_EMBEDDED_CONTEXT_CAPACITY];
+#endif
 #endif
 static uint32_t bmx_embedded_handshake_initialized;
 #if defined(BMX_EMBEDDED_PLATFORM_GC_WORKER_START) && defined(BMX_EMBEDDED_PLATFORM_GC_WORKER_JOIN)
@@ -175,8 +186,16 @@ static void bmx_embedded_allocator_lock_enter(void) {
 #if defined(BMX_EMBEDDED_GC_PERF_COUNTERS) && BMX_EMBEDDED_GC_PERF_COUNTERS
     unsigned slot = (unsigned)BMX_EMBEDDED_PLATFORM_CONTEXT_INDEX();
     uint32_t spins = 0;
+#if defined(BMX_EMBEDDED_GC_PERF_TIME) && BMX_EMBEDDED_GC_PERF_TIME
+    uint32_t started = time_us_32();
+#endif
     while (atomic_flag_test_and_set_explicit(&bmx_embedded_allocator_lock, memory_order_acquire)) ++spins;
-    if (slot < BMX_EMBEDDED_CONTEXT_CAPACITY) bmx_embedded_lock_pending_spins[slot] = spins;
+    if (slot < BMX_EMBEDDED_CONTEXT_CAPACITY) {
+        bmx_embedded_lock_pending_spins[slot] = spins;
+#if defined(BMX_EMBEDDED_GC_PERF_TIME) && BMX_EMBEDDED_GC_PERF_TIME
+        bmx_embedded_lock_pending_wait_us[slot] = spins ? time_us_32() - started : 0u;
+#endif
+    }
 #else
     while (atomic_flag_test_and_set_explicit(&bmx_embedded_allocator_lock, memory_order_acquire)) {}
 #endif
@@ -191,6 +210,9 @@ static void bmx_embedded_allocator_lock_leave(void) {
         ++bmx_embedded_lock_entries[slot];
         bmx_embedded_lock_contended[slot] += spins != 0u;
         bmx_embedded_lock_spins[slot] += spins;
+#if defined(BMX_EMBEDDED_GC_PERF_TIME) && BMX_EMBEDDED_GC_PERF_TIME
+        bmx_embedded_lock_wait_us[slot] += bmx_embedded_lock_pending_wait_us[slot];
+#endif
     }
 #endif
 }
@@ -202,6 +224,10 @@ void bmx_embedded_gc_allocator_lock_counters_reset(void) {
         bmx_embedded_lock_contended[slot] = 0;
         bmx_embedded_lock_spins[slot] = 0;
         bmx_embedded_lock_pending_spins[slot] = 0;
+#if defined(BMX_EMBEDDED_GC_PERF_TIME) && BMX_EMBEDDED_GC_PERF_TIME
+        bmx_embedded_lock_wait_us[slot] = 0;
+        bmx_embedded_lock_pending_wait_us[slot] = 0;
+#endif
     }
 }
 
@@ -225,6 +251,14 @@ uint32_t bmx_embedded_gc_allocator_lock_spins(void) {
         total += bmx_embedded_lock_spins[slot];
     return total;
 }
+#if defined(BMX_EMBEDDED_GC_PERF_TIME) && BMX_EMBEDDED_GC_PERF_TIME
+uint64_t bmx_embedded_gc_allocator_lock_wait_us(void) {
+    uint64_t total = 0;
+    for (unsigned slot = 0; slot < BMX_EMBEDDED_CONTEXT_CAPACITY; ++slot)
+        total += bmx_embedded_lock_wait_us[slot];
+    return total;
+}
+#endif
 #endif
 
 static uint32_t bmx_embedded_allocator_stat_read(const uint32_t *value) {
