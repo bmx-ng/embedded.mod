@@ -62,6 +62,23 @@ typedef struct WorkerNode {
 static const BMXEmbeddedTypeDescriptor node_type = {
     .name = "WorkerNode", .instance_size = sizeof(WorkerNode)
 };
+static const BMXEmbeddedTypeDescriptor oversized_type = {
+    .name = "OversizedNode", .instance_size = 70u * 1024u
+};
+
+static int expect_oom(unsigned kind) {
+    BMXEmbeddedExceptionFrame frame;
+    bmx_embedded_exception_enter(&frame);
+    if (setjmp(frame.buffer) == 0) {
+        if (kind == 0u) (void)bmx_embedded_object_allocate(&oversized_type);
+        else if (kind == 1u) (void)bmx_embedded_array_new_1d(20000,
+            sizeof(uint32_t), BMX_EMBEDDED_ARRAY_ELEMENT_VALUE, NULL, NULL);
+        else (void)bmx_embedded_string_allocate(40000);
+        bmx_embedded_exception_leave();
+        return 0;
+    }
+    return bmx_embedded_exception_catch().kind == BMX_EMBEDDED_EXCEPTION_STRING;
+}
 
 typedef struct WorkerJob {
     atomic_uint stage;
@@ -79,6 +96,9 @@ static void run_job(void *argument) {
     node = bmx_embedded_object_allocate(&node_type);
     assert(node);
     node->value = job->value;
+    assert(expect_oom(0u));
+    assert(expect_oom(1u));
+    assert(expect_oom(2u));
     atomic_store_explicit(&job->stage, 1u, memory_order_release);
     while (!atomic_load_explicit(&job->release, memory_order_acquire)) {
         bmx_embedded_gc_poll();

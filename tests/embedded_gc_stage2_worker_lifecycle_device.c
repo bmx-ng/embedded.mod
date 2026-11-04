@@ -25,12 +25,29 @@ typedef struct LifecycleNode {
 static const BMXEmbeddedTypeDescriptor node_type = {
     .name = "LifecycleNode", .instance_size = sizeof(LifecycleNode)
 };
+static const BMXEmbeddedTypeDescriptor oversized_type = {
+    .name = "OversizedNode", .instance_size = 70u * 1024u
+};
 typedef struct LifecycleJob {
     atomic_uint stage;
     atomic_uint release;
     uint32_t value;
     uint32_t throw_exception;
 } LifecycleJob;
+
+static int expect_oom(unsigned kind) {
+    BMXEmbeddedExceptionFrame frame;
+    bmx_embedded_exception_enter(&frame);
+    if (setjmp(frame.buffer) == 0) {
+        if (kind == 0u) (void)bmx_embedded_object_allocate(&oversized_type);
+        else if (kind == 1u) (void)bmx_embedded_array_new_1d(20000,
+            sizeof(uint32_t), BMX_EMBEDDED_ARRAY_ELEMENT_VALUE, NULL, NULL);
+        else (void)bmx_embedded_string_allocate(40000);
+        bmx_embedded_exception_leave();
+        return 0;
+    }
+    return bmx_embedded_exception_catch().kind == BMX_EMBEDDED_EXCEPTION_STRING;
+}
 
 static void lifecycle_worker(void *argument) {
     LifecycleJob *job = argument;
@@ -56,6 +73,11 @@ static void lifecycle_worker(void *argument) {
     node->value = job->value;
     *(uint32_t *)bmx_embedded_array_element(array, 0, sizeof(uint32_t)) = job->value;
     ((uint16_t *)text->buf)[0] = (uint16_t)('A' + job->value);
+    if (!expect_oom(0u) || !expect_oom(1u) || !expect_oom(2u)) {
+        atomic_store_explicit(&job->stage, 11u, memory_order_release);
+        bmx_embedded_root_frame_leave(&frame);
+        return;
+    }
     atomic_store_explicit(&job->stage, 1u, memory_order_release);
     while (!atomic_load_explicit(&job->release, memory_order_acquire)) {
         bmx_embedded_gc_poll();

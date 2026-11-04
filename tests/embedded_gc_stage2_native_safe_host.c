@@ -56,8 +56,8 @@ static void *worker(void *unused) {
     }
     node = NULL;
     bmx_embedded_root_frame_leave(&frame);
-    atomic_store_explicit(&phase, 3u, memory_order_release);
     assert(bmx_embedded_gc_multicore_unregister());
+    atomic_store_explicit(&phase, 3u, memory_order_release);
     bmx_test_context_slot = UINT32_MAX;
     return NULL;
 }

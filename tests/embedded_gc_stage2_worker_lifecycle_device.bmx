@@ -13,7 +13,7 @@ While True
     If failedStep Then
         Print "GC_STAGE2_WORKER,failed_step=" + failedStep
     Else
-        Print "GC_STAGE2_WORKER,format=1,cycles=16,objects=pass,arrays=pass,strings=pass,exception=pass,reclaim=pass,done=1"
+        Print "GC_STAGE2_WORKER,format=1,cycles=16,objects=pass,arrays=pass,strings=pass,oom=pass,exception=pass,reclaim=pass,done=1"
     End If
     SleepMicroseconds(1000000)
 Wend
