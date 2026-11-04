@@ -60,6 +60,11 @@ def main():
         subprocess.run(common + [str(wrapper), dead_strip, "-o", str(sweep)], check=True)
         subprocess.run([str(sweep)], check=True)
 
+        static_field = temporary / "gc_static_field_test"
+        subprocess.run(common + [str(tests / "embedded_gc_static_field_host.c"), dead_strip,
+            "-o", str(static_field)], check=True)
+        subprocess.run([str(static_field)], check=True)
+
         # Stage 1 internal protocol test. It has no target integration yet,
         # and deliberately cannot enable managed workers in firmware.
         handshake = temporary / "gc_handshake_test"

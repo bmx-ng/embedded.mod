@@ -1467,6 +1467,17 @@ static void bmx_embedded_mark_string(const void *reference, void *context_value)
     }
 }
 
+static void bmx_embedded_mark_value(const void *value, const BMXEmbeddedValueDescriptor *descriptor, BMXEmbeddedReachabilityContext *context);
+
+static void bmx_embedded_mark_value_field(const uint8_t *address, const BMXEmbeddedValueField *field,
+                                          BMXEmbeddedReachabilityContext *context) {
+    if (field->kind == BMX_EMBEDDED_VALUE_OBJECT) bmx_embedded_mark_reference(*(void *const *)address, context);
+    else if (field->kind == BMX_EMBEDDED_VALUE_ARRAY) bmx_embedded_mark_array(*(void *const *)address, context);
+    else if (field->kind == BMX_EMBEDDED_VALUE_STRING) bmx_embedded_mark_string(*(const void *const *)address, context);
+    else if (field->kind == BMX_EMBEDDED_VALUE_STRUCT && field->descriptor) bmx_embedded_mark_value(address, field->descriptor, context);
+    else context->invalid += 1u;
+}
+
 static void bmx_embedded_mark_value(const void *value, const BMXEmbeddedValueDescriptor *descriptor, BMXEmbeddedReachabilityContext *context) {
     if (!value || !bmx_embedded_value_descriptor_valid(descriptor)) {
         context->invalid += 1u;
@@ -1476,11 +1487,7 @@ static void bmx_embedded_mark_value(const void *value, const BMXEmbeddedValueDes
         const BMXEmbeddedValueField *field = &descriptor->fields[field_index];
         for (uint32_t item = 0; item < field->count; ++item) {
             const uint8_t *address = (const uint8_t *)value + field->offset + (uint32_t)item * field->stride;
-            if (field->kind == BMX_EMBEDDED_VALUE_OBJECT) bmx_embedded_mark_reference(*(void *const *)address, context);
-            else if (field->kind == BMX_EMBEDDED_VALUE_ARRAY) bmx_embedded_mark_array(*(void *const *)address, context);
-            else if (field->kind == BMX_EMBEDDED_VALUE_STRING) bmx_embedded_mark_string(*(const void *const *)address, context);
-            else if (field->kind == BMX_EMBEDDED_VALUE_STRUCT && field->descriptor) bmx_embedded_mark_value(address, field->descriptor, context);
-            else context->invalid += 1u;
+            bmx_embedded_mark_value_field(address, field, context);
         }
     }
 }
@@ -1551,7 +1558,7 @@ uint32_t bmx_embedded_reachability_audit(void) {
                 const BMXEmbeddedValueField *field = &type->value_fields[index];
                 for (uint32_t item = 0; item < field->count; ++item) {
                     const uint8_t *address = (const uint8_t *)object + field->offset + (uint32_t)item * field->stride;
-                    bmx_embedded_mark_value(address, field->descriptor, &context);
+                    bmx_embedded_mark_value_field(address, field, &context);
                 }
             }
             if (type->flags & BMX_EMBEDDED_TYPE_FLAG_CUSTOM_TRACE) type->trace(object, bmx_embedded_mark_reference, &context);
