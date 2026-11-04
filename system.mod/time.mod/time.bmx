@@ -8,7 +8,9 @@ bbdoc: Portable monotonic time and sleep operations for embedded targets.
 about: The monotonic clock has microsecond units and an unspecified epoch. It
 continues forwards until the target restarts and is suitable for measuring
 durations. Sleep operations do not return before the requested duration, but
-may return later because of target scheduling and interrupts.
+may return later because of target scheduling and interrupts. In opt-in
+multicore builds, a managed worker can sleep while the owner collects; live
+managed values remain in the worker's compiler-generated root frame.
 End Rem
 Module Embedded.System.Time
 ?embedded

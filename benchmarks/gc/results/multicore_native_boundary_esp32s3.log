@@ -1,0 +1,1 @@
+GC_STAGE2_MANAGED_API,format=2,jobs=100,objects=pass,arrays=pass,strings=pass,exception=pass,reclaim=pass,native_sleep=pass,collections=pass,done=1

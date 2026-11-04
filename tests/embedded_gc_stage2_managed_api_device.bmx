@@ -15,6 +15,7 @@ Extern "C"
     Function Failure:UInt() = "bmx_stage2_api_failure"
     Function WorkerYield() = "bmx_stage2_api_yield"
     Function CollectObjects:UInt() = "bmx_embedded_collect_objects"
+    Function CollectionCount:UInt() = "bmx_embedded_collection_count"
     Function LiveObjects:UInt() = "bmx_embedded_object_live_count"
     Function LiveArrays:UInt() = "bmx_embedded_array_live_count"
     Function LiveStrings:UInt() = "bmx_embedded_string_live_count"
@@ -33,6 +34,14 @@ Function ManagedJob() { nomangle }
     node.value = Int(index)
     values[0] = Int(index)
     MarkReady(index)
+    Select index
+        Case 1
+            SleepMicroseconds(200000)
+        Case 2
+            SleepMilliseconds(200)
+        Case 3
+            Delay(200)
+    End Select
     While ReleasedJob() <> index
         WorkerYield()
     Wend
@@ -55,8 +64,11 @@ For Local index:UInt = 1 To 100
     If Not failedStep And StartManagedWorker(ManagedJob) Then failedStep = 2
     If Not failedStep And Not WaitReady(index) Then failedStep = 3
     If Not failedStep Then
+        If index <= 3 Then SleepMicroseconds(20000)
+        Local collectionsBefore:UInt = CollectionCount()
         CollectObjects()
         If Not HeapValid() Then failedStep = 4
+        If CollectionCount() <> collectionsBefore + 1 Then failedStep = 8
     End If
     ReleaseJob(index)
     Local joined:Int
@@ -78,7 +90,7 @@ While True
     If failedStep Then
         Print "GC_STAGE2_MANAGED_API,failed_step=" + failedStep
     Else
-        Print "GC_STAGE2_MANAGED_API,format=1,jobs=100,objects=pass,arrays=pass,strings=pass,exception=pass,reclaim=pass,done=1"
+        Print "GC_STAGE2_MANAGED_API,format=2,jobs=100,objects=pass,arrays=pass,strings=pass,exception=pass,reclaim=pass,native_sleep=pass,collections=pass,done=1"
     End If
     SleepMicroseconds(1000000)
 Wend
