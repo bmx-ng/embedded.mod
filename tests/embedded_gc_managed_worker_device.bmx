@@ -28,7 +28,8 @@ End Extern
 Function ManagedWorkerHold:Int(node:TManagedWorkerNode) { nomangle }
     If node.value <> 123 Then Return 1
     Local total:Int
-    For Local item:TManagedWorkerLeaf = EachIn node.members
+    Local item:TManagedWorkerLeaf
+    For item = EachIn node.members
         node = Null
         total :+ item.value
         If total = 7 Then ManagedWorkerReady()
@@ -36,7 +37,8 @@ Function ManagedWorkerHold:Int(node:TManagedWorkerNode) { nomangle }
             ManagedWorkerYield()
         Wend
     Next
-    If total <> 16 Then Return 2
+    If total <> 16 Or item.value <> 9 Then Return 2
+    item = Null
     ManagedWorkerReleased()
     While ManagedWorkerMode() = 1
         ManagedWorkerYield()
