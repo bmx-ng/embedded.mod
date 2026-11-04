@@ -9,6 +9,8 @@ The [managed callback fixture](../../../tests/embedded_gc_stage2_callbacks_devic
 | Pico 2 | `GC_STAGE2_EVENTS,format=1,events=100000,ordered=pass,collection=pass,dropped=0,done=1` | `GC_STAGE2_CALLBACKS,format=1,callbacks=10000,managed=pass,collection=pass,dropped=0,done=1` |
 | ESP32-S3 | Same | Same |
 
-These checks cover a worker producer and owner consumer. They do not yet exercise a physical interrupt producer or callback re-entry from an unregistered task.
+The [interrupt fixture](../../../tests/embedded_gc_stage2_interrupt_device.bmx) uses a hardware alarm IRQ on Pico 2 and a GPIO rising-edge IRQ on ESP32-S3. Each ISR posts 1,000 ordered records into the deferred queue while the managed worker is registered. The owner collects during delivery and checks every record, heap integrity and zero drops. Both boards reported `GC_STAGE2_INTERRUPTS,format=1,interrupts=1000,ordered=pass,collection=pass,dropped=0,done=1` on 2026-11-04. The S3 test generates the GPIO edge by driving its own input/output GPIO 4; no external wire is used.
+
+These checks cover worker and physical interrupt producers with an owner consumer. Callback re-entry from an unregistered task remains intentionally rejected by the target gate and needs a dedicated rejection check.
 
 The Pico single-core event conformance image was rebuilt with and without the new queue-lock source change, using the same release settings. The runtime object-file hashes differed because their source metadata changed, but the full disassembly of generated runtime instructions matched exactly. The multicore lock is compiled out of the single-core mode.
