@@ -27,6 +27,11 @@ uint32_t bmx_embedded_gc_allocator_lock_spins(void);
 uint64_t bmx_embedded_gc_allocator_lock_wait_us(void);
 #endif
 #endif
+#if defined(BMX_EMBEDDED_GC_PHASE_TIME) && BMX_EMBEDDED_GC_PHASE_TIME
+uint32_t bmx_embedded_gc_last_stop_us(void);
+uint32_t bmx_embedded_gc_last_mark_us(void);
+uint32_t bmx_embedded_gc_last_sweep_us(void);
+#endif
 /* A registered worker may block in native code only after publishing every
    live managed handle in a root frame. It must not access the managed heap
    until leave returns; leave waits for any active collection to finish. */

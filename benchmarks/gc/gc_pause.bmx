@@ -18,6 +18,10 @@ Extern "C"
     Function WorkerRun:UInt() = "bmx_gc_pause_run"
     Function StopWorker() = "bmx_gc_pause_stop"
     Function YieldTask() = "bmx_gc_pause_yield"
+    Function PhaseTimingEnabled:Int() = "bmx_gc_pause_phase_timing_enabled"
+    Function StopTime:UInt() = "bmx_gc_pause_stop_us"
+    Function MarkTime:UInt() = "bmx_gc_pause_mark_us"
+    Function SweepTime:UInt() = "bmx_gc_pause_sweep_us"
 End Extern
 
 Const Samples:Int = 12
@@ -85,11 +89,17 @@ Function PollWorker() { nomangle }
     Wend
 End Function
 
-Function MeasureLive(times:ULong[], first:Int)
+Function MeasureLive(times:ULong[], stopTimes:UInt[], markTimes:UInt[], ..
+        sweepTimes:UInt[], first:Int)
     For Local sample:Int = 0 Until Samples
         Local started:ULong = MonotonicMicroseconds()
         CollectObjects()
-        times[first + sample] = MonotonicMicroseconds() - started
+        Local index:Int = first + sample
+        times[index] = MonotonicMicroseconds() - started
+        stopTimes[index] = StopTime()
+        markTimes[index] = MarkTime()
+        sweepTimes[index] = SweepTime()
+        SleepMicroseconds(5000)
     Next
 End Function
 
@@ -101,6 +111,9 @@ Local liveCount:Int = Int(arena / 64)
 Local sweepCount:Int = Int(arena / 128)
 If liveCount < 32 Or sweepCount > 2048 Then RuntimeError "Unsupported pause benchmark arena"
 Local times:ULong[] = New ULong[Samples * Cases]
+Local stopTimes:UInt[] = New UInt[Samples * Cases]
+Local markTimes:UInt[] = New UInt[Samples * Cases]
+Local sweepTimes:UInt[] = New UInt[Samples * Cases]
 Local labels:String[] = ["live_owner", "live_worker", "zigzag_worker", ..
     "garbage_worker", "fragmented_worker"]
 CollectObjects()
@@ -112,14 +125,14 @@ CheckChain(graph, liveCount)
 Local liveHighWater:UInt = ArenaHighWater()
 Local collectionBefore:UInt = CollectionCount()
 
-MeasureLive(times, 0)
+MeasureLive(times, stopTimes, markTimes, sweepTimes, 0)
 If CollectionCount() <> collectionBefore + UInt(Samples) Then ..
     RuntimeError "Owner-only pause collections did not run"
 If Not StartManagedWorker(PollWorker) Then RuntimeError "Pause worker start failed"
 While Not WorkerReady()
     YieldTask()
 Wend
-MeasureLive(times, Samples)
+MeasureLive(times, stopTimes, markTimes, sweepTimes, Samples)
 If CollectionCount() <> collectionBefore + UInt(2 * Samples) Then ..
     RuntimeError "Worker-active pause collections did not run"
 CheckChain(graph, liveCount)
@@ -129,7 +142,7 @@ graph = BuildZigzag(liveCount)
 CollectObjects()
 CheckChain(graph, liveCount)
 Local zigzagHighWater:UInt = ArenaHighWater()
-MeasureLive(times, 2 * Samples)
+MeasureLive(times, stopTimes, markTimes, sweepTimes, 2 * Samples)
 CheckChain(graph, liveCount)
 graph = Null
 CollectObjects()
@@ -139,8 +152,13 @@ For Local kind:Int = 1 To 2
         If Not PrepareSweep(kind, sweepCount) Then RuntimeError "Pause sweep setup failed"
         Local started:ULong = MonotonicMicroseconds()
         CollectObjects()
-        times[(kind + 2) * Samples + sample] = MonotonicMicroseconds() - started
+        Local index:Int = (kind + 2) * Samples + sample
+        times[index] = MonotonicMicroseconds() - started
+        stopTimes[index] = StopTime()
+        markTimes[index] = MarkTime()
+        sweepTimes[index] = SweepTime()
         If Not CheckSweep(kind, sweepCount) Then RuntimeError "Pause sweep check failed"
+        SleepMicroseconds(5000)
     Next
 Next
 
@@ -161,6 +179,12 @@ While True
         For Local sample:Int = 0 Until Samples
             Print "GC_PAUSE,case=" + labels[kind] + ",sample=" + sample + ..
                 ",us=" + times[kind * Samples + sample]
+            If PhaseTimingEnabled() Then
+                Local index:Int = kind * Samples + sample
+                Print "GC_PAUSE_PHASE,case=" + labels[kind] + ",sample=" + sample + ..
+                    ",stop_us=" + stopTimes[index] + ",mark_us=" + markTimes[index] + ..
+                    ",sweep_us=" + sweepTimes[index]
+            End If
         Next
     Next
     Print "GC_PAUSE,checks=pass"

@@ -101,3 +101,12 @@ worker. Each case reports twelve whole collection-call samples. See the
 [pause results](results/multicore_pause_baseline.md) and four raw captures.
 Pass `--marker GC_PAUSE` to either capture script; the Pico capture starts at
 the next complete repeated result block when the USB serial port opens late.
+
+For a diagnostic breakdown of stop wait, reachability marking and sweeping,
+set `BMX_EMBEDDED_GC_PHASE_TIME=1` on the same `-gc-multicore` build command.
+The fixture then prints a `GC_PAUSE_PHASE` line after each whole-call sample.
+The flag adds clock reads inside the collector, so use an ordinary build for
+the production pause baseline. See the [phase measurements](results/multicore_pause_phase_breakdown.md)
+and raw Pico 2 and ESP32-S3 captures. The fixture leaves 5 ms between timed
+collections to let background tasks run; these rests are outside
+the timed calls.

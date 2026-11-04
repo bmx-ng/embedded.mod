@@ -5,6 +5,26 @@
 #include "blitzmax/embedded_runtime.h"
 #include "blitzmax/embedded_platform.h"
 
+#if defined(BMX_EMBEDDED_GC_PHASE_TIME) && BMX_EMBEDDED_GC_PHASE_TIME
+#if !BMX_EMBEDDED_MULTICORE
+#error "GC phase timing requires multicore GC"
+#elif defined(PICO_ON_DEVICE) && PICO_ON_DEVICE
+#include "hardware/timer.h"
+static uint64_t bmx_embedded_gc_phase_now_us(void) { return time_us_64(); }
+#elif defined(BMX_ESP32) && BMX_ESP32
+#include "esp_timer.h"
+static uint64_t bmx_embedded_gc_phase_now_us(void) { return (uint64_t)esp_timer_get_time(); }
+#else
+#error "GC phase timing supports Pico and ESP32 device builds"
+#endif
+static uint32_t bmx_embedded_gc_phase_stop_us;
+static uint32_t bmx_embedded_gc_phase_mark_us;
+static uint32_t bmx_embedded_gc_phase_sweep_us;
+uint32_t bmx_embedded_gc_last_stop_us(void) { return bmx_embedded_gc_phase_stop_us; }
+uint32_t bmx_embedded_gc_last_mark_us(void) { return bmx_embedded_gc_phase_mark_us; }
+uint32_t bmx_embedded_gc_last_sweep_us(void) { return bmx_embedded_gc_phase_sweep_us; }
+#endif
+
 #if defined(BMX_EMBEDDED_GC_PERF_TIME) && BMX_EMBEDDED_GC_PERF_TIME
 #if !defined(PICO_ON_DEVICE) || !PICO_ON_DEVICE || !defined(BMX_EMBEDDED_GC_PERF_COUNTERS) || !BMX_EMBEDDED_GC_PERF_COUNTERS
 #error "Allocator lock timing requires Pico and GC performance counters"
@@ -2140,14 +2160,27 @@ uint32_t bmx_embedded_collect_objects(void) {
         return 0;
     }
 
+#if defined(BMX_EMBEDDED_GC_PHASE_TIME) && BMX_EMBEDDED_GC_PHASE_TIME
+    bmx_embedded_gc_phase_stop_us = 0u;
+    bmx_embedded_gc_phase_mark_us = 0u;
+    bmx_embedded_gc_phase_sweep_us = 0u;
+    uint64_t phase_started = bmx_embedded_gc_phase_now_us();
+#endif
+
 #if BMX_EMBEDDED_MULTICORE
     /* The Stage 1 host experiment has one allocating owner and a root-only
        worker. Shared heap mutation remains unsupported until Stage 2. */
     if (!bmx_embedded_gc_stop_begin(&bmx_embedded_handshake, 0u,
             BMX_EMBEDDED_GC_WAIT_BUDGET, bmx_embedded_gc_wait, NULL)) {
+#if defined(BMX_EMBEDDED_GC_PHASE_TIME) && BMX_EMBEDDED_GC_PHASE_TIME
+        bmx_embedded_gc_phase_stop_us = (uint32_t)(bmx_embedded_gc_phase_now_us() - phase_started);
+#endif
         bmx_embedded_record_object_failure();
         return 0;
     }
+#if defined(BMX_EMBEDDED_GC_PHASE_TIME) && BMX_EMBEDDED_GC_PHASE_TIME
+    bmx_embedded_gc_phase_stop_us = (uint32_t)(bmx_embedded_gc_phase_now_us() - phase_started);
+#endif
 #endif
 
     bmx_embedded_collection_active = 1u;
@@ -2180,9 +2213,15 @@ uint32_t bmx_embedded_collect_objects(void) {
     }
 #endif
 #if BMX_EMBEDDED_MULTICORE
+#if defined(BMX_EMBEDDED_GC_PHASE_TIME) && BMX_EMBEDDED_GC_PHASE_TIME
+    phase_started = bmx_embedded_gc_phase_now_us();
+#endif
     bmx_embedded_reachability_audit_stopped();
 #else
     bmx_embedded_reachability_audit();
+#endif
+#if defined(BMX_EMBEDDED_GC_PHASE_TIME) && BMX_EMBEDDED_GC_PHASE_TIME
+    bmx_embedded_gc_phase_mark_us = (uint32_t)(bmx_embedded_gc_phase_now_us() - phase_started);
 #endif
 #ifdef BMX_EMBEDDED_GC_TEST_ABORT_COLLECTION
     /* Test-only post-mark abort: the next audit advances the mark epoch, so
@@ -2296,6 +2335,9 @@ uint32_t bmx_embedded_collect_objects(void) {
        individual release path here repeatedly searches the old free list,
        making reclamation quadratic on fragmented heaps. No callbacks run
        during this pass, so the free list can be rebuilt in place. */
+#if defined(BMX_EMBEDDED_GC_PHASE_TIME) && BMX_EMBEDDED_GC_PHASE_TIME
+    phase_started = bmx_embedded_gc_phase_now_us();
+#endif
     bmx_embedded_heap_free = NULL;
     BMXEmbeddedHeapBlock *free_run = NULL;
     BMXEmbeddedHeapBlock *block = bmx_embedded_heap_first;
@@ -2341,6 +2383,9 @@ uint32_t bmx_embedded_collect_objects(void) {
         }
         block = next;
     }
+#if defined(BMX_EMBEDDED_GC_PHASE_TIME) && BMX_EMBEDDED_GC_PHASE_TIME
+    bmx_embedded_gc_phase_sweep_us = (uint32_t)(bmx_embedded_gc_phase_now_us() - phase_started);
+#endif
 
     bmx_embedded_reachable_objects = bmx_embedded_live_objects;
     bmx_embedded_unreachable_objects = 0;

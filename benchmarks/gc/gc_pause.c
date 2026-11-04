@@ -42,3 +42,35 @@ void bmx_gc_pause_stop(void) {
 }
 
 void bmx_gc_pause_yield(void) { benchmark_yield(); }
+
+int32_t bmx_gc_pause_phase_timing_enabled(void) {
+#if defined(BMX_EMBEDDED_GC_PHASE_TIME) && BMX_EMBEDDED_GC_PHASE_TIME
+    return 1;
+#else
+    return 0;
+#endif
+}
+
+uint32_t bmx_gc_pause_stop_us(void) {
+#if defined(BMX_EMBEDDED_GC_PHASE_TIME) && BMX_EMBEDDED_GC_PHASE_TIME
+    return bmx_embedded_gc_last_stop_us();
+#else
+    return 0u;
+#endif
+}
+
+uint32_t bmx_gc_pause_mark_us(void) {
+#if defined(BMX_EMBEDDED_GC_PHASE_TIME) && BMX_EMBEDDED_GC_PHASE_TIME
+    return bmx_embedded_gc_last_mark_us();
+#else
+    return 0u;
+#endif
+}
+
+uint32_t bmx_gc_pause_sweep_us(void) {
+#if defined(BMX_EMBEDDED_GC_PHASE_TIME) && BMX_EMBEDDED_GC_PHASE_TIME
+    return bmx_embedded_gc_last_sweep_us();
+#else
+    return 0u;
+#endif
+}
