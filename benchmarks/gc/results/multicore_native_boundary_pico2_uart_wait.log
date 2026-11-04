@@ -1,0 +1,4 @@
+GC_STAGE2_UART_WAIT,phase=ready,failed_step=0
+GC_STAGE2_UART_WAIT,phase=collected,failed_step=0
+GC_STAGE2_UART_WAIT,phase=joined,failed_step=0,readable=0,roots=1
+GC_STAGE2_UART_WAIT,roots=pass,collection=pass,done=1
