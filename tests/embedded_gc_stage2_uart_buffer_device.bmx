@@ -66,9 +66,9 @@ If Not workerStarted Or joined Then
 End If
 While True
     If failedStep Then
-        Print "GC_STAGE2_PICO_UART_BUFFER,failed_step=" + failedStep
+        Print "GC_STAGE2_UART_BUFFER,failed_step=" + failedStep
     Else
-        Print "GC_STAGE2_PICO_UART_BUFFER,raw=pass,collection=pass,done=1"
+        Print "GC_STAGE2_UART_BUFFER,raw=pass,collection=pass,done=1"
     End If
     SleepMicroseconds(1000000)
 Wend
