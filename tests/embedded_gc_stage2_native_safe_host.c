@@ -67,6 +67,12 @@ static void *worker(void *unused) {
     assert(bmx_embedded_gc_leave_native_safe());
     assert(!bmx_embedded_gc_enter_native_safe_for_buffers(raw + 7u, 2u,
         NULL, 0u));
+    assert(!bmx_embedded_gc_enter_native_safe_for_three_buffers(raw, 4u,
+        stack_buffer, sizeof(stack_buffer), bmx_embedded_array_data(array),
+        sizeof(uint32_t)));
+    assert(bmx_embedded_gc_enter_native_safe_for_three_buffers(raw, 4u,
+        stack_buffer, sizeof(stack_buffer), NULL, 0u));
+    assert(bmx_embedded_gc_leave_native_safe());
     assert(bmx_embedded_gc_enter_native_safe_for_buffers(raw + 2u, 4u,
         stack_buffer, sizeof(stack_buffer)));
     raw[2] = 0xa5u;

@@ -39,6 +39,9 @@ int32_t bmx_embedded_gc_leave_native_safe(void);
    is ignored. */
 int32_t bmx_embedded_gc_enter_native_safe_for_buffers(const void *first,
     size_t first_bytes, const void *second, size_t second_bytes);
+int32_t bmx_embedded_gc_enter_native_safe_for_three_buffers(const void *first,
+    size_t first_bytes, const void *second, size_t second_bytes,
+    const void *third, size_t third_bytes);
 /* Internal worker lifecycle. The argument is native data; any managed value
    it names must be rooted by the owner until the worker establishes its own
    root. Join returns 1 on success, -1 after a worker exception, and 0 while

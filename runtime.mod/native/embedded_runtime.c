@@ -487,6 +487,15 @@ int32_t bmx_embedded_gc_enter_native_safe_for_buffers(const void *first,
     return bmx_embedded_gc_enter_native_safe();
 }
 
+int32_t bmx_embedded_gc_enter_native_safe_for_three_buffers(const void *first,
+        size_t first_bytes, const void *second, size_t second_bytes,
+        const void *third, size_t third_bytes) {
+    if (!bmx_embedded_gc_buffer_stable(first, first_bytes) ||
+            !bmx_embedded_gc_buffer_stable(second, second_bytes) ||
+            !bmx_embedded_gc_buffer_stable(third, third_bytes)) return 0;
+    return bmx_embedded_gc_enter_native_safe();
+}
+
 int32_t bmx_embedded_gc_leave_native_safe(void) {
     if (!BMX_EMBEDDED_PLATFORM_CONTEXT_VALID()) return 0;
     unsigned slot = (unsigned)BMX_EMBEDDED_PLATFORM_CONTEXT_INDEX();
