@@ -100,6 +100,13 @@ def main():
             "-o", str(raw_allocator)], check=True)
         subprocess.run([str(raw_allocator)], check=True)
 
+        managed_allocator = temporary / "gc_stage2_managed_allocator_test"
+        subprocess.run(common[:1] + ["-I" + str(multicore)] + common[1:] + ["-pthread",
+            str(native / "embedded_gc_handshake.c"),
+            str(tests / "embedded_gc_stage2_managed_allocator_host.c"), dead_strip,
+            "-o", str(managed_allocator)], check=True)
+        subprocess.run([str(managed_allocator)], check=True)
+
 
 if __name__ == "__main__":
     main()
