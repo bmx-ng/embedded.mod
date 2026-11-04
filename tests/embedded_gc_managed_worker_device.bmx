@@ -10,7 +10,7 @@ End Type
 Type TManagedWorkerNode
     Field value:Int
     Field StaticArray members:TManagedWorkerLeaf[2]
-    Field current:TManagedWorkerLeaf
+    Field targets:TManagedWorkerLeaf[]
 End Type
 
 Extern "C"
@@ -23,24 +23,25 @@ Extern "C"
     Function ManagedWorkerYield() = "bmx_gc_managed_worker_yield"
     Function CollectObjects:UInt() = "bmx_embedded_collect_objects"
     Function LiveObjects:UInt() = "bmx_embedded_object_live_count"
+    Function LiveArrays:UInt() = "bmx_embedded_array_live_count"
     Function HeapValid:UInt() = "bmx_embedded_heap_integrity_valid"
 End Extern
 
 Function ManagedWorkerHold:Int(node:TManagedWorkerNode) { nomangle }
     If node.value <> 123 Then Return 1
     Local total:Int
-    Local target:TManagedWorkerNode = node
-    For target.current = EachIn node.members
+    Local targets:TManagedWorkerLeaf[] = node.targets
+    For targets[0] = EachIn node.members
         node = Null
-        total :+ target.current.value
+        total :+ targets[0].value
         If total = 7 Then ManagedWorkerReady()
         While ManagedWorkerMode() = 0
             ManagedWorkerYield()
         Wend
     Next
-    If total <> 16 Or target.current.value <> 9 Then Return 2
-    target.current = Null
-    target = Null
+    If total <> 16 Or targets[0].value <> 9 Then Return 2
+    targets[0] = Null
+    targets = Null
     ManagedWorkerReleased()
     While ManagedWorkerMode() = 1
         ManagedWorkerYield()
@@ -52,11 +53,14 @@ SleepMicroseconds(3000000)
 Local failedStep:Int
 Local firstCollected:UInt
 Local firstLive:UInt
+Local firstLiveArrays:UInt
 Local firstValid:UInt
 CollectObjects()
 Local baseline:UInt = LiveObjects()
+Local baselineArrays:UInt = LiveArrays()
 Local node:TManagedWorkerNode = New TManagedWorkerNode
 node.value = 123
+node.targets = New TManagedWorkerLeaf[1]
 Local first:TManagedWorkerLeaf = New TManagedWorkerLeaf
 first.value = 7
 Local second:TManagedWorkerLeaf = New TManagedWorkerLeaf
@@ -73,8 +77,9 @@ If Not failedStep Then
     garbage = Null
     firstCollected = CollectObjects()
     firstLive = LiveObjects()
+    firstLiveArrays = LiveArrays()
     firstValid = HeapValid()
-    If Not firstCollected Or firstLive <> baseline + 3 Or Not firstValid Then failedStep = 3
+    If Not firstCollected Or firstLive <> baseline + 3 Or firstLiveArrays <> baselineArrays + 1 Or Not firstValid Then failedStep = 3
 End If
 If Not failedStep Then
     ManagedWorkerSetMode(1)
@@ -82,7 +87,7 @@ If Not failedStep Then
 End If
 If Not failedStep Then
     CollectObjects()
-    If LiveObjects() <> baseline Or Not HeapValid() Then failedStep = 5
+    If LiveObjects() <> baseline Or LiveArrays() <> baselineArrays Or Not HeapValid() Then failedStep = 5
 End If
 If Not failedStep Then
     ManagedWorkerSetMode(2)
@@ -91,7 +96,7 @@ End If
 While True
     If failedStep Then
         Print "GC_MANAGED_WORKER,failed_step=" + failedStep
-        If failedStep = 3 Then Print "GC_MANAGED_DEBUG,baseline=" + baseline + ",collected=" + firstCollected + ",live=" + firstLive + ",valid=" + firstValid
+        If failedStep = 3 Then Print "GC_MANAGED_DEBUG,baseline=" + baseline + ",collected=" + firstCollected + ",live=" + firstLive + ",arrays=" + firstLiveArrays + ",valid=" + firstValid
     Else
         Print "GC_MANAGED_WORKER,format=1,roots=pass,poll=pass,done=1"
     End If
