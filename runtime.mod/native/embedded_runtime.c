@@ -219,6 +219,24 @@ void bmx_embedded_gc_poll(void) {
     bmx_embedded_gc_task_poll(&bmx_embedded_handshake, slot, bmx_embedded_gc_wait, NULL);
 }
 
+int32_t bmx_embedded_gc_enter_native_safe(void) {
+    if (!BMX_EMBEDDED_PLATFORM_CONTEXT_VALID()) return 0;
+    unsigned slot = (unsigned)BMX_EMBEDDED_PLATFORM_CONTEXT_INDEX();
+    if (slot == 0u || slot >= BMX_EMBEDDED_CONTEXT_CAPACITY) return 0;
+    return bmx_embedded_gc_task_enter_native_safe(&bmx_embedded_handshake, slot);
+}
+
+int32_t bmx_embedded_gc_leave_native_safe(void) {
+    if (!BMX_EMBEDDED_PLATFORM_CONTEXT_VALID()) return 0;
+    unsigned slot = (unsigned)BMX_EMBEDDED_PLATFORM_CONTEXT_INDEX();
+    if (slot == 0u || slot >= BMX_EMBEDDED_CONTEXT_CAPACITY ||
+        atomic_load_explicit(&bmx_embedded_handshake.state[slot], memory_order_acquire) !=
+            BMX_EMBEDDED_GC_TASK_NATIVE_SAFE) return 0;
+    bmx_embedded_gc_task_leave_native_safe(&bmx_embedded_handshake, slot,
+        bmx_embedded_gc_wait, NULL);
+    return 1;
+}
+
 static void bmx_embedded_gc_release_stop(void) {
     bmx_embedded_gc_stop_end(&bmx_embedded_handshake,
         (unsigned)BMX_EMBEDDED_PLATFORM_CONTEXT_INDEX());

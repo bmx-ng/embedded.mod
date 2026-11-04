@@ -121,6 +121,13 @@ def main():
             "-o", str(finalizer_concurrency)], check=True)
         subprocess.run([str(finalizer_concurrency)], check=True)
 
+        native_safe = temporary / "gc_stage2_native_safe_test"
+        subprocess.run(common[:1] + ["-I" + str(multicore)] + common[1:] + ["-pthread",
+            str(native / "embedded_gc_handshake.c"),
+            str(tests / "embedded_gc_stage2_native_safe_host.c"), dead_strip,
+            "-o", str(native_safe)], check=True)
+        subprocess.run([str(native_safe)], check=True)
+
 
 if __name__ == "__main__":
     main()

@@ -82,10 +82,18 @@ static void bmx_stage2_worker(void *unused) {
         return;
     }
 
+    /* The rooted worker blocks in native code while the owner collects. */
+    if (!bmx_embedded_gc_enter_native_safe()) {
+        atomic_store_explicit(&bmx_stage2_state, 10u, memory_order_release);
+        return;
+    }
     atomic_store_explicit(&bmx_stage2_state, 1u, memory_order_release);
     while (atomic_load_explicit(&bmx_stage2_command, memory_order_acquire) == 0u) {
-        bmx_embedded_gc_poll();
         bmx_stage2_yield();
+    }
+    if (!bmx_embedded_gc_leave_native_safe()) {
+        atomic_store_explicit(&bmx_stage2_state, 11u, memory_order_release);
+        return;
     }
     if (node->value != 123u || text->buf[0] != 'T' || array->length != 8) {
         atomic_store_explicit(&bmx_stage2_state, 5u, memory_order_release);

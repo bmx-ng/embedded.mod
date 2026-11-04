@@ -16,6 +16,11 @@ void bmx_embedded_gc_multicore_initialize(void);
 uint32_t bmx_embedded_gc_multicore_register(void);
 int32_t bmx_embedded_gc_multicore_unregister(void);
 void bmx_embedded_gc_poll(void);
+/* A registered worker may block in native code only after publishing every
+   live managed handle in a root frame. It must not access the managed heap
+   until leave returns; leave waits for any active collection to finish. */
+int32_t bmx_embedded_gc_enter_native_safe(void);
+int32_t bmx_embedded_gc_leave_native_safe(void);
 #endif
 
 /* Abstract method thunks emitted by bcc2 call the BRL.Blitz trap directly. */
