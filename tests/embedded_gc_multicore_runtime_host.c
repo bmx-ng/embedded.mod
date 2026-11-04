@@ -97,6 +97,7 @@ int main(void) {
     assert(!pthread_create(&thread, NULL, worker, NULL));
     wait_observed(1);
     node = NULL;
+    assert(bmx_embedded_reachability_audit() == 1u);
     assert(bmx_embedded_collect_objects() == 0);
     assert(bmx_embedded_object_live_count() == 1u);
     assert(bmx_embedded_heap_integrity_valid());
@@ -111,6 +112,9 @@ int main(void) {
     node = (TestNode *)bmx_embedded_object_allocate(&node_type);
     assert(node);
     node = NULL;
+    uint32_t collections_before_timeout = bmx_embedded_collection_count();
+    assert(bmx_embedded_reachability_audit() == 0u);
+    assert(bmx_embedded_collection_count() == collections_before_timeout);
     assert(bmx_embedded_collect_objects() == 0u);
     assert(bmx_embedded_object_live_count() == 1u);
     assert(bmx_embedded_heap_integrity_valid());

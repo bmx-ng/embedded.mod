@@ -1412,10 +1412,16 @@ static void bmx_embedded_abort_collection(void) {
     /* The longjmp bypasses the collector's normal epilogue. Preserve the
        at-most-once flag on a finalizer already entered, but make untouched
        pending finalizers eligible for a later collection. */
+#if BMX_EMBEDDED_MULTICORE
+    bmx_embedded_allocator_lock_enter();
+#endif
     for (BMXEmbeddedHeapBlock *block = bmx_embedded_heap_first; block; block = block->state.next) {
         block->state.flags &= ~BMX_EMBEDDED_HEAP_BLOCK_FINALIZER_PENDING;
     }
     bmx_embedded_finalizer_pending_objects = 0;
+#if BMX_EMBEDDED_MULTICORE
+    bmx_embedded_allocator_lock_leave();
+#endif
     bmx_embedded_collection_exception_boundary = NULL;
     bmx_embedded_collection_active = 0;
 #if BMX_EMBEDDED_MULTICORE
@@ -1661,7 +1667,11 @@ static void bmx_embedded_mark_value(const void *value, const BMXEmbeddedValueDes
     }
 }
 
+#if BMX_EMBEDDED_MULTICORE
+static uint32_t bmx_embedded_reachability_audit_stopped(void) {
+#else
 uint32_t bmx_embedded_reachability_audit(void) {
+#endif
     if (!BMX_EMBEDDED_PLATFORM_CONTEXT_VALID()) {
         bmx_embedded_record_object_failure();
         return 0;
@@ -1769,6 +1779,28 @@ uint32_t bmx_embedded_reachability_audit(void) {
     return context.reachable;
 }
 
+#if BMX_EMBEDDED_MULTICORE
+uint32_t bmx_embedded_reachability_audit(void) {
+    if (!BMX_EMBEDDED_PLATFORM_CONTEXT_VALID() ||
+        (unsigned)BMX_EMBEDDED_PLATFORM_CONTEXT_INDEX() != 0u ||
+        bmx_embedded_collection_active) return 0;
+    if (!bmx_embedded_gc_stop_begin(&bmx_embedded_handshake, 0u,
+            BMX_EMBEDDED_GC_WAIT_BUDGET, bmx_embedded_gc_wait, NULL)) {
+        bmx_embedded_record_object_failure();
+        return 0;
+    }
+    /* A trace callback may throw. Reuse the collection escape path to release
+       the stop before the exception reaches the caller's handler. */
+    bmx_embedded_collection_active = 1u;
+    bmx_embedded_collection_exception_boundary = bmx_embedded_exception_frames;
+    uint32_t result = bmx_embedded_reachability_audit_stopped();
+    bmx_embedded_collection_exception_boundary = NULL;
+    bmx_embedded_collection_active = 0;
+    bmx_embedded_gc_release_stop();
+    return result;
+}
+#endif
+
 uint32_t bmx_embedded_reachable_object_count(void) {
     return bmx_embedded_reachable_objects;
 }
@@ -1847,7 +1879,11 @@ uint32_t bmx_embedded_collect_objects(void) {
         return 0;
     }
 #endif
+#if BMX_EMBEDDED_MULTICORE
+    bmx_embedded_reachability_audit_stopped();
+#else
     bmx_embedded_reachability_audit();
+#endif
 #ifdef BMX_EMBEDDED_GC_TEST_ABORT_COLLECTION
     /* Test-only post-mark abort: the next audit advances the mark epoch, so
        neither survivors nor garbage can be swept from this partial cycle. */
@@ -1910,7 +1946,29 @@ uint32_t bmx_embedded_collect_objects(void) {
         /* Sweep is deferred after finalizers. Let parked workers run before
            user callbacks, which may wait on them. */
         bmx_embedded_gc_release_stop();
-#endif
+        BMXEmbeddedHeapBlock *previous_finalizer = NULL;
+        for (;;) {
+            /* Worker allocation can change the heap links while a callback
+               runs. Select and mark one candidate under the metadata lock. */
+            bmx_embedded_allocator_lock_enter();
+            BMXEmbeddedHeapBlock *block = previous_finalizer ?
+                previous_finalizer->state.next : bmx_embedded_heap_first;
+            while (block && !(block->state.flags & BMX_EMBEDDED_HEAP_BLOCK_FINALIZER_PENDING))
+                block = block->state.next;
+            if (block) {
+                previous_finalizer = block;
+                block->state.flags &= ~BMX_EMBEDDED_HEAP_BLOCK_FINALIZER_PENDING;
+                block->state.flags |= BMX_EMBEDDED_HEAP_BLOCK_FINALIZED;
+                bmx_embedded_finalizer_pending_objects -= 1u;
+                bmx_embedded_finalizer_invocation_total += 1u;
+                bmx_embedded_last_finalized_objects += 1u;
+            }
+            bmx_embedded_allocator_lock_leave();
+            if (!block) break;
+            BMXEmbeddedObject *object = (BMXEmbeddedObject *)(block + 1);
+            object->type->finalizer(object);
+        }
+#else
         for (BMXEmbeddedHeapBlock *block = bmx_embedded_heap_first; block; block = block->state.next) {
             if (!(block->state.flags & BMX_EMBEDDED_HEAP_BLOCK_FINALIZER_PENDING)) continue;
             BMXEmbeddedObject *object = (BMXEmbeddedObject *)(block + 1);
@@ -1921,6 +1979,7 @@ uint32_t bmx_embedded_collect_objects(void) {
             bmx_embedded_last_finalized_objects += 1u;
             object->type->finalizer(object);
         }
+#endif
         /* Do not sweep during a finalizer cycle. A later collection starts a
            fresh reachability epoch, observes resurrection and field changes,
            and can reclaim only Objects whose finalizer has already run. */
@@ -2034,28 +2093,40 @@ uint32_t bmx_embedded_last_reclaimed_string_bytes(void) {
 }
 
 uint32_t bmx_embedded_finalizer_pending_count(void) {
-    return bmx_embedded_finalizer_pending_objects;
+    return BMX_EMBEDDED_ALLOCATOR_STAT(bmx_embedded_finalizer_pending_objects);
 }
 
 uint32_t bmx_embedded_finalizer_invocation_count(void) {
-    return bmx_embedded_finalizer_invocation_total;
+    return BMX_EMBEDDED_ALLOCATOR_STAT(bmx_embedded_finalizer_invocation_total);
 }
 
 uint32_t bmx_embedded_last_finalized_object_count(void) {
-    return bmx_embedded_last_finalized_objects;
+    return BMX_EMBEDDED_ALLOCATOR_STAT(bmx_embedded_last_finalized_objects);
 }
 
 uint32_t bmx_embedded_heap_reusable_bytes(void) {
+#if BMX_EMBEDDED_MULTICORE
+    bmx_embedded_allocator_lock_enter();
+#endif
     uint32_t bytes = 0;
     for (BMXEmbeddedHeapBlock *block = bmx_embedded_heap_free; block; block = block->state.free_next) bytes += block->state.capacity;
+#if BMX_EMBEDDED_MULTICORE
+    bmx_embedded_allocator_lock_leave();
+#endif
     return bytes;
 }
 
 uint32_t bmx_embedded_heap_largest_free_block(void) {
+#if BMX_EMBEDDED_MULTICORE
+    bmx_embedded_allocator_lock_enter();
+#endif
     uint32_t largest = 0;
     for (BMXEmbeddedHeapBlock *block = bmx_embedded_heap_free; block; block = block->state.free_next) {
         if (block->state.capacity > largest) largest = block->state.capacity;
     }
+#if BMX_EMBEDDED_MULTICORE
+    bmx_embedded_allocator_lock_leave();
+#endif
     return largest;
 }
 
