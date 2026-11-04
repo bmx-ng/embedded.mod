@@ -1690,6 +1690,14 @@ uint32_t bmx_embedded_reachability_audit(void) {
                 if (slot->kind == BMX_EMBEDDED_ROOT_OBJECT) bmx_embedded_mark_reference(*(void **)slot->address, &context);
                 else if (slot->kind == BMX_EMBEDDED_ROOT_ARRAY) bmx_embedded_mark_array(*(void **)slot->address, &context);
                 else if (slot->kind == BMX_EMBEDDED_ROOT_STRING) bmx_embedded_mark_string(*(void **)slot->address, &context);
+#if BMX_EMBEDDED_MULTICORE
+                else if (slot->kind == BMX_EMBEDDED_ROOT_ATOMIC_OBJECT)
+                    bmx_embedded_mark_reference(bmx_embedded_atomic_reference_load(slot->address), &context);
+                else if (slot->kind == BMX_EMBEDDED_ROOT_ATOMIC_ARRAY)
+                    bmx_embedded_mark_array(bmx_embedded_atomic_reference_load(slot->address), &context);
+                else if (slot->kind == BMX_EMBEDDED_ROOT_ATOMIC_STRING)
+                    bmx_embedded_mark_string(bmx_embedded_atomic_reference_load(slot->address), &context);
+#endif
                 else if (slot->kind == BMX_EMBEDDED_ROOT_STRUCT) bmx_embedded_mark_value(slot->address, slot->descriptor, &context);
                 else if (slot->kind == BMX_EMBEDDED_ROOT_EXCEPTION) {
                     BMXEmbeddedException *exception = (BMXEmbeddedException *)slot->address;

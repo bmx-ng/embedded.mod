@@ -185,6 +185,29 @@ typedef struct BMXEmbeddedRootSlot {
 #define BMX_EMBEDDED_ROOT_STRUCT 4u
 #define BMX_EMBEDDED_ROOT_EXCEPTION 5u
 
+#if defined(BMX_EMBEDDED_MULTICORE) && BMX_EMBEDDED_MULTICORE
+/* Register this slot in a root frame that outlives every concurrent user.
+   A release store publishes initialized content; an acquire load consumes it.
+   The publishing task must still own a precise root until the store completes.
+   Neither task may access the referent while the other mutates it without a
+   separate handoff or lock. These root kinds are traced with atomic loads. */
+typedef struct BMXEmbeddedAtomicReference {
+    uintptr_t value;
+} BMXEmbeddedAtomicReference;
+
+#define BMX_EMBEDDED_ROOT_ATOMIC_OBJECT 6u
+#define BMX_EMBEDDED_ROOT_ATOMIC_ARRAY 7u
+#define BMX_EMBEDDED_ROOT_ATOMIC_STRING 8u
+
+static inline void bmx_embedded_atomic_reference_store(BMXEmbeddedAtomicReference *slot, void *value) {
+    __atomic_store_n(&slot->value, (uintptr_t)value, __ATOMIC_RELEASE);
+}
+
+static inline void *bmx_embedded_atomic_reference_load(const BMXEmbeddedAtomicReference *slot) {
+    return (void *)__atomic_load_n(&slot->value, __ATOMIC_ACQUIRE);
+}
+#endif
+
 typedef struct BMXEmbeddedRootFrame {
     struct BMXEmbeddedRootFrame *previous;
     BMXEmbeddedRootSlot *slots;
