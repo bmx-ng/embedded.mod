@@ -1,0 +1,5 @@
+GC_STAGE2_UDP_SENDTO,phase=boot
+GC_STAGE2_UDP_SENDTO,phase=ready,failed_step=0
+GC_STAGE2_UDP_SENDTO,phase=collected,failed_step=0
+GC_STAGE2_UDP_SENDTO,phase=joined,failed_step=0
+GC_STAGE2_UDP_SENDTO,raw=pass,roots=pass,collection=pass,done=1
