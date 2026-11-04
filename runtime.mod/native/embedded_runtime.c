@@ -152,6 +152,18 @@ static BMXEmbeddedExecutionContext bmx_embedded_contexts[BMX_EMBEDDED_CONTEXT_CA
 static BMXEmbeddedGCHandshake bmx_embedded_handshake = { .registry_lock = ATOMIC_FLAG_INIT };
 static atomic_flag bmx_embedded_allocator_lock = ATOMIC_FLAG_INIT;
 static uint32_t bmx_embedded_handshake_initialized;
+#if defined(BMX_EMBEDDED_PLATFORM_GC_WORKER_START) && defined(BMX_EMBEDDED_PLATFORM_GC_WORKER_JOIN)
+enum {
+    BMX_EMBEDDED_WORKER_IDLE = 0u,
+    BMX_EMBEDDED_WORKER_STARTING = 1u,
+    BMX_EMBEDDED_WORKER_RUNNING = 2u,
+    BMX_EMBEDDED_WORKER_DONE = 3u,
+    BMX_EMBEDDED_WORKER_FAILED = 4u
+};
+static atomic_uint bmx_embedded_worker_state;
+static BMXEmbeddedGCWorkerEntry bmx_embedded_worker_entry;
+static void *bmx_embedded_worker_argument;
+#endif
 
 static void bmx_embedded_allocator_lock_enter(void) {
     while (atomic_flag_test_and_set_explicit(&bmx_embedded_allocator_lock, memory_order_acquire)) {}
@@ -211,6 +223,82 @@ int32_t bmx_embedded_gc_multicore_unregister(void) {
     BMX_EMBEDDED_PLATFORM_GC_UNBIND(slot);
 #endif
     return 1;
+}
+
+#if defined(BMX_EMBEDDED_PLATFORM_GC_WORKER_START) && defined(BMX_EMBEDDED_PLATFORM_GC_WORKER_JOIN)
+static void bmx_embedded_gc_worker_trampoline(void) {
+    if (bmx_embedded_gc_multicore_register() != 1u) {
+        atomic_store_explicit(&bmx_embedded_worker_state,
+            BMX_EMBEDDED_WORKER_FAILED, memory_order_release);
+        return;
+    }
+    atomic_store_explicit(&bmx_embedded_worker_state,
+        BMX_EMBEDDED_WORKER_RUNNING, memory_order_release);
+    int failed = 0;
+    BMXEmbeddedExceptionFrame boundary;
+    bmx_embedded_exception_enter(&boundary);
+    if (setjmp(boundary.buffer) == 0) {
+        bmx_embedded_worker_entry(bmx_embedded_worker_argument);
+        bmx_embedded_exception_leave();
+    } else {
+        (void)bmx_embedded_exception_catch();
+        failed = 1;
+    }
+    if (!bmx_embedded_gc_multicore_unregister())
+        BMX_EMBEDDED_PLATFORM_PANIC("BlitzMax worker exited with active roots or GC state");
+    atomic_store_explicit(&bmx_embedded_worker_state,
+        failed ? BMX_EMBEDDED_WORKER_FAILED : BMX_EMBEDDED_WORKER_DONE,
+        memory_order_release);
+}
+#endif
+
+int32_t bmx_embedded_gc_worker_start(BMXEmbeddedGCWorkerEntry entry, void *argument) {
+#if defined(BMX_EMBEDDED_PLATFORM_GC_WORKER_START) && defined(BMX_EMBEDDED_PLATFORM_GC_WORKER_JOIN)
+    if (!entry || !bmx_embedded_handshake_initialized ||
+        !BMX_EMBEDDED_PLATFORM_CONTEXT_VALID() ||
+        (unsigned)BMX_EMBEDDED_PLATFORM_CONTEXT_INDEX() != 0u ||
+        atomic_load_explicit(&bmx_embedded_handshake.state[0], memory_order_acquire) !=
+            BMX_EMBEDDED_GC_TASK_RUNNING) return 0;
+    unsigned expected = BMX_EMBEDDED_WORKER_IDLE;
+    if (!atomic_compare_exchange_strong_explicit(&bmx_embedded_worker_state,
+            &expected, BMX_EMBEDDED_WORKER_STARTING,
+            memory_order_acq_rel, memory_order_acquire)) return 0;
+    bmx_embedded_worker_entry = entry;
+    bmx_embedded_worker_argument = argument;
+    if (!BMX_EMBEDDED_PLATFORM_GC_WORKER_START(bmx_embedded_gc_worker_trampoline)) {
+        atomic_store_explicit(&bmx_embedded_worker_state,
+            BMX_EMBEDDED_WORKER_IDLE, memory_order_release);
+        return 0;
+    }
+    return 1;
+#else
+    (void)entry;
+    (void)argument;
+    return 0;
+#endif
+}
+
+int32_t bmx_embedded_gc_worker_join(uint32_t wait_budget) {
+#if defined(BMX_EMBEDDED_PLATFORM_GC_WORKER_START) && defined(BMX_EMBEDDED_PLATFORM_GC_WORKER_JOIN)
+    if (!BMX_EMBEDDED_PLATFORM_CONTEXT_VALID() ||
+        (unsigned)BMX_EMBEDDED_PLATFORM_CONTEXT_INDEX() != 0u) return 0;
+    for (;;) {
+        unsigned state = atomic_load_explicit(&bmx_embedded_worker_state, memory_order_acquire);
+        if (state == BMX_EMBEDDED_WORKER_IDLE) return 0;
+        if ((state == BMX_EMBEDDED_WORKER_DONE || state == BMX_EMBEDDED_WORKER_FAILED) &&
+            BMX_EMBEDDED_PLATFORM_GC_WORKER_JOIN()) {
+            atomic_store_explicit(&bmx_embedded_worker_state,
+                BMX_EMBEDDED_WORKER_IDLE, memory_order_release);
+            return state == BMX_EMBEDDED_WORKER_DONE ? 1 : -1;
+        }
+        if (!wait_budget) return 0;
+        wait_budget -= 1u;
+        bmx_embedded_gc_wait(NULL);
+    }
+#else
+    (void)wait_budget;
+    return 0;
+#endif
 }
 
 void bmx_embedded_gc_poll(void) {

@@ -21,6 +21,13 @@ void bmx_embedded_gc_poll(void);
    until leave returns; leave waits for any active collection to finish. */
 int32_t bmx_embedded_gc_enter_native_safe(void);
 int32_t bmx_embedded_gc_leave_native_safe(void);
+/* Internal worker lifecycle. The argument is native data; any managed value
+   it names must be rooted by the owner until the worker establishes its own
+   root. Join returns 1 on success, -1 after a worker exception, and 0 while
+   the worker is still running. An invalid worker teardown is fatal. */
+typedef void (*BMXEmbeddedGCWorkerEntry)(void *argument);
+int32_t bmx_embedded_gc_worker_start(BMXEmbeddedGCWorkerEntry entry, void *argument);
+int32_t bmx_embedded_gc_worker_join(uint32_t wait_budget);
 #endif
 
 /* Abstract method thunks emitted by bcc2 call the BRL.Blitz trap directly. */

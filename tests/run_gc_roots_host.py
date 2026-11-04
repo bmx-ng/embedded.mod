@@ -128,6 +128,13 @@ def main():
             "-o", str(native_safe)], check=True)
         subprocess.run([str(native_safe)], check=True)
 
+        lifecycle = temporary / "gc_stage2_worker_lifecycle_test"
+        subprocess.run(common[:1] + ["-I" + str(multicore)] + common[1:] + ["-pthread",
+            str(native / "embedded_gc_handshake.c"),
+            str(tests / "embedded_gc_stage2_worker_lifecycle_host.c"), dead_strip,
+            "-o", str(lifecycle)], check=True)
+        subprocess.run([str(lifecycle)], check=True)
+
 
 if __name__ == "__main__":
     main()

@@ -1,0 +1,7 @@
+# Stage 2 runtime-owned worker lifecycle check
+
+The [fixture](../../../tests/embedded_gc_stage2_worker_lifecycle_device.bmx) uses the runtime's worker start and join entry points. Each of 16 jobs allocates and roots an Object, Array and String on the worker. The owner collects while the job is active, then joins it and collects again to check reclamation. One job throws through the runtime's top-level worker exception boundary; the following jobs verify that its task slot and target resources were released.
+
+On 2026-11-04, the opt-in 64 KiB arena image built for Pico 2 and ESP32-S3. The Pico 2 image was flashed and verified, then reported `GC_STAGE2_WORKER,format=1,cycles=16,objects=pass,arrays=pass,strings=pass,exception=pass,reclaim=pass,done=1`. The ESP32-S3 image was flashed and hash-verified, started with a watchdog reset, and reported the same result. The [host test](../../../tests/embedded_gc_stage2_worker_lifecycle_host.c) runs 32 jobs, including a failed start and a worker exception, under AddressSanitizer/UndefinedBehaviorSanitizer and ThreadSanitizer.
+
+This is an internal native worker API. Pico reserves core 1 for it and resets that core after each join. ESP32 creates a pinned FreeRTOS task, waits for the completed task to suspend, then deletes it on join. The test does not cover long soaks, callbacks, interrupts, or simultaneous task creation from multiple owners.
