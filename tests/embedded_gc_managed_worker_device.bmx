@@ -10,8 +10,11 @@ End Type
 Type TManagedWorkerNode
     Field value:Int
     Field StaticArray members:TManagedWorkerLeaf[2]
-    Field targets:TManagedWorkerLeaf[]
 End Type
+
+Struct SManagedWorkerPayload
+    Field StaticArray members:TManagedWorkerLeaf[2]
+End Struct
 
 Extern "C"
     Function StartManagedWorker:Int(node:TManagedWorkerNode) = "bmx_gc_managed_worker_start"
@@ -30,18 +33,20 @@ End Extern
 Function ManagedWorkerHold:Int(node:TManagedWorkerNode) { nomangle }
     If node.value <> 123 Then Return 1
     Local total:Int
-    Local targets:TManagedWorkerLeaf[] = node.targets
-    For targets[0] = EachIn node.members
+    Local payload:SManagedWorkerPayload
+    payload.members[0] = node.members[0]
+    payload.members[1] = node.members[1]
+    For Local item:TManagedWorkerLeaf = EachIn payload.members
         node = Null
-        total :+ targets[0].value
+        total :+ item.value
         If total = 7 Then ManagedWorkerReady()
         While ManagedWorkerMode() = 0
             ManagedWorkerYield()
         Wend
     Next
-    If total <> 16 Or targets[0].value <> 9 Then Return 2
-    targets[0] = Null
-    targets = Null
+    If total <> 16 Then Return 2
+    payload.members[0] = Null
+    payload.members[1] = Null
     ManagedWorkerReleased()
     While ManagedWorkerMode() = 1
         ManagedWorkerYield()
@@ -60,7 +65,6 @@ Local baseline:UInt = LiveObjects()
 Local baselineArrays:UInt = LiveArrays()
 Local node:TManagedWorkerNode = New TManagedWorkerNode
 node.value = 123
-node.targets = New TManagedWorkerLeaf[1]
 Local first:TManagedWorkerLeaf = New TManagedWorkerLeaf
 first.value = 7
 Local second:TManagedWorkerLeaf = New TManagedWorkerLeaf
@@ -79,7 +83,7 @@ If Not failedStep Then
     firstLive = LiveObjects()
     firstLiveArrays = LiveArrays()
     firstValid = HeapValid()
-    If Not firstCollected Or firstLive <> baseline + 3 Or firstLiveArrays <> baselineArrays + 1 Or Not firstValid Then failedStep = 3
+    If firstCollected < 2 Or firstLive <> baseline + 2 Or firstLiveArrays <> baselineArrays Or Not firstValid Then failedStep = 3
 End If
 If Not failedStep Then
     ManagedWorkerSetMode(1)
