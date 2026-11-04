@@ -10,11 +10,13 @@ static int host_bind(unsigned slot);
 static void host_unbind(unsigned slot);
 static int host_worker_start(void (*entry)(void));
 static int host_worker_join(void);
+static void host_before_unregister(void);
 
 #define BMX_EMBEDDED_PLATFORM_GC_BIND(slot) host_bind(slot)
 #define BMX_EMBEDDED_PLATFORM_GC_UNBIND(slot) host_unbind(slot)
 #define BMX_EMBEDDED_PLATFORM_GC_WORKER_START(entry) host_worker_start(entry)
 #define BMX_EMBEDDED_PLATFORM_GC_WORKER_JOIN() host_worker_join()
+#define BMX_EMBEDDED_TEST_WORKER_BEFORE_UNREGISTER() host_before_unregister()
 #define BMX_EMBEDDED_MULTICORE 1
 #define BMX_EMBEDDED_GC_WAIT_BUDGET 100000u
 #define BMX_EMBEDDED_ARENA_SIZE (64u * 1024u)
@@ -24,6 +26,15 @@ _Thread_local unsigned bmx_test_context_slot = UINT32_MAX;
 static pthread_t host_thread;
 static void (*host_entry)(void);
 static int fail_next_start;
+static atomic_uint force_overlap;
+static atomic_uint exit_ready;
+
+static void host_before_unregister(void) {
+    if (!atomic_load_explicit(&force_overlap, memory_order_acquire)) return;
+    atomic_store_explicit(&exit_ready, 1u, memory_order_release);
+    while (!atomic_load_explicit(&bmx_embedded_handshake.request_epoch,
+            memory_order_acquire)) sched_yield();
+}
 
 static int host_bind(unsigned slot) {
     if (bmx_test_context_slot != UINT32_MAX) return 0;
@@ -146,6 +157,25 @@ int main(void) {
         assert(bmx_embedded_object_live_count() == 0u);
         assert(bmx_embedded_heap_integrity_valid());
     }
+    WorkerJob overlapping = {.value = 100u};
+    atomic_init(&overlapping.stage, 0u);
+    atomic_init(&overlapping.release, 0u);
+    atomic_store_explicit(&force_overlap, 1u, memory_order_release);
+    atomic_store_explicit(&exit_ready, 0u, memory_order_release);
+    assert(bmx_embedded_gc_worker_start(run_job, &overlapping));
+    await_stage(&overlapping);
+    atomic_store_explicit(&overlapping.release, 1u, memory_order_release);
+    for (unsigned attempt = 0; attempt < 10000000u; ++attempt) {
+        if (atomic_load_explicit(&exit_ready, memory_order_acquire)) break;
+        assert(attempt != 9999999u);
+        sched_yield();
+    }
+    (void)bmx_embedded_collect_objects();
+    atomic_store_explicit(&force_overlap, 0u, memory_order_release);
+    assert(bmx_embedded_gc_worker_join(100000u) == 1);
+    (void)bmx_embedded_collect_objects();
+    assert(bmx_embedded_object_live_count() == 0u);
+    assert(bmx_embedded_heap_integrity_valid());
     assert(bmx_embedded_gc_multicore_unregister());
     puts("PASS: runtime-created worker lifecycle, exception and repeated join");
     return 0;

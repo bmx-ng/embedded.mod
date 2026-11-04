@@ -12,6 +12,7 @@
 #include "pico/stdlib.h"
 static void callback_yield(void) { tight_loop_contents(); }
 #elif defined(BMX_ESP32) && BMX_ESP32
+#include "blitzmax/embedded_platform.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 static void callback_yield(void) { taskYIELD(); }
@@ -24,9 +25,33 @@ static atomic_uint callback_ack;
 static atomic_uint callback_done;
 static atomic_uint callback_failed;
 static uint32_t callback_token;
+#if defined(BMX_ESP32) && BMX_ESP32
+static atomic_uint callback_gate_calls;
+static atomic_uint callback_unregistered_result;
+static void callback_gate_probe(void *unused) {
+    (void)unused;
+    atomic_fetch_add_explicit(&callback_gate_calls, 1u, memory_order_release);
+}
+static void callback_unregistered_task(void *unused) {
+    (void)unused;
+    int accepted = bmx_esp32_managed_callback_dispatch(callback_gate_probe, NULL);
+    atomic_store_explicit(&callback_unregistered_result,
+        accepted ? 2u : 1u, memory_order_release);
+    vTaskDelete(NULL);
+}
+#endif
 
 static void callback_worker(void *unused) {
     (void)unused;
+#if defined(BMX_ESP32) && BMX_ESP32
+    if (bmx_esp32_managed_callback_dispatch(callback_gate_probe, NULL) ||
+            atomic_load_explicit(&callback_gate_calls, memory_order_acquire)) {
+        atomic_store_explicit(&callback_failed, CALLBACK_COUNT + 1u,
+            memory_order_release);
+        atomic_store_explicit(&callback_done, 1u, memory_order_release);
+        return;
+    }
+#endif
     for (uint32_t index = 1u; index <= CALLBACK_COUNT; ++index) {
         if (!bmx_embedded_event_post_ex(callback_token, index,
                 index ^ 0x5a5au, index + 7u, index + 11u)) {
@@ -75,4 +100,32 @@ int32_t bmx_embedded_gc_stage2_callbacks_join(void) {
         if (joined) return joined;
     }
     return 0;
+}
+
+int32_t bmx_embedded_gc_stage2_callbacks_gate_check(void) {
+#if defined(BMX_ESP32) && BMX_ESP32
+    uint32_t rejects = bmx_esp32_managed_callback_rejection_count();
+    if (!rejects || atomic_load_explicit(&callback_gate_calls,
+            memory_order_acquire)) return 0;
+    atomic_store_explicit(&callback_unregistered_result, 0u,
+        memory_order_relaxed);
+    if (xTaskCreatePinnedToCore(callback_unregistered_task, "gc-callback-probe",
+            2048, NULL, tskIDLE_PRIORITY + 1, NULL, 1) != pdPASS) return 0;
+    for (unsigned attempt = 0; attempt < 10000u; ++attempt) {
+        if (atomic_load_explicit(&callback_unregistered_result,
+                memory_order_acquire)) break;
+        vTaskDelay(1u);
+    }
+    if (atomic_load_explicit(&callback_unregistered_result,
+            memory_order_acquire) != 1u ||
+            bmx_esp32_managed_callback_rejection_count() != rejects + 1u ||
+            atomic_load_explicit(&callback_gate_calls,
+                memory_order_acquire)) return 0;
+    uint32_t dispatches = bmx_esp32_managed_callback_dispatch_count();
+    if (!bmx_esp32_managed_callback_dispatch(callback_gate_probe, NULL) ||
+            bmx_esp32_managed_callback_dispatch_count() != dispatches + 1u ||
+            atomic_load_explicit(&callback_gate_calls,
+                memory_order_acquire) != 1u) return 0;
+#endif
+    return 1;
 }

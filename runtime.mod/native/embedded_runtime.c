@@ -244,8 +244,21 @@ static void bmx_embedded_gc_worker_trampoline(void) {
         (void)bmx_embedded_exception_catch();
         failed = 1;
     }
-    if (!bmx_embedded_gc_multicore_unregister())
-        BMX_EMBEDDED_PLATFORM_PANIC("BlitzMax worker exited with active roots or GC state");
+#ifdef BMX_EMBEDDED_TEST_WORKER_BEFORE_UNREGISTER
+    BMX_EMBEDDED_TEST_WORKER_BEFORE_UNREGISTER();
+#endif
+    /* The owner may request a collection just as this job returns. In that
+       case unregister is excluded by the registry epoch; park, then retry
+       after the collection ends. Active worker frames remain a hard error. */
+    for (unsigned attempt = 0u; ; ++attempt) {
+        if (bmx_embedded_gc_multicore_unregister()) break;
+        if (bmx_embedded_contexts[1].root_frames ||
+                bmx_embedded_contexts[1].exception_frames ||
+                attempt == BMX_EMBEDDED_GC_WAIT_BUDGET)
+            BMX_EMBEDDED_PLATFORM_PANIC("BlitzMax worker exited with active roots or GC state");
+        bmx_embedded_gc_poll();
+        bmx_embedded_gc_wait(NULL);
+    }
     atomic_store_explicit(&bmx_embedded_worker_state,
         failed ? BMX_EMBEDDED_WORKER_FAILED : BMX_EMBEDDED_WORKER_DONE,
         memory_order_release);

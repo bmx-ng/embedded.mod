@@ -17,6 +17,7 @@ Extern "C"
     Function WorkerDone:Int() = "bmx_embedded_gc_stage2_callbacks_done"
     Function WorkerFailed:UInt() = "bmx_embedded_gc_stage2_callbacks_failed"
     Function JoinCallbacks:Int() = "bmx_embedded_gc_stage2_callbacks_join"
+    Function CheckCallbackGate:Int() = "bmx_embedded_gc_stage2_callbacks_gate_check"
     Function CollectObjects:UInt() = "bmx_embedded_collect_objects"
     Function HeapValid:UInt() = "bmx_embedded_heap_integrity_valid"
 End Extern
@@ -74,11 +75,12 @@ Wend
 If Not failedStep And JoinCallbacks() <> 1 Then failedStep = 7
 If Not failedStep And (EmbeddedDeferredEventPending() Or EmbeddedDeferredEventDropped()) Then failedStep = 8
 If Not failedStep And Not ReleaseEmbeddedEventSource(token) Then failedStep = 9
+If Not failedStep And Not CheckCallbackGate() Then failedStep = 10
 While True
     If failedStep Then
         Print "GC_STAGE2_CALLBACKS,failed_step=" + failedStep + ",received=" + received
     Else
-        Print "GC_STAGE2_CALLBACKS,format=1,callbacks=10000,managed=pass,collection=pass,dropped=0,done=1"
+        Print "GC_STAGE2_CALLBACKS,format=1,callbacks=10000,managed=pass,gate=pass,collection=pass,dropped=0,done=1"
     End If
     SleepMicroseconds(1000000)
 Wend
