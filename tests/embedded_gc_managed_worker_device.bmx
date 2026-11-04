@@ -10,6 +10,7 @@ End Type
 Type TManagedWorkerNode
     Field value:Int
     Field StaticArray members:TManagedWorkerLeaf[2]
+    Field current:TManagedWorkerLeaf
 End Type
 
 Extern "C"
@@ -28,17 +29,18 @@ End Extern
 Function ManagedWorkerHold:Int(node:TManagedWorkerNode) { nomangle }
     If node.value <> 123 Then Return 1
     Local total:Int
-    Local item:TManagedWorkerLeaf
-    For item = EachIn node.members
+    Local target:TManagedWorkerNode = node
+    For target.current = EachIn node.members
         node = Null
-        total :+ item.value
+        total :+ target.current.value
         If total = 7 Then ManagedWorkerReady()
         While ManagedWorkerMode() = 0
             ManagedWorkerYield()
         Wend
     Next
-    If total <> 16 Or item.value <> 9 Then Return 2
-    item = Null
+    If total <> 16 Or target.current.value <> 9 Then Return 2
+    target.current = Null
+    target = Null
     ManagedWorkerReleased()
     While ManagedWorkerMode() = 1
         ManagedWorkerYield()
