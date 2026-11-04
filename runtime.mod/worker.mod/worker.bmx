@@ -10,6 +10,10 @@ core/task. JoinManagedWorker returns 1 after normal completion, -1 after an
 uncaught worker exception, or 0 while it is still running. Only the owner
 task may start or join. Shared managed values require an explicit atomic
 handoff and precise roots; ordinary shared field writes are not synchronized.
+Worker sleeps and scalar UART waits can overlap owner collection. Blocking
+calls that retain a raw buffer pointer, such as UART, I2C, SPI, stdio and
+filesystem transfers, are not yet certified for managed workers and can make
+an owner collection time out while the call is blocked.
 End Rem
 Module Embedded.Runtime.Worker
 ?embedded
