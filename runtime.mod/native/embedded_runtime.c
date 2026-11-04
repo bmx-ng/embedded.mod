@@ -78,11 +78,24 @@ _Static_assert(sizeof(BMXEmbeddedHeapBlock) % BMX_EMBEDDED_MEMORY_ALIGNMENT == 0
 static uint8_t *bmx_embedded_platform_arena;
 
 static uint8_t *bmx_embedded_arena_base(void) {
+#if BMX_EMBEDDED_MULTICORE
+    uint8_t *arena = __atomic_load_n(&bmx_embedded_platform_arena, __ATOMIC_ACQUIRE);
+    /* Arena acquisition is an owner-only SDK operation. Publish the result
+       before a worker can enter the raw allocator. */
+    if (!arena && BMX_EMBEDDED_PLATFORM_CONTEXT_VALID() &&
+        (unsigned)BMX_EMBEDDED_PLATFORM_CONTEXT_INDEX() == 0u) {
+        arena = (uint8_t *)BMX_EMBEDDED_PLATFORM_ARENA_ACQUIRE(
+            BMX_EMBEDDED_ARENA_SIZE, BMX_EMBEDDED_MEMORY_ALIGNMENT);
+        if (arena) __atomic_store_n(&bmx_embedded_platform_arena, arena, __ATOMIC_RELEASE);
+    }
+    return arena;
+#else
     if (!bmx_embedded_platform_arena && BMX_EMBEDDED_PLATFORM_CONTEXT_VALID()) {
         bmx_embedded_platform_arena = (uint8_t *)BMX_EMBEDDED_PLATFORM_ARENA_ACQUIRE(
             BMX_EMBEDDED_ARENA_SIZE, BMX_EMBEDDED_MEMORY_ALIGNMENT);
     }
     return bmx_embedded_platform_arena;
+#endif
 }
 #else
 static _Alignas(BMX_EMBEDDED_MEMORY_ALIGNMENT) uint8_t
@@ -137,7 +150,16 @@ static BMXEmbeddedExecutionContext bmx_embedded_contexts[BMX_EMBEDDED_CONTEXT_CA
 
 #if BMX_EMBEDDED_MULTICORE
 static BMXEmbeddedGCHandshake bmx_embedded_handshake = { .registry_lock = ATOMIC_FLAG_INIT };
+static atomic_flag bmx_embedded_allocator_lock = ATOMIC_FLAG_INIT;
 static uint32_t bmx_embedded_handshake_initialized;
+
+static void bmx_embedded_allocator_lock_enter(void) {
+    while (atomic_flag_test_and_set_explicit(&bmx_embedded_allocator_lock, memory_order_acquire)) {}
+}
+
+static void bmx_embedded_allocator_lock_leave(void) {
+    atomic_flag_clear_explicit(&bmx_embedded_allocator_lock, memory_order_release);
+}
 
 #ifdef BMX_EMBEDDED_PLATFORM_GC_BIND
 static int bmx_embedded_gc_bind_slot(unsigned slot, void *unused) {
@@ -327,9 +349,10 @@ static BMXEmbeddedHeapBlock *bmx_embedded_heap_release(BMXEmbeddedHeapBlock *blo
     return block;
 }
 
-static void *bmx_embedded_heap_allocate(uint32_t bytes, uint32_t flags) {
 #if BMX_EMBEDDED_MULTICORE
-    bmx_embedded_gc_require_heap_owner();
+static void *bmx_embedded_heap_allocate_unlocked(uint32_t bytes, uint32_t flags, uint8_t *arena) {
+#else
+static void *bmx_embedded_heap_allocate(uint32_t bytes, uint32_t flags) {
 #endif
     if (!bytes) return NULL;
 #ifdef BMX_EMBEDDED_GC_TEST_REJECT_ALLOCATION
@@ -338,8 +361,10 @@ static void *bmx_embedded_heap_allocate(uint32_t bytes, uint32_t flags) {
 #endif
     const uint32_t aligned_bytes = bmx_embedded_align_size(bytes);
     if (aligned_bytes < bytes) return NULL;
+#if !BMX_EMBEDDED_MULTICORE
     uint8_t *arena = bmx_embedded_arena_base();
     if (!arena) return NULL;
+#endif
 
     /* Retain the predecessor while searching, so unlinking the first fit
        does not require another walk from the free-list head. */
@@ -403,7 +428,29 @@ static void *bmx_embedded_heap_allocate(uint32_t bytes, uint32_t flags) {
     return block + 1;
 }
 
+#if BMX_EMBEDDED_MULTICORE
+static void *bmx_embedded_heap_allocate(uint32_t bytes, uint32_t flags) {
+    if (flags != BMX_EMBEDDED_HEAP_BLOCK_RAW) bmx_embedded_gc_require_heap_owner();
+    else {
+        unsigned slot = (unsigned)BMX_EMBEDDED_PLATFORM_CONTEXT_INDEX();
+        if (slot != 0u && (slot >= BMX_EMBEDDED_CONTEXT_CAPACITY ||
+            atomic_load_explicit(&bmx_embedded_handshake.state[slot], memory_order_acquire) !=
+                BMX_EMBEDDED_GC_TASK_RUNNING))
+            BMX_EMBEDDED_PLATFORM_PANIC("BlitzMax raw worker allocation requires a running GC task");
+    }
+    uint8_t *arena = bmx_embedded_arena_base();
+    if (!arena) return NULL;
+    bmx_embedded_allocator_lock_enter();
+    void *result = bmx_embedded_heap_allocate_unlocked(bytes, flags, arena);
+    bmx_embedded_allocator_lock_leave();
+    return result;
+}
+#endif
+
 static void *bmx_embedded_heap_allocate_with_collection(uint32_t bytes, uint32_t flags) {
+#if BMX_EMBEDDED_MULTICORE
+    bmx_embedded_gc_require_heap_owner();
+#endif
     void *result = bmx_embedded_heap_allocate(bytes, flags);
     if (!result && !bmx_embedded_collection_active) {
         bmx_embedded_automatic_collection_total += 1u;
@@ -432,19 +479,48 @@ uint32_t bmx_embedded_arena_capacity(void) {
 }
 
 uint32_t bmx_embedded_arena_used(void) {
+#if BMX_EMBEDDED_MULTICORE
+    bmx_embedded_allocator_lock_enter();
+    uint32_t result = bmx_embedded_arena_offset;
+    bmx_embedded_allocator_lock_leave();
+    return result;
+#else
     return bmx_embedded_arena_offset;
+#endif
 }
 
 uint32_t bmx_embedded_arena_remaining(void) {
+#if BMX_EMBEDDED_MULTICORE
+    if (!bmx_embedded_arena_base()) return 0u;
+    bmx_embedded_allocator_lock_enter();
+    uint32_t result = BMX_EMBEDDED_ARENA_SIZE - bmx_embedded_arena_offset;
+    bmx_embedded_allocator_lock_leave();
+    return result;
+#else
     return bmx_embedded_arena_base() ? BMX_EMBEDDED_ARENA_SIZE - bmx_embedded_arena_offset : 0u;
+#endif
 }
 
 uint32_t bmx_embedded_arena_high_water(void) {
+#if BMX_EMBEDDED_MULTICORE
+    bmx_embedded_allocator_lock_enter();
+    uint32_t result = bmx_embedded_arena_high_water_mark;
+    bmx_embedded_allocator_lock_leave();
+    return result;
+#else
     return bmx_embedded_arena_high_water_mark;
+#endif
 }
 
 uint32_t bmx_embedded_arena_allocation_count(void) {
+#if BMX_EMBEDDED_MULTICORE
+    bmx_embedded_allocator_lock_enter();
+    uint32_t result = bmx_embedded_arena_allocations;
+    bmx_embedded_allocator_lock_leave();
+    return result;
+#else
     return bmx_embedded_arena_allocations;
+#endif
 }
 
 uint32_t bmx_embedded_arena_failure_count(void) {
@@ -670,12 +746,21 @@ void bbMemFree(void *memory) {
         bmx_embedded_record_arena_failure();
         return;
     }
+#if BMX_EMBEDDED_MULTICORE
+    bmx_embedded_allocator_lock_enter();
+#endif
     BMXEmbeddedHeapBlock *block = bmx_embedded_raw_block(memory);
     if (!block) BMX_EMBEDDED_PLATFORM_PANIC("BlitzMax core MemFree received an invalid pointer");
     bmx_embedded_heap_release(block);
+#if BMX_EMBEDDED_MULTICORE
+    bmx_embedded_allocator_lock_leave();
+#endif
 }
 
 void *bbMemExtend(void *memory, size_t size, size_t new_size) {
+#if BMX_EMBEDDED_MULTICORE
+    bmx_embedded_gc_require_heap_owner();
+#endif
     if (!memory) return bbMemAlloc(new_size);
     if (!new_size) {
         bbMemFree(memory);
@@ -685,12 +770,23 @@ void *bbMemExtend(void *memory, size_t size, size_t new_size) {
         bmx_embedded_record_arena_failure();
         return NULL;
     }
+#if BMX_EMBEDDED_MULTICORE
+    bmx_embedded_allocator_lock_enter();
+#endif
     BMXEmbeddedHeapBlock *block = bmx_embedded_raw_block(memory);
     if (!block) BMX_EMBEDDED_PLATFORM_PANIC("BlitzMax core MemExtend received an invalid pointer");
+#if BMX_EMBEDDED_MULTICORE
+    size_t old_size = block->state.requested_size;
+    bmx_embedded_allocator_lock_leave();
+#endif
     void *extended = bbMemAlloc(new_size);
     if (!extended) return NULL;
     size_t copied = size;
+#if BMX_EMBEDDED_MULTICORE
+    if (copied > old_size) copied = old_size;
+#else
     if (copied > block->state.requested_size) copied = block->state.requested_size;
+#endif
     if (copied > new_size) copied = new_size;
     memcpy(extended, memory, copied);
     bbMemFree(memory);

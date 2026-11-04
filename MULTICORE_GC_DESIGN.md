@@ -1,6 +1,6 @@
 # Embedded managed multicore: audit and design decision
 
-Status: Stage 1 internal prototype complete, 2026-11-04. Multicore managed execution remains opt-in and restricted to the internal root-only worker experiment. The table under "Current implementation and boundaries" records the pre-implementation audit; its line references refer to that checkout. The compiler and target modules are separate repositories.
+Status: Stage 1 internal prototype complete; Stage 2 in progress, 2026-11-04. Multicore managed execution remains opt-in and restricted to internal experiments. The table under "Current implementation and boundaries" records the pre-implementation audit; its line references refer to that checkout. The compiler and target modules are separate repositories.
 
 ## Decision
 
@@ -103,4 +103,10 @@ The internal Stage 1 gate in the table above is met as of 2026-11-04:
 | Host sanitizers and compiler checks | On 2026-11-04, `tests/run_gc_roots_host.py` passed all five optimized AddressSanitizer/UndefinedBehaviorSanitizer checks. A fresh build of `bcc2/tests/test_compiler_ir.bmx` passed, including the opt-in root-liveness regressions. |
 | Internal worker experiment | The [generated managed-worker fixture](benchmarks/gc/results/multicore_stage1_managed_worker_hardware.md) passed on Pico 2 and ESP32-S3. The later [Select](benchmarks/gc/results/multicore_stage1_select_hardware.md) and [exception](benchmarks/gc/results/multicore_stage1_exception_hardware.md) liveness fixtures also passed on both boards. |
 
-This completion authorizes only the internal Stage 1 experiment. The worker can hold precise roots and poll while the owner allocates and collects. Worker allocation, shared heap mutation, runtime-created worker lifecycle, general native call boundaries, and a public parallel managed API require the Stage 2 work and gate. Default single-core builds remain the performance mode; the multicore compiler and target settings require explicit `-gc-multicore` opt-in.
+This completion authorizes only the internal Stage 1 experiment. The worker can hold precise roots and poll while the owner allocates and collects. Managed worker allocation, shared heap mutation, runtime-created worker lifecycle, general native call boundaries, and a public parallel managed API require the Stage 2 work and gate. Default single-core builds remain the performance mode; the multicore compiler and target settings require explicit `-gc-multicore` opt-in.
+
+## Stage 2 progress
+
+The first allocator slice permits a registered worker to request non-collecting raw arena blocks through `bmx_embedded_arena_allocate()`. The opt-in runtime now locks heap metadata during allocation and owner-side raw free, locks arena-statistic reads, and publishes the ESP32 arena pointer with release/acquire ordering after owner-side acquisition. The lock is released before any collection request; a worker that does not subsequently reach a poll still causes the existing rendezvous timeout without sweeping. Managed Object, Array, and String allocation and the collecting `bbMemAlloc()` path remain owner-only while their initialization, root publication, and allocation-failure rules are developed.
+
+The [concurrent raw allocator host test](tests/embedded_gc_stage2_raw_allocator_host.c) interleaves two allocating threads with owner-side free/reuse, then collects while the worker polls and checks every block and heap integrity. It passes under AddressSanitizer/UndefinedBehaviorSanitizer and ThreadSanitizer. The existing opt-in exception fixture builds for Pico 2 and ESP32-S3 with the modified runtime. A host `-O2` object comparison confirms that the default single-core runtime remains byte-identical to the prior revision. This is a foundation test, not the Stage 2 gate: concurrent managed allocation, publication, target device contention, lifecycle, callbacks, exceptions and OOM tests are still required.

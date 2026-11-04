@@ -13,6 +13,7 @@ def main():
     native = tests.parent / "runtime.mod" / "native"
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--cc", default="clang")
+    parser.add_argument("--sanitizers", default="address,undefined")
     args = parser.parse_args()
 
     source = (native / "embedded_runtime.c").read_text()
@@ -33,7 +34,7 @@ def main():
         (temporary / "embedded_runtime_test.c").write_text(source)
         dead_strip = "-Wl,-dead_strip" if sys.platform == "darwin" else "-Wl,--gc-sections"
         common = [
-            args.cc, "-O2", "-g", "-fsanitize=address,undefined", "-std=c11",
+            args.cc, "-O2", "-g", "-fsanitize=" + args.sanitizers, "-std=c11",
             "-DBMX_EMBEDDED_GC_VALIDATE_AFTER_COLLECTION=1",
             "-ffunction-sections", "-fdata-sections", "-I" + str(temporary),
             "-I" + str(native / "include"),
@@ -91,6 +92,13 @@ def main():
             str(tests / "embedded_gc_multicore_runtime_host.c"), dead_strip,
             "-o", str(integrated)], check=True)
         subprocess.run([str(integrated)], check=True)
+
+        raw_allocator = temporary / "gc_stage2_raw_allocator_test"
+        subprocess.run(common[:1] + ["-I" + str(multicore)] + common[1:] + ["-pthread",
+            str(native / "embedded_gc_handshake.c"),
+            str(tests / "embedded_gc_stage2_raw_allocator_host.c"), dead_strip,
+            "-o", str(raw_allocator)], check=True)
+        subprocess.run([str(raw_allocator)], check=True)
 
 
 if __name__ == "__main__":
