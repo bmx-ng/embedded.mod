@@ -65,8 +65,8 @@ def main():
             "-o", str(static_field)], check=True)
         subprocess.run([str(static_field)], check=True)
 
-        # Stage 1 internal protocol test. It has no target integration yet,
-        # and deliberately cannot enable managed workers in firmware.
+        # Stage 1 internal protocol test. Target adapters and the restricted
+        # managed-worker experiment are verified separately on both boards.
         handshake = temporary / "gc_handshake_test"
         subprocess.run(common + ["-pthread", str(native / "embedded_gc_handshake.c"),
             str(tests / "embedded_gc_handshake_host.c"), dead_strip,
