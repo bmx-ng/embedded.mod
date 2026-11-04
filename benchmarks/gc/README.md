@@ -1,8 +1,11 @@
 # Embedded GC benchmarks
 
-The programs use the production mark-queue collector. They perform internal
-heap checks and print one completion marker on success. Neither runs managed
-work on the second core.
+The original GC benchmarks use the production mark-queue collector. They
+perform internal heap checks and print a completion marker on success. The
+opt-in `gc_allocation.bmx` and `gc_allocation_irregular.bmx` fixtures also run
+a registered managed worker on the second core. The latter compares four
+Object sizes under equal and uneven task allocation rates; see the
+[Stage 3 results](results/multicore_stage3_irregular_allocation.md).
 
 - `gc_benchmark.bmx` measures ordinary field updates, tracing a backward
   allocation-order chain, and reclaiming short-lived objects.
