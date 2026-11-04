@@ -1,0 +1,5 @@
+2026-11-04 Pico 2, release, 64 KiB SRAM heap, -gc-multicore
+picotool load -f -v -x: flash verification OK
+GC_STAGE2_NATIVE_EVENT_WAIT,roots=pass,collection=pass,done=1
+GC_STAGE2_NATIVE_EVENT_WAIT,roots=pass,collection=pass,done=1
+GC_STAGE2_NATIVE_EVENT_WAIT,roots=pass,collection=pass,done=1

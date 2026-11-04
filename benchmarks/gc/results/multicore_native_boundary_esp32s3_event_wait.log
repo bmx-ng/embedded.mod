@@ -1,0 +1,14 @@
+2026-11-04 ESP32-S3 N8R8, release, 64 KiB SRAM heap, -gc-multicore
+esptool write-flash: bootloader, partition table and app hashes verified
+Monitor-attached reset, run 1:
+GC_STAGE2_NATIVE_EVENT_WAIT,phase=boot
+GC_STAGE2_NATIVE_EVENT_WAIT,phase=ready,failed_step=0
+GC_STAGE2_NATIVE_EVENT_WAIT,phase=collected,failed_step=0
+GC_STAGE2_NATIVE_EVENT_WAIT,phase=joined,failed_step=0
+The pass line from run 1 arrived in the serial buffer as run 2 reset began:
+GC_STAGE2_NATIVE_EVENT_WAIT,roots=pass,collection=pass,done=1
+Monitor-attached reset, run 2:
+GC_STAGE2_NATIVE_EVENT_WAIT,phase=boot
+GC_STAGE2_NATIVE_EVENT_WAIT,phase=ready,failed_step=0
+GC_STAGE2_NATIVE_EVENT_WAIT,phase=collected,failed_step=0
+GC_STAGE2_NATIVE_EVENT_WAIT,phase=joined,failed_step=0
