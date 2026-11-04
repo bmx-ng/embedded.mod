@@ -1,6 +1,6 @@
 # Embedded managed multicore: audit and design decision
 
-Status: Stage 2 internal functional gate complete, 2026-11-04. Multicore managed execution remains opt-in. The table under "Current implementation and boundaries" records the pre-implementation audit; its line references refer to that checkout. The compiler and target modules are separate repositories.
+Status: Stage 2 internal functional gate complete, 2026-11-04. A first Stage 3 per-core allocation cache trial failed its throughput gate and was not retained. Multicore managed execution remains opt-in. The table under "Current implementation and boundaries" records the pre-implementation audit; its line references refer to that checkout. The compiler and target modules are separate repositories.
 
 ## Decision
 
@@ -138,3 +138,7 @@ The internal functional gate in the table above is met as of 2026-11-04:
 | Default performance mode | The [single-core benchmark rerun](benchmarks/gc/results/multicore_stage2_singlecore_performance.md) matches the Stage 0 baseline within measurement noise on both boards. |
 
 The collector remains stop-the-world and cooperative. Shared mutable fields still need application-level synchronization. A [focused allocation benchmark](benchmarks/gc/results/multicore_stage2_allocation_performance.md) now separates timed Object allocation from collection and worker startup on both boards. The default single-core path remains the fastest one-task mode. In opt-in mode, two allocating tasks reach about 1.7 times the throughput of one on both boards. Benchmark-only lock counters show substantial contention on Pico 2 (13,322 of 32,768 acquisitions) but little on ESP32-S3 (31 of 32,768). This supports a Stage 3 per-core allocator *experiment* for Pico; the S3's higher opt-in cost needs separate generated-code and uncontended-lock analysis. The 256 KiB images used only about 6 KiB of the arena, so large live-graph/fragmented-heap pauses, collection phase timing and maximum poll gaps remain unmeasured. A per-core allocator must still pass the Stage 3 throughput, stranded-space, fragmentation and pause gate before adoption.
+
+## Stage 3 allocation cache trial
+
+A Pico 2 [per-core cache trial](benchmarks/gc/results/multicore_stage3_allocation_cache_trial.md) reserved small Object blocks in groups of 8 or 32. Both completed hardware variants were slower than the matched shared allocator (12.4% and 20.6% longer parallel wall time). The experimental code was removed; the Stage 2 allocator remains in use. This is a no-go for this cache design. Before another allocator design, measure lock wait time directly and test irregular allocation sizes and rates; the Stage 2 failed-spin fraction alone does not establish time lost to contention.
