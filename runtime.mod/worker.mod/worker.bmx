@@ -15,8 +15,10 @@ ESP32, blocking UART, I2C and SPI transfers can also overlap collection when
 every buffer is outside the managed arena or allocated with MemAlloc. Keep each
 buffer alive until the call returns. An array-backed pointer keeps the worker
 running, so collection waits for that transfer to finish; keep the array
-referenced throughout the call. Stdio and filesystem transfers still need
-their own native-blocking audit.
+referenced throughout the call. Stdio read/write follows the same buffer rule
+on both targets. ESP32 filesystem read/write can overlap collection with an
+already-open handle and stable buffer. Open and close remain owner operations;
+Pico LittleFS remains owner-only.
 End Rem
 Module Embedded.Runtime.Worker
 ?embedded

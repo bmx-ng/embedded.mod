@@ -1,0 +1,6 @@
+Pico 2, opt-in multicore GC, 64 KiB managed heap, USB stdio input
+Fixture: embedded_gc_stage2_pico_stdio_buffer_device.bmx
+Transfer: one byte into a MemAlloc destination; host sends x after owner collection
+Owner: collection requested after worker entered read, required to finish within 300 ms
+Device output:
+GC_STAGE2_STDIO_BUFFER,raw=pass,collection=pass,done=1

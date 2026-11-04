@@ -17,6 +17,21 @@ static atomic_uint api_ready;
 static atomic_uint api_release;
 static atomic_uint api_failed;
 static atomic_uintptr_t api_buffer;
+static atomic_int api_read_count;
+static atomic_int api_read_byte;
+
+void bmx_stage2_api_record_read(int32_t count, int32_t value) {
+    atomic_store_explicit(&api_read_byte, value, memory_order_relaxed);
+    atomic_store_explicit(&api_read_count, count, memory_order_release);
+}
+
+int32_t bmx_stage2_api_read_count(void) {
+    return atomic_load_explicit(&api_read_count, memory_order_acquire);
+}
+
+int32_t bmx_stage2_api_read_byte(void) {
+    return atomic_load_explicit(&api_read_byte, memory_order_relaxed);
+}
 
 void bmx_stage2_api_set_buffer(void *buffer) {
     atomic_store_explicit(&api_buffer, (uintptr_t)buffer, memory_order_release);
