@@ -1,0 +1,6 @@
+2026-11-04 ESP32-S3 N8R8, release, 128 KiB SRAM heap, -gc-multicore
+Fixture: mod/embedded.mod/tests/embedded_gc_stage2_esp32_socket_accept_device.bmx
+esptool write-flash: bootloader, partition table and app hashes verified
+Serial output, repeated:
+GC_STAGE2_SOCKET_ACCEPT,roots=pass,collection=pass,done=1
+GC_STAGE2_SOCKET_ACCEPT,roots=pass,collection=pass,done=1

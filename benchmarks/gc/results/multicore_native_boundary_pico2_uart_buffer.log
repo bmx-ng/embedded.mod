@@ -1,0 +1,6 @@
+Pico 2, opt-in multicore GC, 64 KiB managed heap, UART controller 1
+Fixture: embedded_gc_stage2_uart_buffer_device.bmx
+Transfer: 4 KiB MemAlloc destination, 400 ms UART read timeout
+Owner: collection requested after 20 ms, required to finish within 300 ms
+Device output:
+GC_STAGE2_UART_BUFFER,raw=pass,collection=pass,done=1

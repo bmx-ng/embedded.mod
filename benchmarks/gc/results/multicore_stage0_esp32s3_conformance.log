@@ -1,0 +1,3 @@
+GC_CHECK,format=1,phase=start
+GC_CHECK,format=1,checks=pass
+GC_CHECK,done=1

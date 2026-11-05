@@ -1,0 +1,9 @@
+64k,single:GC_ALLOC,done=1
+64k,single:GC_ALLOC,format=1,mode=0,arena=65536,arena_high_water=3168,case=owner,allocations=16384,allocation_us=174286,collection_us=13085,instrumented=0,lock_entries=0,lock_contended=0,lock_spins=0,checksum=2621440
+64k,single:GC_ALLOC,format=1,mode=0,arena=65536,arena_high_water=3168,case=owner_eight,allocations=16384,allocation_us=174119,collection_us=13060,instrumented=0,lock_entries=0,lock_contended=0,lock_spins=0,checksum=2621440
+64k,single:GC_ALLOC,format=1,mode=0,arena=65536,arena_high_water=3168,case=owner_native,allocations=16384,allocation_us=27453,collection_us=13057,instrumented=0,lock_entries=0,lock_contended=0,lock_spins=0,checksum=2621440
+64k,multi:GC_ALLOC,done=1
+64k,multi:GC_ALLOC,format=1,mode=1,arena=65536,arena_high_water=6240,case=owner,allocations=16384,allocation_us=52459,collection_us=13693,instrumented=0,lock_entries=0,lock_contended=0,lock_spins=0,checksum=2621440
+64k,multi:GC_ALLOC,format=1,mode=1,arena=65536,arena_high_water=6240,case=owner_eight,allocations=16384,allocation_us=48748,collection_us=13628,instrumented=0,lock_entries=0,lock_contended=0,lock_spins=0,checksum=2621440
+64k,multi:GC_ALLOC,format=1,mode=1,arena=65536,arena_high_water=6240,case=owner_native,allocations=16384,allocation_us=30421,collection_us=13630,instrumented=0,lock_entries=0,lock_contended=0,lock_spins=0,checksum=2621440
+64k,multi:GC_ALLOC,format=1,mode=1,arena=65536,arena_high_water=6240,case=parallel,allocations=32768,owner_allocation_us=60124,worker_allocation_us=60742,wall_us=61105,collection_us=23470,instrumented=0,lock_entries=0,lock_contended=0,lock_spins=0,checksum=5242880

@@ -15,7 +15,7 @@ def main():
     parser.add_argument("output", help="raw serial log destination")
     parser.add_argument("--port", required=True, help="USB serial device")
     parser.add_argument("--picotool", default=os.environ.get("PICOTOOL", "picotool"))
-    parser.add_argument("--marker", choices=("GC_BENCH", "GC_VARIED", "GC_SCALE", "GC_SWEEP", "GC_CHECK", "ALLOC_SEARCH"), default="GC_BENCH")
+    parser.add_argument("--marker", choices=("GC_BENCH", "GC_VARIED", "GC_SCALE", "GC_SWEEP", "GC_CHECK", "ALLOC_SEARCH", "GC_ALLOC", "GC_IRREG", "GC_PAUSE"), default="GC_BENCH")
     parser.add_argument("--timeout", type=float, default=45.0)
     args = parser.parse_args()
 
@@ -27,6 +27,8 @@ def main():
     device = None
     pending = bytearray()
     lines = []
+    start_on_format = args.marker in ("GC_ALLOC", "GC_IRREG", "GC_PAUSE")
+    started = not start_on_format
     try:
         while time.monotonic() < deadline:
             if device is None:
@@ -52,8 +54,17 @@ def main():
                 raw, _, pending = pending.partition(b"\n")
                 line = raw.decode("utf-8", errors="replace").rstrip("\r")
                 print(line, flush=True)
-                lines.append(line)
-                if line == f"{args.marker},done=1":
+                new_block = line.startswith(f"{args.marker},format=1,")
+                if args.marker == "GC_ALLOC":
+                    new_block = new_block and ",case=owner," in line
+                elif args.marker == "GC_IRREG":
+                    new_block = new_block and ",case=0," in line
+                if start_on_format and new_block:
+                    lines = [line]
+                    started = True
+                elif started:
+                    lines.append(line)
+                if started and line == f"{args.marker},done=1":
                     with open(args.output, "w", encoding="utf-8") as output:
                         output.write("\n".join(lines) + "\n")
                     return 0

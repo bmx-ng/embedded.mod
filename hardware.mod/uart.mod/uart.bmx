@@ -9,6 +9,9 @@ about: Controllers and pins are target resources. Query UARTControllerCount,
 then configure a valid TX/RX pair for the selected target before initialization.
 DefaultController returns UARTUnavailableController when the board's console
 does not consume a hardware UART.
+Buffer transfers take caller-owned Byte Ptr memory. Keep it allocated until
+the call returns. If a pointer refers to array data, keep the array referenced
+for the entire call.
 End Rem
 Module Embedded.Hardware.UART
 ?embedded

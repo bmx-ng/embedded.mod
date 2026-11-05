@@ -9,6 +9,56 @@
 extern "C" {
 #endif
 
+#if defined(BMX_EMBEDDED_MULTICORE) && BMX_EMBEDDED_MULTICORE
+/* Internal Stage 1 entry points. The runtime owner initializes and registers
+   before any worker starts; registration binds the slot to the target task. */
+void bmx_embedded_gc_multicore_initialize(void);
+uint32_t bmx_embedded_gc_multicore_register(void);
+int32_t bmx_embedded_gc_multicore_unregister(void);
+void bmx_embedded_gc_poll(void);
+#if defined(BMX_EMBEDDED_GC_PERF_COUNTERS) && BMX_EMBEDDED_GC_PERF_COUNTERS
+/* Benchmark-only allocator lock counters. Build every C unit with the same
+   define; ordinary firmware does not contain these counters. */
+void bmx_embedded_gc_allocator_lock_counters_reset(void);
+uint32_t bmx_embedded_gc_allocator_lock_entries(void);
+uint32_t bmx_embedded_gc_allocator_lock_contended(void);
+uint32_t bmx_embedded_gc_allocator_lock_spins(void);
+#if defined(BMX_EMBEDDED_GC_PERF_TIME) && BMX_EMBEDDED_GC_PERF_TIME
+uint64_t bmx_embedded_gc_allocator_lock_wait_us(void);
+#endif
+#endif
+#if defined(BMX_EMBEDDED_GC_PHASE_TIME) && BMX_EMBEDDED_GC_PHASE_TIME
+uint32_t bmx_embedded_gc_last_stop_us(void);
+uint32_t bmx_embedded_gc_last_mark_us(void);
+uint32_t bmx_embedded_gc_last_sweep_us(void);
+#endif
+/* A registered worker may block in native code only after publishing every
+   live managed handle in a root frame. It must not access the managed heap
+   until leave returns; leave waits for any active collection to finish. */
+int32_t bmx_embedded_gc_enter_native_safe(void);
+int32_t bmx_embedded_gc_leave_native_safe(void);
+/* Enter native-safe only when both transfer buffers are outside the managed
+   arena or lie within live, noncollectable MemAlloc payloads. The caller owns
+   each buffer until the transfer returns and must not free or resize it during
+   the call. Array-backed pointers keep the worker RUNNING. A zero byte range
+   is ignored. */
+int32_t bmx_embedded_gc_enter_native_safe_for_buffers(const void *first,
+    size_t first_bytes, const void *second, size_t second_bytes);
+int32_t bmx_embedded_gc_enter_native_safe_for_three_buffers(const void *first,
+    size_t first_bytes, const void *second, size_t second_bytes,
+    const void *third, size_t third_bytes);
+/* Internal worker lifecycle. The argument is native data; any managed value
+   it names must be rooted by the owner until the worker establishes its own
+   root. Join returns 1 on success, -1 after a worker exception, and 0 while
+   the worker is still running. An invalid worker teardown is fatal. */
+typedef void (*BMXEmbeddedGCWorkerEntry)(void *argument);
+int32_t bmx_embedded_gc_worker_start(BMXEmbeddedGCWorkerEntry entry, void *argument);
+#endif
+/* Managed no-argument worker. The owner is registered on first use in
+   multicore mode; ordinary single-core builds return 0. */
+int32_t bmx_embedded_gc_worker_start_function(void (*entry)(void));
+int32_t bmx_embedded_gc_worker_join(uint32_t wait_budget);
+
 /* Abstract method thunks emitted by bcc2 call the BRL.Blitz trap directly. */
 void brl_blitz_NullMethodError(void);
 
@@ -175,6 +225,29 @@ typedef struct BMXEmbeddedRootSlot {
 #define BMX_EMBEDDED_ROOT_STRING 3u
 #define BMX_EMBEDDED_ROOT_STRUCT 4u
 #define BMX_EMBEDDED_ROOT_EXCEPTION 5u
+
+#if defined(BMX_EMBEDDED_MULTICORE) && BMX_EMBEDDED_MULTICORE
+/* Register this slot in a root frame that outlives every concurrent user.
+   A release store publishes initialized content; an acquire load consumes it.
+   The publishing task must still own a precise root until the store completes.
+   Neither task may access the referent while the other mutates it without a
+   separate handoff or lock. These root kinds are traced with atomic loads. */
+typedef struct BMXEmbeddedAtomicReference {
+    uintptr_t value;
+} BMXEmbeddedAtomicReference;
+
+#define BMX_EMBEDDED_ROOT_ATOMIC_OBJECT 6u
+#define BMX_EMBEDDED_ROOT_ATOMIC_ARRAY 7u
+#define BMX_EMBEDDED_ROOT_ATOMIC_STRING 8u
+
+static inline void bmx_embedded_atomic_reference_store(BMXEmbeddedAtomicReference *slot, void *value) {
+    __atomic_store_n(&slot->value, (uintptr_t)value, __ATOMIC_RELEASE);
+}
+
+static inline void *bmx_embedded_atomic_reference_load(const BMXEmbeddedAtomicReference *slot) {
+    return (void *)__atomic_load_n(&slot->value, __ATOMIC_ACQUIRE);
+}
+#endif
 
 typedef struct BMXEmbeddedRootFrame {
     struct BMXEmbeddedRootFrame *previous;

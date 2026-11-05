@@ -7,6 +7,9 @@ Rem
 bbdoc: Portable SPI controller operations for embedded targets.
 about: Chip-select is deliberately controlled separately through
 Embedded.Hardware.GPIO so applications can use more than one peripheral.
+Transfer buffers are caller-owned pointer memory. Keep them allocated until
+the call returns. If a pointer refers to array data, keep the array referenced
+for the entire call.
 End Rem
 Module Embedded.Hardware.SPI
 ?embedded

@@ -1,8 +1,11 @@
 # Embedded GC benchmarks
 
-The programs use the production mark-queue collector. They perform internal
-heap checks and print one completion marker on success. Neither runs managed
-work on the second core.
+The original GC benchmarks use the production mark-queue collector. They
+perform internal heap checks and print a completion marker on success. The
+opt-in `gc_allocation.bmx` and `gc_allocation_irregular.bmx` fixtures also run
+a registered managed worker on the second core. The latter compares four
+Object sizes under equal and uneven task allocation rates; see the
+[Stage 3 results](results/multicore_stage3_irregular_allocation.md).
 
 - `gc_benchmark.bmx` measures ordinary field updates, tracing a backward
   allocation-order chain, and reclaiming short-lived objects.
@@ -90,3 +93,20 @@ See [allocation results](results/allocation_results.md) for paired measurements,
 validation, and the distinction between focused and mixed-workload gains.
 The host selection/unlinking checks run with
 `python3 tests/run_allocation_search_host.py` (Clang with sanitizers).
+
+For a multicore stop-the-world pause baseline, build `gc_pause.bmx` with
+`-gc-multicore` and a 64 KiB or 256 KiB SRAM arena. It checks live forward and
+alternating-link graphs, contiguous and fragmented garbage, and a polling
+worker. Each case reports twelve whole collection-call samples. See the
+[pause results](results/multicore_pause_baseline.md) and four raw captures.
+Pass `--marker GC_PAUSE` to either capture script; the Pico capture starts at
+the next complete repeated result block when the USB serial port opens late.
+
+For a diagnostic breakdown of stop wait, reachability marking and sweeping,
+set `BMX_EMBEDDED_GC_PHASE_TIME=1` on the same `-gc-multicore` build command.
+The fixture then prints a `GC_PAUSE_PHASE` line after each whole-call sample.
+The flag adds clock reads inside the collector, so use an ordinary build for
+the production pause baseline. See the [phase measurements](results/multicore_pause_phase_breakdown.md)
+and raw Pico 2 and ESP32-S3 captures. The fixture leaves 5 ms between timed
+collections to let background tasks run; these rests are outside
+the timed calls.
