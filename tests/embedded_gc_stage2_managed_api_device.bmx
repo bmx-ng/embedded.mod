@@ -26,7 +26,7 @@ Type TWorkerValue
     Field value:Int
 End Type
 
-Function ManagedJob() { nomangle }
+Function ManagedJob()
     Local index:UInt = CurrentJob()
     Local node:TWorkerValue = New TWorkerValue
     Local values:Int[] = New Int[1]

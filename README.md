@@ -14,6 +14,9 @@ native adapter behind each portable API:
 - [esp32.mod](https://github.com/bmx-ng/esp32.mod) supports Espressif ESP32
   devices.
 
+For dual-core devices, see [Writing multicore embedded apps](docs/multicore-apps.md)
+for a short introduction and runnable worker and web-server examples.
+
 See the target README for installation, board selection, build options, and
 upload instructions.
 
