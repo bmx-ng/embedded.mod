@@ -144,18 +144,21 @@ Type TMQTTClient
 		state = MQTTDisconnected
 	End Method
 
-	Method Publish:Int(topic:String, payload:Byte[], qos:Int = 0, retained:Int = False)
-		If _active <> Self Or state <> MQTTConnected Or Not topic Or topic.length = 0 Or qos < 0 Or qos > 2 Then Return MQTTError
+	Rem
+	bbdoc: Publishes a buffer as one MQTT message.
+	about: Keep payload valid until this method returns. A zero length may use a Null pointer.
+	End Rem
+	Method Publish:Int(topic:String, payload:Byte Ptr, length:Int, qos:Int = 0, retained:Int = False)
+		If _active <> Self Or state <> MQTTConnected Or Not topic Or topic.length = 0 Or length < 0 Or (length > 0 And Not payload) Or qos < 0 Or qos > 2 Then Return MQTTError
 		Local t:Byte Ptr = topic.ToUTF8String()
-		Local bytes:Byte Ptr
-		Local length:Int
-		If payload Then
-			length = payload.length
-			If length Then bytes = Varptr payload[0]
-		End If
-		Local result:Int = _Publish(t, bytes, length, qos, retained)
+		Local result:Int = _Publish(t, payload, length, qos, retained)
 		MemFree(t)
 		Return result
+	End Method
+
+	Method Publish:Int(topic:String, payload:Byte[], qos:Int = 0, retained:Int = False)
+		If Not payload Or payload.length = 0 Then Return Publish(topic, Null, 0, qos, retained)
+		Return Publish(topic, Varptr payload[0], payload.length, qos, retained)
 	End Method
 
 	Method PublishText:Int(topic:String, value:String, qos:Int = 0, retained:Int = False)

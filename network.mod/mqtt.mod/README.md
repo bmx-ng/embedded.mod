@@ -110,6 +110,7 @@ Replace the three placeholders, then build and flash as above. Publish in
 | Subscribe | `mqtt.Subscribe(topic, qos)` | Call before or after connecting. Up to 16 topics are remembered and restored after reconnect. |
 | Send text | `mqtt.PublishText(topic, text, qos, retained)` | Call while connected. `qos` and `retained` are optional. |
 | Send bytes | `mqtt.Publish(topic, byteArray, qos, retained)` | Use for binary payloads. |
+| Send a buffer | `mqtt.Publish(topic, data:Byte Ptr, length, qos, retained)` | Pass an existing buffer without first making a `Byte[]`. Keep it valid until the call returns. |
 | Receive | `EVENT_MQTTMESSAGE` | `TMQTTMessage(event.extra)` contains `topic`, `payload`, and `Text()`. |
 | Check status | `mqtt.state`, `mqtt.lastError` | States: `MQTTDisconnected`, `MQTTConnecting`, `MQTTConnected`. |
 | Stop | `mqtt.Disconnect()` | Stops this client and disables automatic reconnect. |
@@ -118,6 +119,27 @@ Replace the three placeholders, then build and flash as above. Publish in
 `event.data`. `Publish` and `PublishText` returning zero means the local MQTT
 adapter accepted the request; it does not confirm delivery to the broker.
 QoS 0, 1, and 2 can be requested.
+
+For a buffer you already own, pass its address and byte count:
+
+```blitzmax
+Local payload:Byte[] = New Byte[3]
+payload[0] = 1
+payload[1] = 2
+payload[2] = 3
+Local result:Int = mqtt.Publish("devices/board/data", Varptr payload[0], payload.length, 1)
+```
+
+The pointer overload also accepts `Null` with length `0` for an empty
+message. It rejects a negative length or a Null pointer with a positive
+length. The caller owns the buffer.
+
+MQTT carries individual messages rather than an open byte stream. To send
+data from a `TStream`, read a bounded payload into a buffer and publish that
+as one message. There is no `TStream` overload: it would need to choose
+whether to buffer the entire stream or split it into multiple messages, and
+splitting requires application-level chunk IDs and reassembly. Pico's lwIP
+MQTT output queue is small, so test the payload size your application needs.
 
 Automatic reconnect is on by default, with a five-second retry delay. The
 client restores remembered subscriptions after a new connection. Your app is
