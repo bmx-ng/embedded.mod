@@ -81,6 +81,7 @@ and other capabilities that do not share equivalent semantics.
 | `Embedded.Network.WiFi` | Station initialization, scanning, joining, link state, and IPv4 configuration |
 | [`Embedded.Network.MQTT`](network.mod/mqtt.mod/README.md) | MQTT client setup, publish, subscribe, events, and reconnect; includes a quick start and complete examples |
 | `Embedded.Network.Ethernet` | Wired-link lifecycle and events, DHCP waiting, IPv4 and MAC details, speed, and duplex state |
+| `Embedded.Network.Thread` | Opt-in Thread mesh formation, active-dataset joining, role and IPv6 observation, and bounded UDP/IPv6 traffic on nRF52840 and ESP32-H2/C6/S31 |
 | `Embedded.Network.BLE` | Scanning, advertising, connections, GATT client/server operation, security, bonding, MTU, and PHY controls |
 | `Embedded.Random` | Device entropy through the standard `Random.Core` generator API, plus raw values and buffer filling |
 | `Embedded.System.Time` | Monotonic microsecond/millisecond clocks and minimum-duration sleeps |

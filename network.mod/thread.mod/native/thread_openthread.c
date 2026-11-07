@@ -1,0 +1,255 @@
+/* Copyright (c) 2026 Bruce A Henderson and contributors
+ * SPDX-License-Identifier: Zlib */
+#include <stdint.h>
+#include <string.h>
+
+#include <openthread/dataset.h>
+#include <openthread/dataset_ftd.h>
+#include <openthread/ip6.h>
+#include <openthread/message.h>
+#include <openthread/thread.h>
+#include <openthread/udp.h>
+
+extern int bmx_thread_platform_initialize(void);
+extern otInstance *bmx_thread_platform_instance(void);
+extern void bmx_thread_platform_lock(void);
+extern void bmx_thread_platform_unlock(void);
+
+#define BMX_THREAD_UDP_PAYLOAD 512
+#define BMX_THREAD_UDP_QUEUE 8
+
+typedef struct {
+    uint8_t data[BMX_THREAD_UDP_PAYLOAD];
+    uint16_t length;
+    uint16_t port;
+    otIp6Address address;
+} BMXThreadDatagram;
+
+static otUdpSocket bmx_udp_socket;
+static int bmx_udp_open;
+static BMXThreadDatagram bmx_udp_queue[BMX_THREAD_UDP_QUEUE];
+static unsigned bmx_udp_head, bmx_udp_count, bmx_udp_dropped;
+
+static int bmx_hex_digit(char c) {
+    if (c >= '0' && c <= '9') return c - '0';
+    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+    return -1;
+}
+
+static void bmx_udp_received(void *context, otMessage *message, const otMessageInfo *info) {
+    (void)context;
+    int length = otMessageGetLength(message) - otMessageGetOffset(message);
+    if (length < 0 || length > BMX_THREAD_UDP_PAYLOAD || bmx_udp_count == BMX_THREAD_UDP_QUEUE) {
+        ++bmx_udp_dropped;
+        return;
+    }
+    BMXThreadDatagram *item = &bmx_udp_queue[(bmx_udp_head + bmx_udp_count) % BMX_THREAD_UDP_QUEUE];
+    item->length = (uint16_t)length;
+    item->port = info->mPeerPort;
+    item->address = info->mPeerAddr;
+    otMessageRead(message, otMessageGetOffset(message), item->data, item->length);
+    ++bmx_udp_count;
+}
+
+int bmx_thread_initialize(void) {
+    return bmx_thread_platform_initialize();
+}
+
+int bmx_thread_form(const char *name, int channel) {
+    if (!name || strlen(name) == 0 || strlen(name) > OT_NETWORK_NAME_MAX_SIZE ||
+            channel < 11 || channel > 26) return -22;
+    int result = bmx_thread_initialize();
+    if (result) return result;
+    bmx_thread_platform_lock();
+    otInstance *instance = bmx_thread_platform_instance();
+    otOperationalDataset dataset;
+    otError error = otThreadSetEnabled(instance, false);
+    if (!error) error = otIp6SetEnabled(instance, false);
+    if (!error) error = otDatasetCreateNewNetwork(instance, &dataset);
+    if (!error) error = otNetworkNameFromString(&dataset.mNetworkName, name);
+    if (!error) {
+        dataset.mChannel = (uint16_t)channel;
+        dataset.mComponents.mIsChannelPresent = true;
+        error = otDatasetSetActive(instance, &dataset);
+    }
+    if (!error) error = otIp6SetEnabled(instance, true);
+    if (!error) error = otThreadSetEnabled(instance, true);
+    bmx_thread_platform_unlock();
+    return error ? -(int)error : 0;
+}
+
+int bmx_thread_join(const char *hex) {
+    if (!hex) return -22;
+    size_t length = strlen(hex);
+    if (!length || (length & 1) || length > OT_OPERATIONAL_DATASET_MAX_LENGTH * 2) return -22;
+    otOperationalDatasetTlvs dataset = {0};
+    dataset.mLength = length / 2;
+    for (size_t i = 0; i < dataset.mLength; ++i) {
+        int high = bmx_hex_digit(hex[i * 2]);
+        int low = bmx_hex_digit(hex[i * 2 + 1]);
+        if (high < 0 || low < 0) return -22;
+        dataset.mTlvs[i] = (uint8_t)((high << 4) | low);
+    }
+    int result = bmx_thread_initialize();
+    if (result) return result;
+    bmx_thread_platform_lock();
+    otInstance *instance = bmx_thread_platform_instance();
+    otError error = otThreadSetEnabled(instance, false);
+    if (!error) error = otIp6SetEnabled(instance, false);
+    if (!error) error = otDatasetSetActiveTlvs(instance, &dataset);
+    if (!error) error = otIp6SetEnabled(instance, true);
+    if (!error) error = otThreadSetEnabled(instance, true);
+    bmx_thread_platform_unlock();
+    return error ? -(int)error : 0;
+}
+
+int bmx_thread_leave(void) {
+    int result = bmx_thread_initialize();
+    if (result) return result;
+    bmx_thread_platform_lock();
+    otInstance *instance = bmx_thread_platform_instance();
+    otError error = otThreadSetEnabled(instance, false);
+    if (!error) error = otIp6SetEnabled(instance, false);
+    bmx_thread_platform_unlock();
+    return error ? -(int)error : 0;
+}
+
+int bmx_thread_role(void) {
+    int result = bmx_thread_initialize();
+    if (result) return result;
+    bmx_thread_platform_lock();
+    int role = (int)otThreadGetDeviceRole(bmx_thread_platform_instance());
+    bmx_thread_platform_unlock();
+    return role;
+}
+
+int bmx_thread_address(int index, char *value, int capacity) {
+    if (index < 0 || !value || capacity < OT_IP6_ADDRESS_STRING_SIZE) return -22;
+    int result = bmx_thread_initialize();
+    if (result) return result;
+    bmx_thread_platform_lock();
+    const otNetifAddress *item = otIp6GetUnicastAddresses(bmx_thread_platform_instance());
+    while (item && index--) item = item->mNext;
+    if (!item) {
+        bmx_thread_platform_unlock();
+        return 0;
+    }
+    otIp6AddressToString(&item->mAddress, value, (uint16_t)capacity);
+    int length = strlen(value);
+    bmx_thread_platform_unlock();
+    return length;
+}
+
+int bmx_thread_dataset(char *value, int capacity) {
+    if (!value || capacity < OT_OPERATIONAL_DATASET_MAX_LENGTH * 2 + 1) return -22;
+    int result = bmx_thread_initialize();
+    if (result) return result;
+    bmx_thread_platform_lock();
+    otOperationalDatasetTlvs dataset;
+    otError error = otDatasetGetActiveTlvs(bmx_thread_platform_instance(), &dataset);
+    if (!error) {
+        static const char digits[] = "0123456789abcdef";
+        for (unsigned i = 0; i < dataset.mLength; ++i) {
+            value[i * 2] = digits[dataset.mTlvs[i] >> 4];
+            value[i * 2 + 1] = digits[dataset.mTlvs[i] & 15];
+        }
+        value[dataset.mLength * 2] = 0;
+    }
+    bmx_thread_platform_unlock();
+    return error ? -(int)error : dataset.mLength * 2;
+}
+
+int bmx_thread_udp_open(int port) {
+    if (port < 1 || port > 65535) return -22;
+    int result = bmx_thread_initialize();
+    if (result) return result;
+    bmx_thread_platform_lock();
+    if (bmx_udp_open) {
+        bmx_thread_platform_unlock();
+        return -16;
+    }
+    otInstance *instance = bmx_thread_platform_instance();
+    memset(&bmx_udp_socket, 0, sizeof(bmx_udp_socket));
+    otError error = otUdpOpen(instance, &bmx_udp_socket, bmx_udp_received, NULL);
+    if (!error) {
+        otSockAddr local = {0};
+        local.mPort = (uint16_t)port;
+        error = otUdpBind(instance, &bmx_udp_socket, &local, OT_NETIF_THREAD_INTERNAL);
+        if (error) otUdpClose(instance, &bmx_udp_socket);
+    }
+    if (!error) {
+        bmx_udp_open = 1;
+        bmx_udp_head = bmx_udp_count = bmx_udp_dropped = 0;
+    }
+    bmx_thread_platform_unlock();
+    return error ? -(int)error : 0;
+}
+
+int bmx_thread_udp_close(void) {
+    if (!bmx_udp_open) return 0;
+    int result = bmx_thread_initialize();
+    if (result) return result;
+    bmx_thread_platform_lock();
+    otError error = otUdpClose(bmx_thread_platform_instance(), &bmx_udp_socket);
+    if (!error) bmx_udp_open = bmx_udp_head = bmx_udp_count = 0;
+    bmx_thread_platform_unlock();
+    return error ? -(int)error : 0;
+}
+
+int bmx_thread_udp_send(const char *address, int port, const uint8_t *data, int length) {
+    if (!address || !data || port < 1 || port > 65535 || length < 0 || length > BMX_THREAD_UDP_PAYLOAD) return -22;
+    int result = bmx_thread_initialize();
+    if (result) return result;
+    bmx_thread_platform_lock();
+    if (!bmx_udp_open) {
+        bmx_thread_platform_unlock();
+        return -107;
+    }
+    otInstance *instance = bmx_thread_platform_instance();
+    otMessageInfo info = {0};
+    info.mPeerPort = (uint16_t)port;
+    otError error = otIp6AddressFromString(address, &info.mPeerAddr);
+    otMessage *message = NULL;
+    if (!error) {
+        message = otUdpNewMessage(instance, NULL);
+        if (!message) error = OT_ERROR_NO_BUFS;
+    }
+    if (!error) error = otMessageAppend(message, data, (uint16_t)length);
+    if (!error) error = otUdpSend(instance, &bmx_udp_socket, message, &info);
+    if (error && message) otMessageFree(message);
+    bmx_thread_platform_unlock();
+    return error ? -(int)error : length;
+}
+
+int bmx_thread_udp_receive(uint8_t *data, int capacity, char *address, int address_capacity, int *port) {
+    if (!data || capacity < 0 || !address || address_capacity < OT_IP6_ADDRESS_STRING_SIZE || !port) return -22;
+    int result = bmx_thread_initialize();
+    if (result) return result;
+    bmx_thread_platform_lock();
+    if (!bmx_udp_count) {
+        bmx_thread_platform_unlock();
+        return -11;
+    }
+    BMXThreadDatagram *item = &bmx_udp_queue[bmx_udp_head];
+    if (capacity < item->length) {
+        bmx_thread_platform_unlock();
+        return -90;
+    }
+    memcpy(data, item->data, item->length);
+    otIp6AddressToString(&item->address, address, (uint16_t)address_capacity);
+    *port = item->port;
+    int length = item->length;
+    bmx_udp_head = (bmx_udp_head + 1) % BMX_THREAD_UDP_QUEUE;
+    --bmx_udp_count;
+    bmx_thread_platform_unlock();
+    return length;
+}
+
+uint32_t bmx_thread_udp_dropped(void) {
+    if (bmx_thread_initialize()) return 0;
+    bmx_thread_platform_lock();
+    uint32_t count = bmx_udp_dropped;
+    bmx_thread_platform_unlock();
+    return count;
+}
