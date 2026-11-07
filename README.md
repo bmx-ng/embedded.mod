@@ -79,6 +79,7 @@ and other capabilities that do not share equivalent semantics.
 | `Embedded.IO.BufferedUART` | A managed receive buffer and `TStream`-compatible, line-oriented UART access |
 | `Embedded.Hardware.Watchdog` | Enable, feed, disable, timeout validation, status, and reset detection |
 | `Embedded.Network.WiFi` | Station initialization, scanning, joining, link state, and IPv4 configuration |
+| [`Embedded.Network.MQTT`](network.mod/mqtt.mod/README.md) | MQTT client setup, publish, subscribe, events, and reconnect; includes a quick start and complete examples |
 | `Embedded.Network.Ethernet` | Wired-link lifecycle and events, DHCP waiting, IPv4 and MAC details, speed, and duplex state |
 | `Embedded.Network.BLE` | Scanning, advertising, connections, GATT client/server operation, security, bonding, MTU, and PHY controls |
 | `Embedded.Random` | Device entropy through the standard `Random.Core` generator API, plus raw values and buffer filling |
