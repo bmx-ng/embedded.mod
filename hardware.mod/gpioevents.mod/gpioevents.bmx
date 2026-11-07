@@ -74,8 +74,8 @@ Type TGPIOIRQSource Implements ICloseable
 
 	Method Close()
 		If pin < 0 Then Return
-		If irqEnabled Then GPIOSetIRQEnabled(pin, eventMask, False)
-		If tokenInstalled Then _GPIOSetEventToken(pin, 0)
+		If irqEnabled Then GPIOSetIRQEnabled(UInt(pin), eventMask, False)
+		If tokenInstalled Then _GPIOSetEventToken(UInt(pin), 0:UInt)
 		If eventToken Then ReleaseEmbeddedEventSource(eventToken)
 		irqEnabled = False
 		tokenInstalled = False
