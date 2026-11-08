@@ -214,4 +214,7 @@ nRF52 resolved the CoAP service and received a confirmable GET response with
 both requests. The C6 SuperMini also resumed the saved mesh, resolved the
 service, and passed the same GET and POST exchange with the S31. S31 and C6
 firmware builds passed with the CoAP import, and an S31 core-only build passed
-with CoAP disabled in its generated OpenThread configuration.
+with CoAP disabled in its generated OpenThread configuration. The earlier
+saved-network echo applications were restored on all three boards: the nRF52
+reported `THREAD_NETWORK=resumed`, and the S31 again received and echoed UDP
+packets from the C6.
