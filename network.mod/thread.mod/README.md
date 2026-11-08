@@ -75,13 +75,14 @@ NAT64 service. Forming a standalone mesh does not provide Internet access.
 or a negative error. `ThreadUDPReceive(buffer, sourceAddress, sourcePort)`
 returns the received size, `-11` when no datagram is queued, or `-90` when the
 caller buffer is too small (the datagram remains queued). Eight datagrams of
-up to 512 bytes are buffered; oversize or overflow datagrams are counted by
+up to 1280 bytes can be buffered; storage is allocated only for datagrams
+actually received. Oversize, allocation failure, or overflow datagrams are counted by
 `ThreadUDPDropped()`. `ThreadUDPClose()` releases the port. Calls must be made
 from the managed application task. These UDP calls use OpenThread's own socket
 path and support Thread IPv6 traffic on both targets.
 
-`TThreadUDPSocket.Open(port)` opens one of four additional UDP endpoints. Each
-endpoint has its own eight-datagram, 512-byte receive queue and `Send`,
+`TThreadUDPSocket.Open(port)` opens one of eight additional UDP endpoints. Each
+endpoint has its own receive queue and `Send`,
 `Receive`, `Dropped`, and `Close` methods. The older `ThreadUDP*` functions
 remain available. `Open` returns `Null` when binding fails. Deleting a socket
 object releases its port. The optional second argument selects the interface:
@@ -89,6 +90,10 @@ object releases its port. The optional second argument selects the interface:
 while `ThreadUDPNetifAny` also allows a platform UDP socket where the target
 provides one. On an ESP32 border router, use `ThreadUDPNetifAny` to receive
 datagrams sent from the backbone to a local Thread address.
+The optional third and fourth arguments set queue depth (1 to 16, default 8)
+and maximum datagram size (1 to 1280 bytes, default 1280). Incoming datagram
+storage is freed on receive or close. A smaller maximum bounds each socket's
+memory use; oversized packets increment its `Dropped()` count.
 
 Service discovery uses OpenThread SRP and DNS-SD. On an attached ESP32-S31 with
 `Embedded.Network.ThreadServer` imported,
@@ -102,23 +107,24 @@ register a service such as `_bmxecho._udp`. Poll
 `ThreadServicePublishState()` until zero. `ThreadServiceUnpublish()` removes it.
 The original functions retain their single-service calling convention.
 `TThreadPublishedService.Publish(host, instance, type, port, txtEntries)` adds
-one of up to four independently managed services on the same SRP host label.
+one of up to eight independently managed services on the same SRP host label.
 Its `State()` is 1 while pending, 0 when registered, 2 when removed, or a
 negative error. `Unpublish()` requests removal; `Close()` releases the object
 and unregisters it asynchronously if necessary. TXT entries are UTF-8 strings
 such as `id=one` or boolean keys. `ThreadTXTEncode()` and `ThreadTXTDecode()`
-convert between strings and bounded DNS TXT wire data (256 bytes total).
+convert between strings and bounded DNS TXT wire data (1024 bytes total).
 The service type is a short DNS-SD type; queries use OpenThread's default
 `default.service.arpa` domain.
 
 `ThreadServiceBrowse(serviceType)` starts a DNS-SD browse. Poll
-`ThreadServiceBrowseState()` until zero, then read up to eight labels using
-`ThreadServiceBrowseResult(index)` until it returns an empty string. Resolve a
+`ThreadServiceBrowseState()` until zero, then use `ThreadServiceBrowseCount()`
+and `ThreadServiceBrowseResult(index)` to read up to 32 labels.
+`ThreadServiceBrowseTruncated()` reports whether more were returned. Resolve a
 label with `ThreadServiceResolve(label, serviceType)` and poll
 `ThreadServiceResolveState(ipv6Address, port)` until zero. Pending operations
 return 1 and failures are negative OpenThread error codes. After a successful
 resolve, `ThreadServiceResolvedTXT()` returns the raw TXT bytes and
-`ThreadServiceResolvedTXTTruncated()` reports whether the 256-byte buffer was
+`ThreadServiceResolvedTXTTruncated()` reports whether the 1024-byte buffer was
 too small. One browse and one resolve can be in flight per process.
 `TThreadServiceBrowser.Start(type, intervalMs)` repeats the one-shot browse at
 the chosen interval; `Poll()` returns 2 when the set of instance labels
@@ -137,8 +143,11 @@ with `ThreadCoAPResource(path)`. Poll `ThreadCoAPReceive(buffer, method,
 sourceAddress)` from the managed task and answer with `ThreadCoAPRespond(code,
 payload)`. A client sends a confirmable GET or POST with `ThreadCoAPSend` and
 polls `ThreadCoAPResponse(buffer, code)`; -11 means the reply is pending.
-Requests and responses are limited to 512 payload bytes, with one outstanding
-request on each side. The initial API does not expose Observe, block transfers,
+Requests and responses are limited to 1024 payload bytes. The legacy calls
+handle one request and exchange at a time; `ThreadCoAPAddResource`,
+`ThreadCoAPReceiveNext`, `ThreadCoAPRespondTo`, `ThreadCoAPSendRequest`, and
+`ThreadCoAPReadResponse` support four additional resources and four concurrent
+requests and exchanges. The API does not yet expose Observe, block transfers,
 or secure CoAP. The `thread_coap_resource.bmx` and
 `nrf52_thread_coap_peer.bmx` and `thread_coap_peer.bmx` examples use DNS-SD to
 find a CoAP resource before exchanging GET and POST requests.

@@ -22,6 +22,7 @@ Const ThreadCoAPDelete:Int = 4
 Const ThreadCoAPContent:Int = 69
 Const ThreadCoAPChanged:Int = 68
 Const ThreadCoAPMethodNotAllowed:Int = 133
+Const ThreadCoAPMaxPayload:Int = 1024
 
 Private
 Extern "C"

@@ -26,6 +26,8 @@ Extern "C"
 	Function _ThreadServiceUnpublish:Int() = "bmx_thread_service_unpublish"
 	Function _ThreadServiceBrowse:Int(serviceType:Byte Ptr) = "bmx_thread_service_browse"
 	Function _ThreadServiceBrowseState:Int() = "bmx_thread_service_browse_state"
+	Function _ThreadServiceBrowseCount:Int() = "bmx_thread_service_browse_count"
+	Function _ThreadServiceBrowseTruncated:Int() = "bmx_thread_service_browse_truncated"
 	Function _ThreadServiceBrowseResult:Int(index:Int, label:Byte Ptr, capacity:Int) = "bmx_thread_service_browse_result"
 	Function _ThreadServiceResolve:Int(instanceName:Byte Ptr, serviceType:Byte Ptr) = "bmx_thread_service_resolve"
 	Function _ThreadServiceResolveState:Int(address:Byte Ptr, capacity:Int, port:Int Var) = "bmx_thread_service_resolve_state"
@@ -83,6 +85,16 @@ Function ThreadServiceBrowseState:Int()
 	Return _ThreadServiceBrowseState()
 End Function
 
+' Number of labels returned by the last completed browse, or a negative error.
+Function ThreadServiceBrowseCount:Int()
+	Return _ThreadServiceBrowseCount()
+End Function
+
+' True if the last browse had more than 32 matching instances.
+Function ThreadServiceBrowseTruncated:Int()
+	Return _ThreadServiceBrowseTruncated()
+End Function
+
 Function ThreadServiceBrowseResult:String(index:Int)
 	If index < 0 Then Return ""
 	Local label:Byte[64]
@@ -115,7 +127,7 @@ Function ThreadServiceResolveState:Int(address:String Var, port:Int Var)
 	Return result
 End Function
 
-' Encode up to 256 bytes of DNS-SD TXT strings. Entries are "key=value" or "key".
+' Encode up to 1024 bytes of DNS-SD TXT strings. Entries are "key=value" or "key".
 Function ThreadTXTEncode:Byte[](entries:String[])
 	If Not entries Then Return New Byte[0]
 	Local total:Int
@@ -129,7 +141,7 @@ Function ThreadTXTEncode:Byte[](entries:String[])
 		MemFree(bytes)
 		If length < 1 Or length > 255 Then Return Null
 		total :+ length + 1
-		If total > 256 Then Return Null
+		If total > 1024 Then Return Null
 	Next
 	Local encoded:Byte[] = New Byte[total]
 	Local offset:Int
@@ -175,7 +187,7 @@ Function ThreadTXTDecode:String[](encoded:Byte[])
 	Return entries
 End Function
 
-' Up to four services can be published from one process. They share one SRP host label.
+' Up to eight services can be published from one process. They share one SRP host label.
 Type TThreadPublishedService
 	Private
 	Field handle:Int
@@ -223,7 +235,7 @@ End Type
 
 ' Available after ThreadServiceResolveState returns zero.
 Function ThreadServiceResolvedTXT:Byte[]()
-	Local data:Byte[256]
+	Local data:Byte[1024]
 	Local truncated:Int
 	Local length:Int = _ThreadServiceResolvedTXT(data, data.length, truncated)
 	If length < 0 Then Return Null
@@ -235,7 +247,7 @@ Function ThreadServiceResolvedTXT:Byte[]()
 End Function
 
 Function ThreadServiceResolvedTXTTruncated:Int()
-	Local data:Byte[256]
+	Local data:Byte[1024]
 	Local truncated:Int
 	If _ThreadServiceResolvedTXT(data, data.length, truncated) < 0 Then Return False
 	Return truncated
@@ -286,10 +298,8 @@ Type TThreadServiceBrowser
 			If state = 1 Then Return 1
 			pending = False
 			If state < 0 Then Return state
-			Local count:Int
-			While count < 8 And ThreadServiceBrowseResult(count) <> ""
-				count :+ 1
-			Wend
+			Local count:Int = ThreadServiceBrowseCount()
+			If count < 0 Then Return count
 			Local nextLabels:String[] = New String[count]
 			For Local i:Int = 0 Until count
 				nextLabels[i] = ThreadServiceBrowseResult(i)

@@ -19,9 +19,9 @@ extern void bmx_thread_platform_unlock(void);
 
 #define BMX_DISCOVERY_NAME 64
 #define BMX_DISCOVERY_FULL_NAME 128
-#define BMX_DISCOVERY_RESULTS 8
-#define BMX_PUBLISHED_SERVICES 4
-#define BMX_DISCOVERY_TXT 256
+#define BMX_DISCOVERY_RESULTS 32
+#define BMX_PUBLISHED_SERVICES 8
+#define BMX_DISCOVERY_TXT 1024
 
 typedef struct {
     otSrpClientService service;
@@ -46,6 +46,7 @@ static char bmx_resolve_type[BMX_DISCOVERY_FULL_NAME];
 static char bmx_browse_labels[BMX_DISCOVERY_RESULTS][BMX_DISCOVERY_NAME];
 static int bmx_browse_state = -61;
 static int bmx_browse_count;
+static int bmx_browse_truncated;
 static int bmx_resolve_state = -61;
 static char bmx_resolve_address[OT_IP6_ADDRESS_STRING_SIZE];
 static char bmx_resolve_host[BMX_DISCOVERY_NAME * 2];
@@ -301,12 +302,19 @@ int bmx_thread_service_unpublish(void) {
 static void bmx_browse_finished(otError error, const otDnsBrowseResponse *response, void *context) {
     (void)context;
     bmx_browse_count = 0;
+    bmx_browse_truncated = 0;
     if (!error) {
         while (bmx_browse_count < BMX_DISCOVERY_RESULTS) {
             otError next = otDnsBrowseResponseGetServiceInstance(response, (uint16_t)bmx_browse_count,
                           bmx_browse_labels[bmx_browse_count], BMX_DISCOVERY_NAME);
             if (next) break;
             ++bmx_browse_count;
+        }
+        if (bmx_browse_count == BMX_DISCOVERY_RESULTS) {
+            char extra[BMX_DISCOVERY_NAME];
+            bmx_browse_truncated =
+                otDnsBrowseResponseGetServiceInstance(response, BMX_DISCOVERY_RESULTS,
+                                                     extra, sizeof(extra)) == OT_ERROR_NONE;
         }
     }
     bmx_browse_state = error ? -(int)error : 0;
@@ -323,6 +331,7 @@ int bmx_thread_service_browse(const char *service_type) {
     }
     bmx_full_service_name(bmx_browse_type, service_type);
     bmx_browse_count = 0;
+    bmx_browse_truncated = 0;
     otError error = otDnsClientBrowse(bmx_thread_platform_instance(), bmx_browse_type,
                                       bmx_browse_finished, NULL, NULL);
     bmx_browse_state = error ? -(int)error : 1;
@@ -337,6 +346,24 @@ int bmx_thread_service_browse_state(void) {
     int state = bmx_browse_state;
     bmx_thread_platform_unlock();
     return state;
+}
+
+int bmx_thread_service_browse_count(void) {
+    int result = bmx_thread_initialize();
+    if (result) return result;
+    bmx_thread_platform_lock();
+    int count = bmx_browse_state == 0 ? bmx_browse_count : bmx_browse_state;
+    bmx_thread_platform_unlock();
+    return count;
+}
+
+int bmx_thread_service_browse_truncated(void) {
+    int result = bmx_thread_initialize();
+    if (result) return result;
+    bmx_thread_platform_lock();
+    int truncated = bmx_browse_state == 0 ? bmx_browse_truncated : 0;
+    bmx_thread_platform_unlock();
+    return truncated;
 }
 
 int bmx_thread_service_browse_result(int index, char *label, int capacity) {

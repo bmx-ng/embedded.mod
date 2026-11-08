@@ -13,7 +13,7 @@ extern otInstance *bmx_thread_platform_instance(void);
 extern void bmx_thread_platform_lock(void);
 extern void bmx_thread_platform_unlock(void);
 
-#define BMX_COAP_PAYLOAD 512
+#define BMX_COAP_PAYLOAD 1024
 #define BMX_COAP_PATH 64
 #define BMX_COAP_EXTRA_RESOURCES 4
 #define BMX_COAP_PENDING_REQUESTS 4
@@ -410,7 +410,8 @@ int bmx_thread_coap_respond_to(int request_id, int code, const uint8_t *data, in
 int bmx_thread_coap_send_request(const char *address, int port, const char *path, int code,
                                  const uint8_t *data, int length) {
     if (!address || !path || !*path || port < 1 || port > 65535 ||
-        (code != OT_COAP_CODE_GET && code != OT_COAP_CODE_POST) ||
+        (code != OT_COAP_CODE_GET && code != OT_COAP_CODE_POST &&
+         code != OT_COAP_CODE_PUT && code != OT_COAP_CODE_DELETE) ||
         length < 0 || length > BMX_COAP_PAYLOAD || (length && !data)) return -22;
     int result = bmx_thread_initialize();
     if (result) return result;

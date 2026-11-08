@@ -25,6 +25,9 @@ Const ThreadRoleRouter:Int = 3
 Const ThreadRoleLeader:Int = 4
 Const ThreadUDPNetifThread:Int = 0
 Const ThreadUDPNetifAny:Int = 1
+Const ThreadUDPMaxDatagram:Int = 1280
+Const ThreadUDPMaxQueueDepth:Int = 16
+Const ThreadUDPMaxSockets:Int = 8
 Private
 
 Extern "C"
@@ -44,6 +47,7 @@ Extern "C"
 		addressCapacity:Int, port:Int Var) = "bmx_thread_udp_receive"
 	Function _ThreadUDPDropped:UInt() = "bmx_thread_udp_dropped"
 	Function _ThreadUDPSocketOpen:Int(port:Int, netif:Int) = "bmx_thread_udp_socket_open"
+	Function _ThreadUDPSocketOpenEx:Int(port:Int, netif:Int, queueDepth:Int, maxDatagram:Int) = "bmx_thread_udp_socket_open_ex"
 	Function _ThreadUDPSocketClose:Int(handle:Int) = "bmx_thread_udp_socket_close"
 	Function _ThreadUDPSocketSend:Int(handle:Int, address:Byte Ptr, port:Int, data:Byte Ptr, length:Int) = "bmx_thread_udp_socket_send"
 	Function _ThreadUDPSocketReceive:Int(handle:Int, data:Byte Ptr, capacity:Int, address:Byte Ptr, ..
@@ -119,7 +123,7 @@ Function ThreadActiveDataset:String()
 	Return String.FromUTF8Bytes(bytes, length)
 End Function
 
-' One receive port per node. Payloads up to 512 bytes are queued in native storage.
+' One receive port per node. Payloads up to 1280 bytes are queued as received.
 Function ThreadUDPOpen:Int(port:Int)
 	Return _ThreadUDPOpen(port)
 End Function
@@ -131,7 +135,7 @@ End Function
 Function ThreadUDPSend:Int(address:String, port:Int, data:Byte[], length:Int = -1)
 	If Not address Or Not data Or port < 1 Or port > 65535 Then Return -22
 	If length < 0 Then length = data.length
-	If length > data.length Or length > 512 Then Return -22
+	If length > data.length Or length > ThreadUDPMaxDatagram Then Return -22
 	Local addressBytes:Byte Ptr = address.ToUTF8String()
 	Local result:Int = _ThreadUDPSend(addressBytes, port, data, length)
 	MemFree(addressBytes)
@@ -157,14 +161,14 @@ Function ThreadUDPDropped:UInt()
 	Return _ThreadUDPDropped()
 End Function
 
-' Up to four additional independent UDP endpoints, each with its own receive queue.
+' Up to eight additional independent UDP endpoints, each with its own receive queue.
 Type TThreadUDPSocket
 	Private
 	Field handle:Int
 
 	Public
-	Function Open:TThreadUDPSocket(port:Int, netif:Int = ThreadUDPNetifThread)
-		Local id:Int = _ThreadUDPSocketOpen(port, netif)
+	Function Open:TThreadUDPSocket(port:Int, netif:Int = ThreadUDPNetifThread, queueDepth:Int = 8, maxDatagram:Int = ThreadUDPMaxDatagram)
+		Local id:Int = _ThreadUDPSocketOpenEx(port, netif, queueDepth, maxDatagram)
 		If id <= 0 Then Return Null
 		Local socket:TThreadUDPSocket = New TThreadUDPSocket
 		socket.handle = id
@@ -190,7 +194,7 @@ Type TThreadUDPSocket
 		If Not handle Then Return -107
 		If Not address Or Not data Or port < 1 Or port > 65535 Then Return -22
 		If length < 0 Then length = data.length
-		If length > data.length Or length > 512 Then Return -22
+		If length > data.length Or length > ThreadUDPMaxDatagram Then Return -22
 		Local addressBytes:Byte Ptr = address.ToUTF8String()
 		Local result:Int = _ThreadUDPSocketSend(handle, addressBytes, port, data, length)
 		MemFree(addressBytes)
