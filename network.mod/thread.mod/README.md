@@ -10,6 +10,8 @@ select optional OpenThread features for each firmware build:
 | `Embedded.Network.ThreadDiscovery` | SRP client and DNS client |
 | `Embedded.Network.ThreadServer` | On-mesh SRP and DNS-SD server, plus discovery client |
 | `Embedded.Network.ThreadCoAP` | CoAP client and server |
+| `Embedded.Network.ThreadCoAPBlock` | Optional 4096-byte Block1/Block2 transfers |
+| `Embedded.Network.ThreadCoAPObserve` | Optional CoAP Observe subscriptions |
 
 The server import is available on ESP32 builds. Each board/application build
 has its own OpenThread configuration and firmware image; the imports used by a
@@ -147,10 +149,28 @@ Requests and responses are limited to 1024 payload bytes. The legacy calls
 handle one request and exchange at a time; `ThreadCoAPAddResource`,
 `ThreadCoAPReceiveNext`, `ThreadCoAPRespondTo`, `ThreadCoAPSendRequest`, and
 `ThreadCoAPReadResponse` support four additional resources and four concurrent
-requests and exchanges. The API does not yet expose Observe, block transfers,
-or secure CoAP. The `thread_coap_resource.bmx` and
+requests and exchanges. Block transfers and Observe use the optional imports
+below; secure CoAP is not yet exposed. The `thread_coap_resource.bmx` and
 `nrf52_thread_coap_peer.bmx` and `thread_coap_peer.bmx` examples use DNS-SD to
 find a CoAP resource before exchanging GET and POST requests.
+
+Import `Embedded.Network.ThreadCoAPBlock` for Block1 request payloads and
+Block2 GET responses in 256-byte segments, up to 4096 bytes assembled per
+exchange. Block1 requests currently use replies of at most 1024 bytes. It
+adds `ThreadCoAPBlockResource`, `ThreadCoAPBlockReceive`,
+`ThreadCoAPBlockRespond`, `ThreadCoAPBlockSend`, and
+`ThreadCoAPBlockResponse`. Call `ThreadCoAPStart()` first. This initial
+blockwise API supports one resource and one client exchange at a time.
+
+Import `Embedded.Network.ThreadCoAPObserve` for an observable CoAP resource.
+After `ThreadCoAPStart()`, a server registers `ThreadCoAPObserveResource(path)`
+and publishes a value when `ThreadCoAPObserveHasSubscriber()` becomes true.
+Subsequent `ThreadCoAPObservePublish()` calls send notifications with increasing
+sequence numbers. A client subscribes with `ThreadCoAPObserveSubscribe()`, reads
+queued values through `ThreadCoAPObserveRead()`, and calls
+`ThreadCoAPObserveCancel()` when finished. One subscriber and one client
+subscription are supported; the receive queue holds four notifications of up
+to 1024 bytes, and `ThreadCoAPObserveDropped()` counts overflow.
 
 For unusual settings, `BMX_ESP32_EXTRA_SDKCONFIG` supplies an ESP-IDF
 configuration overlay and `BMX_NRF52_EXTRA_CONF_FILE` supplies a Zephyr
