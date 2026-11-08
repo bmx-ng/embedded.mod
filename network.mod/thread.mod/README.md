@@ -103,6 +103,10 @@ old Thread settings, completed Joiner commissioning, and reported
 `THREAD_COMMISSIONED=attached` with Child role. After flashing a different app,
 the C6 reported `THREAD_NETWORK=resumed` and attached as Router, confirming
 the commissioned dataset persisted. The S31 echo app was restored and received
-repeated four-byte UDP packets from the C6 peer. The nRF52 Commissioner/Joiner
-configuration builds, but its commissioning flow has not yet been tested on
-hardware.
+repeated four-byte UDP packets from the C6 peer.
+
+The nice!nano nRF52840 subsequently completed on-mesh Joiner commissioning
+against the S31 Commissioner, which authorized its exact factory EUI-64. It
+attached as Child and repeatedly received intact four-byte UDP echoes from
+the restored S31 echo app. After restoring the nRF52 saved-network echo app,
+it reported `THREAD_NETWORK=resumed` with addresses on the same mesh.
