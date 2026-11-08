@@ -12,6 +12,7 @@ select optional OpenThread features for each firmware build:
 | `Embedded.Network.ThreadCoAP` | CoAP client and server |
 | `Embedded.Network.ThreadCoAPBlock` | Optional 4096-byte Block1/Block2 transfers |
 | `Embedded.Network.ThreadCoAPObserve` | Optional CoAP Observe subscriptions |
+| `Embedded.Network.ThreadCoAPSecure` | Optional PSK-based CoAP over DTLS |
 
 The server import is available on ESP32 builds. Each board/application build
 has its own OpenThread configuration and firmware image; the imports used by a
@@ -84,8 +85,11 @@ from the managed application task. These UDP calls use OpenThread's own socket
 path and support Thread IPv6 traffic on both targets.
 
 `TThreadUDPSocket.Open(port)` opens one of eight additional UDP endpoints. Each
-endpoint has its own receive queue and `Send`,
-`Receive`, `Dropped`, and `Close` methods. The older `ThreadUDP*` functions
+endpoint has its own receive queue and `Send`, `Receive`, `Dropped`, and `Close`
+methods. `Open(0)` chooses an available local port, returned by `LocalPort()`.
+`Connect(address, port)` selects a default peer and limits incoming datagrams
+to that peer; `SendConnected(data)` sends to it, and `Disconnect()` clears it.
+The older `ThreadUDP*` functions
 remain available. `Open` returns `Null` when binding fails. Deleting a socket
 object releases its port. The optional second argument selects the interface:
 `ThreadUDPNetifThread` (the default) uses OpenThread's internal mesh socket,
@@ -96,6 +100,7 @@ The optional third and fourth arguments set queue depth (1 to 16, default 8)
 and maximum datagram size (1 to 1280 bytes, default 1280). Incoming datagram
 storage is freed on receive or close. A smaller maximum bounds each socket's
 memory use; oversized packets increment its `Dropped()` count.
+The current socket surface is UDP/IPv6; TCP streams remain a separate feature.
 
 Service discovery uses OpenThread SRP and DNS-SD. On an attached ESP32-S31 with
 `Embedded.Network.ThreadServer` imported,
@@ -149,8 +154,8 @@ Requests and responses are limited to 1024 payload bytes. The legacy calls
 handle one request and exchange at a time; `ThreadCoAPAddResource`,
 `ThreadCoAPReceiveNext`, `ThreadCoAPRespondTo`, `ThreadCoAPSendRequest`, and
 `ThreadCoAPReadResponse` support four additional resources and four concurrent
-requests and exchanges. Block transfers and Observe use the optional imports
-below; secure CoAP is not yet exposed. The `thread_coap_resource.bmx` and
+requests and exchanges. Block transfers, Observe, and secure CoAP use the optional imports
+below. The `thread_coap_resource.bmx` and
 `nrf52_thread_coap_peer.bmx` and `thread_coap_peer.bmx` examples use DNS-SD to
 find a CoAP resource before exchanging GET and POST requests.
 
@@ -171,6 +176,18 @@ queued values through `ThreadCoAPObserveRead()`, and calls
 `ThreadCoAPObserveCancel()` when finished. One subscriber and one client
 subscription are supported; the receive queue holds four notifications of up
 to 1024 bytes, and `ThreadCoAPObserveDropped()` counts overflow.
+
+Import `Embedded.Network.ThreadCoAPSecure` to include OpenThread's CoAP over
+DTLS API. `ThreadCoAPSecureStart(psk, identity)` takes a 16–32 byte pre-shared
+key and a nonempty UTF-8 identity at runtime, then starts port 5684. The module
+retains a copy of both until `ThreadCoAPSecureStop()`; keep deployed keys out of
+tracked example source and firmware logs. Register one path with
+`ThreadCoAPSecureResource()`, poll `ThreadCoAPSecureReceive()`, and reply with
+`ThreadCoAPSecureRespond()`. A client calls `ThreadCoAPSecureConnect()`, waits
+for `ThreadCoAPSecureConnection()` to return 2, then uses
+`ThreadCoAPSecureSend()` and `ThreadCoAPSecureResponse()`. This initial API
+supports one resource and one outstanding request, with 1024-byte payloads.
+It supports PSK authentication; certificate-based DTLS remains open.
 
 For unusual settings, `BMX_ESP32_EXTRA_SDKCONFIG` supplies an ESP-IDF
 configuration overlay and `BMX_NRF52_EXTRA_CONF_FILE` supplies a Zephyr

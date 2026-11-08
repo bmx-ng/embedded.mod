@@ -49,6 +49,10 @@ Extern "C"
 	Function _ThreadUDPSocketOpen:Int(port:Int, netif:Int) = "bmx_thread_udp_socket_open"
 	Function _ThreadUDPSocketOpenEx:Int(port:Int, netif:Int, queueDepth:Int, maxDatagram:Int) = "bmx_thread_udp_socket_open_ex"
 	Function _ThreadUDPSocketClose:Int(handle:Int) = "bmx_thread_udp_socket_close"
+	Function _ThreadUDPSocketLocalPort:Int(handle:Int) = "bmx_thread_udp_socket_local_port"
+	Function _ThreadUDPSocketConnect:Int(handle:Int, address:Byte Ptr, port:Int) = "bmx_thread_udp_socket_connect"
+	Function _ThreadUDPSocketDisconnect:Int(handle:Int) = "bmx_thread_udp_socket_disconnect"
+	Function _ThreadUDPSocketSendConnected:Int(handle:Int, data:Byte Ptr, length:Int) = "bmx_thread_udp_socket_send_connected"
 	Function _ThreadUDPSocketSend:Int(handle:Int, address:Byte Ptr, port:Int, data:Byte Ptr, length:Int) = "bmx_thread_udp_socket_send"
 	Function _ThreadUDPSocketReceive:Int(handle:Int, data:Byte Ptr, capacity:Int, address:Byte Ptr, ..
 		addressCapacity:Int, port:Int Var) = "bmx_thread_udp_socket_receive"
@@ -177,6 +181,36 @@ Type TThreadUDPSocket
 
 	Method IsOpen:Int()
 		Return handle > 0
+	End Method
+
+	' Returns the bound port, including an automatically chosen port after Open(0).
+	Method LocalPort:Int()
+		If Not handle Then Return -107
+		Return _ThreadUDPSocketLocalPort(handle)
+	End Method
+
+	' Sets a default peer and filters incoming traffic to that peer.
+	Method Connect:Int(address:String, port:Int)
+		If Not handle Then Return -107
+		If Not address Or port < 1 Or port > 65535 Then Return -22
+		Local bytes:Byte Ptr = address.ToUTF8String()
+		Local result:Int = _ThreadUDPSocketConnect(handle, bytes, port)
+		MemFree(bytes)
+		Return result
+	End Method
+
+	Method Disconnect:Int()
+		If Not handle Then Return -107
+		Return _ThreadUDPSocketDisconnect(handle)
+	End Method
+
+	' Sends to the peer configured by Connect().
+	Method SendConnected:Int(data:Byte[], length:Int = -1)
+		If Not handle Then Return -107
+		If Not data Then Return -22
+		If length < 0 Then length = data.length
+		If length > data.length Or length > ThreadUDPMaxDatagram Then Return -22
+		Return _ThreadUDPSocketSendConnected(handle, data, length)
 	End Method
 
 	Method Close:Int()
