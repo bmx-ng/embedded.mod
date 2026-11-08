@@ -19,6 +19,37 @@ Joiner commissioning. `ThreadLeave()` disables the Thread interface; the
 installed dataset remains available for `ThreadStartSaved()`. A dataset contains
 the network key: treat it as a secret and do not print it in production firmware.
 
+On-mesh commissioning uses a node already attached to the mesh as Commissioner;
+no border router is needed. On that node call `ThreadCommissionerStart()`, poll
+`ThreadCommissionerState()` until `ThreadCommissionerActive`, then authorize a
+joiner with `ThreadCommissionerAddJoiner(factoryEui64, pskd, timeoutSecs)`.
+`ThreadFactoryEui64()` on the joiner supplies the 16 hex digits for
+`factoryEui64`. An empty EUI-64 authorizes any device with that PSKd during the
+timeout; use a specific EUI-64 in deployed firmware. The PSKd must contain 6–32
+uppercase letters or digits, excluding I, O, Q, and Z. Use a unique PSKd for
+each device. `ThreadCommissionerStop()` ends the commissioning session.
+
+On the joining node call `ThreadJoinerStart(pskd)`, then poll
+`ThreadJoinerStatus()`; it returns 1 while joining, 0 once credentials have been
+received and the Thread interface has started, or a negative OpenThread error.
+`ThreadWaitForAttached()` then confirms that it attached. A successful join
+stores the operational dataset, which `ThreadStartSaved()` uses on later boots.
+`ThreadJoinerStop()` cancels a pending attempt. A node with an old stored network
+can call `ThreadForget()` first; this erases persistent Thread settings and is
+intended for an explicit reprovisioning flow. Polling must occur in the managed
+application task, because starting Thread in the OpenThread join callback is
+not safe. The Commissioner must be attached before it can petition to become
+active. More than one Commissioner can petition, but only one is active at a
+time.
+
+The ESP32 examples `thread_commissioner.bmx` and `thread_joiner.bmx` show the
+two sides. Set matching, unique credentials and the joiner's factory EUI-64
+before flashing. For a board already provisioned to another network, call
+`ThreadForget()` once from an explicit reprovisioning action before starting
+the joiner example; do not erase the network on every boot. After joining,
+`thread_saved_node.bmx` resumes that network without embedding its dataset;
+`thread_saved_udp_peer.bmx` additionally exchanges UDP with an echo node.
+
 `ThreadRole()` returns Disabled (0), Detached (1), Child (2), Router (3), or
 Leader (4). `ThreadWaitForAttached(timeoutMs)` returns a role of at least Child
 or a negative timeout/error. `ThreadIPv6Address(index)` enumerates local IPv6
@@ -65,3 +96,13 @@ The nRF52840 was then provisioned with the S31's current dataset. It joined as
 Child and repeatedly received intact UDP echoes from the S31 while the C6
 continued exchanging packets. After restoring the saved-network nRF52 example,
 the nRF52840 reported `THREAD_NETWORK=resumed` on that same mesh.
+
+On 2026-11-08, the S31 became an on-mesh Commissioner and authorized the C6
+SuperMini by its exact factory EUI-64 and a temporary PSKd. The C6 erased its
+old Thread settings, completed Joiner commissioning, and reported
+`THREAD_COMMISSIONED=attached` with Child role. After flashing a different app,
+the C6 reported `THREAD_NETWORK=resumed` and attached as Router, confirming
+the commissioned dataset persisted. The S31 echo app was restored and received
+repeated four-byte UDP packets from the C6 peer. The nRF52 Commissioner/Joiner
+configuration builds, but its commissioning flow has not yet been tested on
+hardware.

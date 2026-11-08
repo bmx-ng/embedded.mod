@@ -5,7 +5,11 @@
 
 #include <openthread/dataset.h>
 #include <openthread/dataset_ftd.h>
+#include <openthread/commissioner.h>
+#include <openthread/instance.h>
 #include <openthread/ip6.h>
+#include <openthread/joiner.h>
+#include <openthread/link.h>
 #include <openthread/message.h>
 #include <openthread/thread.h>
 #include <openthread/udp.h>
@@ -29,12 +33,32 @@ static otUdpSocket bmx_udp_socket;
 static int bmx_udp_open;
 static BMXThreadDatagram bmx_udp_queue[BMX_THREAD_UDP_QUEUE];
 static unsigned bmx_udp_head, bmx_udp_count, bmx_udp_dropped;
+static int bmx_joiner_status = -61;
+static int bmx_joiner_completed;
 
 static int bmx_hex_digit(char c) {
     if (c >= '0' && c <= '9') return c - '0';
     if (c >= 'a' && c <= 'f') return c - 'a' + 10;
     if (c >= 'A' && c <= 'F') return c - 'A' + 10;
     return -1;
+}
+
+static int bmx_valid_pskd(const char *pskd) {
+    if (!pskd) return 0;
+    size_t length = strlen(pskd);
+    if (length < 6 || length > 32) return 0;
+    for (size_t i = 0; i < length; ++i) {
+        char c = pskd[i];
+        if (c >= '0' && c <= '9') continue;
+        if (c < 'A' || c > 'Z' || c == 'I' || c == 'O' || c == 'Q' || c == 'Z') return 0;
+    }
+    return 1;
+}
+
+static void bmx_joiner_finished(otError error, void *context) {
+    (void)context;
+    bmx_joiner_status = error ? -(int)error : 0;
+    bmx_joiner_completed = 1;
 }
 
 static void bmx_udp_received(void *context, otMessage *message, const otMessageInfo *info) {
@@ -130,6 +154,128 @@ int bmx_thread_leave(void) {
     if (!error) error = otIp6SetEnabled(instance, false);
     bmx_thread_platform_unlock();
     return error ? -(int)error : 0;
+}
+
+int bmx_thread_forget(void) {
+    int result = bmx_thread_leave();
+    if (result) return result;
+    bmx_thread_platform_lock();
+    otInstance *instance = bmx_thread_platform_instance();
+    otJoinerStop(instance);
+    otError error = otInstanceErasePersistentInfo(instance);
+    bmx_joiner_status = -61;
+    bmx_joiner_completed = 0;
+    bmx_thread_platform_unlock();
+    return error ? -(int)error : 0;
+}
+
+int bmx_thread_factory_eui64(char *value, int capacity) {
+    if (!value || capacity < 17) return -22;
+    int result = bmx_thread_initialize();
+    if (result) return result;
+    bmx_thread_platform_lock();
+    otExtAddress eui;
+    otLinkGetFactoryAssignedIeeeEui64(bmx_thread_platform_instance(), &eui);
+    static const char hex[] = "0123456789abcdef";
+    for (int i = 0; i < 8; ++i) {
+        value[i * 2] = hex[eui.m8[i] >> 4];
+        value[i * 2 + 1] = hex[eui.m8[i] & 15];
+    }
+    value[16] = 0;
+    bmx_thread_platform_unlock();
+    return 16;
+}
+
+int bmx_thread_commissioner_start(void) {
+    int result = bmx_thread_initialize();
+    if (result) return result;
+    bmx_thread_platform_lock();
+    otError error = otCommissionerStart(bmx_thread_platform_instance(), NULL, NULL, NULL);
+    bmx_thread_platform_unlock();
+    return error ? -(int)error : 0;
+}
+
+int bmx_thread_commissioner_state(void) {
+    int result = bmx_thread_initialize();
+    if (result) return result;
+    bmx_thread_platform_lock();
+    int state = (int)otCommissionerGetState(bmx_thread_platform_instance());
+    bmx_thread_platform_unlock();
+    return state;
+}
+
+int bmx_thread_commissioner_add_joiner(const char *eui64, const char *pskd, uint32_t timeout) {
+    if (!eui64 || !bmx_valid_pskd(pskd) || !timeout) return -22;
+    otExtAddress eui;
+    const otExtAddress *selected = NULL;
+    if (*eui64) {
+        if (strlen(eui64) != 16) return -22;
+        for (int i = 0; i < 8; ++i) {
+            int high = bmx_hex_digit(eui64[i * 2]);
+            int low = bmx_hex_digit(eui64[i * 2 + 1]);
+            if (high < 0 || low < 0) return -22;
+            eui.m8[i] = (uint8_t)((high << 4) | low);
+        }
+        selected = &eui;
+    }
+    int result = bmx_thread_initialize();
+    if (result) return result;
+    bmx_thread_platform_lock();
+    otError error = otCommissionerAddJoiner(bmx_thread_platform_instance(), selected, pskd, timeout);
+    bmx_thread_platform_unlock();
+    return error ? -(int)error : 0;
+}
+
+int bmx_thread_commissioner_stop(void) {
+    int result = bmx_thread_initialize();
+    if (result) return result;
+    bmx_thread_platform_lock();
+    otError error = otCommissionerStop(bmx_thread_platform_instance());
+    bmx_thread_platform_unlock();
+    return error ? -(int)error : 0;
+}
+
+int bmx_thread_joiner_start(const char *pskd) {
+    if (!bmx_valid_pskd(pskd)) return -22;
+    int result = bmx_thread_initialize();
+    if (result) return result;
+    bmx_thread_platform_lock();
+    otInstance *instance = bmx_thread_platform_instance();
+    otError error = otThreadSetEnabled(instance, false);
+    if (!error) error = otIp6SetEnabled(instance, true);
+    if (!error) {
+        bmx_joiner_status = 1;
+        bmx_joiner_completed = 0;
+        error = otJoinerStart(instance, pskd, NULL, NULL, NULL, NULL, NULL, bmx_joiner_finished, NULL);
+        if (error) bmx_joiner_status = -(int)error;
+    }
+    bmx_thread_platform_unlock();
+    return error ? -(int)error : 0;
+}
+
+int bmx_thread_joiner_status(void) {
+    int result = bmx_thread_initialize();
+    if (result) return result;
+    bmx_thread_platform_lock();
+    if (bmx_joiner_completed && bmx_joiner_status == 0) {
+        otError error = otThreadSetEnabled(bmx_thread_platform_instance(), true);
+        if (error) bmx_joiner_status = -(int)error;
+        bmx_joiner_completed = 0;
+    }
+    int status = bmx_joiner_status;
+    bmx_thread_platform_unlock();
+    return status;
+}
+
+int bmx_thread_joiner_stop(void) {
+    int result = bmx_thread_initialize();
+    if (result) return result;
+    bmx_thread_platform_lock();
+    otJoinerStop(bmx_thread_platform_instance());
+    bmx_joiner_status = -61;
+    bmx_joiner_completed = 0;
+    bmx_thread_platform_unlock();
+    return 0;
 }
 
 int bmx_thread_role(void) {
