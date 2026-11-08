@@ -211,4 +211,7 @@ The initial CoAP API was tested on 2026-11-08 with the S31 hosting a DNS-SD
 advertised `status` resource and the nRF52840 resuming its saved mesh. The
 nRF52 resolved the CoAP service and received a confirmable GET response with
 `OK` and a POST response echoing `PING`; the S31 logged successful handling of
-both requests.
+both requests. The C6 SuperMini also resumed the saved mesh, resolved the
+service, and passed the same GET and POST exchange with the S31. S31 and C6
+firmware builds passed with the CoAP import, and an S31 core-only build passed
+with CoAP disabled in its generated OpenThread configuration.
