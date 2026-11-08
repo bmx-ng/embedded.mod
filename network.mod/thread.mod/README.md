@@ -13,6 +13,7 @@ select optional OpenThread features for each firmware build:
 | `Embedded.Network.ThreadCoAPBlock` | Optional 4096-byte Block1/Block2 transfers |
 | `Embedded.Network.ThreadCoAPObserve` | Optional CoAP Observe subscriptions |
 | `Embedded.Network.ThreadCoAPSecure` | Optional PSK-based CoAP over DTLS |
+| `Embedded.Network.ThreadTCP` | Optional bounded TCP stream and listener |
 
 The server import is available on ESP32 builds. Each board/application build
 has its own OpenThread configuration and firmware image; the imports used by a
@@ -100,7 +101,17 @@ The optional third and fourth arguments set queue depth (1 to 16, default 8)
 and maximum datagram size (1 to 1280 bytes, default 1280). Incoming datagram
 storage is freed on receive or close. A smaller maximum bounds each socket's
 memory use; oversized packets increment its `Dropped()` count.
-The current socket surface is UDP/IPv6; TCP streams remain a separate feature.
+Import `Embedded.Network.ThreadTCP` to include OpenThread TCP support in the
+firmware. `ThreadTCPOpen()` creates one stream endpoint. Call
+`ThreadTCPConnect(address, port)` for an outgoing stream or
+`ThreadTCPListen(port)` to accept one incoming stream. Poll `ThreadTCPState()`
+for 2 before sending. `ThreadTCPSend()` queues at most 1024 bytes and returns
+`-16` until the prior send has been acknowledged; `ThreadTCPSendReady()` can be
+polled. `ThreadTCPReceive()` reads any available bytes, returning `-11` when
+none are ready and 0 at end of stream. `ThreadTCPEndSend()` sends an orderly
+end of stream and `ThreadTCPClose()` releases the endpoint. The receive window
+is sized for a short mesh path; additional concurrent streams and socket
+options are not yet exposed.
 
 Service discovery uses OpenThread SRP and DNS-SD. On an attached ESP32-S31 with
 `Embedded.Network.ThreadServer` imported,
