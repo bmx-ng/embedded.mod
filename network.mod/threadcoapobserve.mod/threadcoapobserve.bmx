@@ -17,7 +17,13 @@ ModuleInfo "License: zlib/libpng"
 Import BRL.System
 Import Embedded.Network.ThreadCoAP
 
+Rem
+bbdoc: Maximum Observe value payload in bytes.
+End Rem
 Const ThreadCoAPObserveMaxPayload:Int = 1024
+Rem
+bbdoc: Number of queued Observe values.
+End Rem
 Const ThreadCoAPObserveQueueDepth:Int = 4
 
 Private
@@ -30,31 +36,62 @@ Extern "C"
 	Function _ObserveDropped:UInt() = "bmx_thread_coap_observe_dropped"
 	Function _ObserveCancel:Int() = "bmx_thread_coap_observe_cancel"
 End Extern
+
 Public
 
-' Register an observable path after ThreadCoAPStart().
+Rem
+bbdoc: Register one observable CoAP resource.
+param: URI resource path without a leading slash.
+returns: Zero on success or a negative error.
+about: Call ThreadCoAPStart first.
+End Rem
 Function ThreadCoAPObserveResource:Int(path:String)
-	If Not path Then Return -22
+	If Not path Then
+		Return -22
+	End If
+
 	Local bytes:Byte Ptr = path.ToUTF8String()
 	Local result:Int = _ObserveResource(bytes)
 	MemFree(bytes)
 	Return result
 End Function
 
+Rem
+bbdoc: Check whether an Observe subscriber is present.
+returns: True if a subscriber is active; otherwise False.
+End Rem
 Function ThreadCoAPObserveHasSubscriber:Int()
 	Return _ObserveHasSubscriber()
 End Function
 
-' Send the initial value or a later notification to the current subscriber.
+Rem
+bbdoc: Send an initial value or later Observe notification.
+param: Payload bytes to send; Null sends an empty payload where allowed.
+param: CoAP response code; on read, receives the response code.
+returns: Zero on success or a negative error.
+End Rem
 Function ThreadCoAPObservePublish:Int(data:Byte[], code:Int = ThreadCoAPContent)
 	Local length:Int
-	If data Then length = data.length
+	If data Then
+		length = data.length
+	End If
+
 	Return _ObservePublish(code, data, length)
 End Function
 
-' Subscribe to one path. Notifications are returned by ThreadCoAPObserveRead.
+Rem
+bbdoc: Subscribe to an observable resource.
+param: The peer IPv6 address; on receive, receives the sender address.
+param: URI resource path without a leading slash.
+param: The UDP or TCP port.
+returns: Zero if queued or a negative error.
+about: Read values with ThreadCoAPObserveRead and end the subscription with ThreadCoAPObserveCancel.
+End Rem
 Function ThreadCoAPObserveSubscribe:Int(address:String, path:String, port:Int = 5683)
-	If Not address Or Not path Then Return -22
+	If Not address Or Not path Then
+		Return -22
+	End If
+
 	Local a:Byte Ptr = address.ToUTF8String()
 	Local p:Byte Ptr = path.ToUTF8String()
 	Local result:Int = _ObserveSubscribe(a, port, p)
@@ -63,16 +100,33 @@ Function ThreadCoAPObserveSubscribe:Int(address:String, path:String, port:Int = 
 	Return result
 End Function
 
-' Returns a payload length, -11 if the queue is empty, or a negative error.
+Rem
+bbdoc: Read the next Observe value.
+param: Buffer for the received payload.
+param: Receives the CoAP response code.
+param: Receives the Observe sequence number.
+returns: Payload length, -11 when empty, -90 for a short buffer, or another negative error.
+End Rem
 Function ThreadCoAPObserveRead:Int(data:Byte[], code:Int Var, sequence:UInt Var)
-	If Not data Then Return -22
+	If Not data Then
+		Return -22
+	End If
+
 	Return _ObserveRead(data, data.length, code, sequence)
 End Function
 
+Rem
+bbdoc: Count Observe notifications discarded by queue overflow.
+returns: The number of dropped notifications.
+End Rem
 Function ThreadCoAPObserveDropped:UInt()
 	Return _ObserveDropped()
 End Function
 
+Rem
+bbdoc: Cancel the client Observe subscription.
+returns: Zero on success or a negative error.
+End Rem
 Function ThreadCoAPObserveCancel:Int()
 	Return _ObserveCancel()
 End Function

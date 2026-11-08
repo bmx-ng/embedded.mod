@@ -26,11 +26,19 @@ End Extern
 
 Public
 
-' SRP server state: 0 disabled, 1 running, 2 stopped (OpenThread values).
+Rem
+bbdoc: Enable or disable the on-mesh SRP and DNS-SD server.
+param: True to enable the server; False to disable it.
+returns: Zero on success or a negative error.
+End Rem
 Function ThreadServiceServerEnable:Int(enabled:Int = True)
 	Return _ThreadServiceServerEnable(enabled)
 End Function
 
+Rem
+bbdoc: Get the on-mesh service server state.
+returns: Zero when disabled, one when running, two when stopped, or a negative error.
+End Rem
 Function ThreadServiceServerState:Int()
 	Return _ThreadServiceServerState()
 End Function
