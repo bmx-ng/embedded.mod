@@ -183,3 +183,13 @@ The C6 discovery peer firmware built and flashed, but yielded no application
 serial output after a normal reset, so C6 discovery remains unverified on
 hardware. Its previous saved-network UDP peer firmware was restored, and the
 S31 again received and echoed four-byte packets from that C6 peer repeatedly.
+
+On 2026-11-08, the S31 registered two `_bmxecho._udp` instances with distinct
+ports and TXT records. The nRF52840 resumed its saved mesh, discovered both
+instances, resolved each port and TXT record, and received intact UDP echoes
+from both. During the S31's removal and re-registration of the second service,
+the nRF52 browser reported catalog counts of two, one, then two. Both echoes
+passed again after the service returned. The S31 continued echoing packets
+from the C6 throughout this test. The nRF52 saved-network echo app was then
+restored and reported `THREAD_NETWORK=resumed`; the restored S31 echo app again
+received and echoed the C6's four-byte packets.
