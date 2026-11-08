@@ -60,3 +60,8 @@ another reset, reported `THREAD_NETWORK=resumed`, and remained Leader. Its UDP
 echo exchange with the C6 continued on the same mesh. The nice!nano nRF52840
 also reported `THREAD_NETWORK=resumed` after a new application flash and again
 after a physical reset, retaining the same mesh IPv6 addresses.
+
+The nRF52840 was then provisioned with the S31's current dataset. It joined as
+Child and repeatedly received intact UDP echoes from the S31 while the C6
+continued exchanging packets. After restoring the saved-network nRF52 example,
+the nRF52840 reported `THREAD_NETWORK=resumed` on that same mesh.
