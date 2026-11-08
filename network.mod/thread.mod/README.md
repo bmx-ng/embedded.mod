@@ -95,7 +95,14 @@ Thread network data; poll `ThreadServiceClientRunning()` before querying. Use
 `ThreadServicePublish(hostLabel, instanceLabel, serviceType, udpPort)` to
 register a service such as `_bmxecho._udp`. Poll
 `ThreadServicePublishState()` until zero. `ThreadServiceUnpublish()` removes it.
-This first API slice supports one published service per process.
+The original functions retain their single-service calling convention.
+`TThreadPublishedService.Publish(host, instance, type, port, txtEntries)` adds
+one of up to four independently managed services on the same SRP host label.
+Its `State()` is 1 while pending, 0 when registered, 2 when removed, or a
+negative error. `Unpublish()` requests removal; `Close()` releases the object
+and unregisters it asynchronously if necessary. TXT entries are UTF-8 strings
+such as `id=one` or boolean keys. `ThreadTXTEncode()` and `ThreadTXTDecode()`
+convert between strings and bounded DNS TXT wire data (256 bytes total).
 The service type is a short DNS-SD type; queries use OpenThread's default
 `default.service.arpa` domain.
 
@@ -104,12 +111,20 @@ The service type is a short DNS-SD type; queries use OpenThread's default
 `ThreadServiceBrowseResult(index)` until it returns an empty string. Resolve a
 label with `ThreadServiceResolve(label, serviceType)` and poll
 `ThreadServiceResolveState(ipv6Address, port)` until zero. Pending operations
-return 1 and failures are negative OpenThread error codes. One browse and one
-resolve can be in flight per process. TXT records, multiple local services,
-and continuous browse updates are not yet exposed. The nRF52, C6, and H2
+return 1 and failures are negative OpenThread error codes. After a successful
+resolve, `ThreadServiceResolvedTXT()` returns the raw TXT bytes and
+`ThreadServiceResolvedTXTTruncated()` reports whether the 256-byte buffer was
+too small. One browse and one resolve can be in flight per process.
+`TThreadServiceBrowser.Start(type, intervalMs)` repeats the one-shot browse at
+the chosen interval; `Poll()` returns 2 when the set of instance labels
+changes, 1 while a query is pending, 0 when unchanged, or an error. Its
+`Results()` returns a snapshot. Only one such browser may be active per
+process. This is periodic refresh, not a push subscription. The nRF52, C6, and H2
 builds can select the SRP/DNS client APIs; server hosting is tested on S31 only. The
 `thread_service_echo.bmx`, `thread_service_peer.bmx`, and
-`nrf52_thread_service_peer.bmx` examples show a named UDP exchange.
+`nrf52_thread_service_peer.bmx` examples show a named UDP exchange. The
+`thread_service_catalog.bmx` and `nrf52_thread_service_catalog_peer.bmx`
+examples exercise multiple services, TXT records, and refreshed browsing.
 
 For unusual settings, `BMX_ESP32_EXTRA_SDKCONFIG` supplies an ESP-IDF
 configuration overlay and `BMX_NRF52_EXTRA_CONF_FILE` supplies a Zephyr
