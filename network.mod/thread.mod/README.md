@@ -68,6 +68,46 @@ up to 512 bytes are buffered; oversize or overflow datagrams are counted by
 from the managed application task. These UDP calls use OpenThread's own socket
 path and support Thread IPv6 traffic on both targets.
 
+`TThreadUDPSocket.Open(port)` opens one of four additional UDP endpoints. Each
+endpoint has its own eight-datagram, 512-byte receive queue and `Send`,
+`Receive`, `Dropped`, and `Close` methods. The older `ThreadUDP*` functions
+remain available. `Open` returns `Null` when binding fails. Deleting a socket
+object releases its port.
+
+Service discovery uses OpenThread SRP and DNS-SD. On an attached ESP32-S31,
+`ThreadServiceServerEnable()` starts an on-mesh SRP server; poll
+`ThreadServiceServerState()` for 1 (running). The ESP32 build enables the SRP
+server and Thread network-data publisher without configuring Wi-Fi/Ethernet
+routing. On a client, `ThreadServiceClientEnable()` discovers the server from
+Thread network data; poll `ThreadServiceClientRunning()` before querying. Use
+`ThreadServicePublish(hostLabel, instanceLabel, serviceType, udpPort)` to
+register a service such as `_bmxecho._udp`. Poll
+`ThreadServicePublishState()` until zero. `ThreadServiceUnpublish()` removes it.
+This first API slice supports one published service per process.
+The service type is a short DNS-SD type; queries use OpenThread's default
+`default.service.arpa` domain.
+
+`ThreadServiceBrowse(serviceType)` starts a DNS-SD browse. Poll
+`ThreadServiceBrowseState()` until zero, then read up to eight labels using
+`ThreadServiceBrowseResult(index)` until it returns an empty string. Resolve a
+label with `ThreadServiceResolve(label, serviceType)` and poll
+`ThreadServiceResolveState(ipv6Address, port)` until zero. Pending operations
+return 1 and failures are negative OpenThread error codes. One browse and one
+resolve can be in flight per process. TXT records, multiple local services,
+and continuous browse updates are not yet exposed. The nRF52, C6, and H2
+builds support the SRP/DNS client APIs; server hosting is currently S31 only. The
+`thread_service_echo.bmx`, `thread_service_peer.bmx`, and
+`nrf52_thread_service_peer.bmx` examples show a named UDP exchange.
+
+Thread features can be selected per firmware build. An application must import
+the Thread module to include OpenThread at all. On ESP32, the build's SDK
+configuration controls Joiner, Commissioner, SRP client, and DNS client support;
+set `BMX_ESP32_EXTRA_SDKCONFIG` to an extra SDK configuration file to override
+the defaults. The `BMX_THREAD_SRP_SERVER` option additionally enables the SRP
+and DNS-SD server (on by default for S31, off for C6/H2). On nRF52, use
+`BMX_NRF52_EXTRA_CONF_FILE` for a Zephyr configuration overlay. A changed
+OpenThread feature configuration requires a fresh firmware build.
+
 For a two-board test, build `nrf52_thread_echo.bmx` or `thread_form_echo.bmx`
 on the first board and `thread_udp_peer.bmx` on the second. The first board
 resumes its saved network after reboot, forming one only when none is saved.
@@ -110,3 +150,13 @@ against the S31 Commissioner, which authorized its exact factory EUI-64. It
 attached as Child and repeatedly received intact four-byte UDP echoes from
 the restored S31 echo app. After restoring the nRF52 saved-network echo app,
 it reported `THREAD_NETWORK=resumed` with addresses on the same mesh.
+
+On 2026-11-08, the S31 enabled an on-mesh SRP and DNS-SD server and registered
+the `_bmxecho._udp` echo service. The nRF52840, running from its saved dataset,
+discovered `bmx-echo`, resolved the S31's mesh IPv6 address and UDP port, and
+received repeated intact `PING` echoes. The nRF52 saved-network echo app was
+restored afterward and again reported `THREAD_NETWORK=resumed` on the same mesh.
+The C6 discovery peer firmware built and flashed, but yielded no application
+serial output after a normal reset, so C6 discovery remains unverified on
+hardware. Its previous saved-network UDP peer firmware was restored, and the
+S31 again received and echoed four-byte packets from that C6 peer repeatedly.

@@ -21,6 +21,7 @@ extern void bmx_thread_platform_unlock(void);
 
 #define BMX_THREAD_UDP_PAYLOAD 512
 #define BMX_THREAD_UDP_QUEUE 8
+#define BMX_THREAD_UDP_SOCKETS 4
 
 typedef struct {
     uint8_t data[BMX_THREAD_UDP_PAYLOAD];
@@ -33,6 +34,14 @@ static otUdpSocket bmx_udp_socket;
 static int bmx_udp_open;
 static BMXThreadDatagram bmx_udp_queue[BMX_THREAD_UDP_QUEUE];
 static unsigned bmx_udp_head, bmx_udp_count, bmx_udp_dropped;
+typedef struct {
+    otUdpSocket socket;
+    BMXThreadDatagram queue[BMX_THREAD_UDP_QUEUE];
+    unsigned head, count, dropped;
+    unsigned generation;
+    int open;
+} BMXThreadUdpEndpoint;
+static BMXThreadUdpEndpoint bmx_udp_endpoints[BMX_THREAD_UDP_SOCKETS];
 static int bmx_joiner_status = -61;
 static int bmx_joiner_completed;
 
@@ -74,6 +83,29 @@ static void bmx_udp_received(void *context, otMessage *message, const otMessageI
     item->address = info->mPeerAddr;
     otMessageRead(message, otMessageGetOffset(message), item->data, item->length);
     ++bmx_udp_count;
+}
+
+static BMXThreadUdpEndpoint *bmx_udp_endpoint(int handle) {
+    unsigned slot = (unsigned)handle & 0xffu;
+    unsigned generation = (unsigned)handle >> 8;
+    if (!slot || slot > BMX_THREAD_UDP_SOCKETS || !generation) return NULL;
+    BMXThreadUdpEndpoint *endpoint = &bmx_udp_endpoints[slot - 1];
+    return endpoint->open && endpoint->generation == generation ? endpoint : NULL;
+}
+
+static void bmx_udp_endpoint_received(void *context, otMessage *message, const otMessageInfo *info) {
+    BMXThreadUdpEndpoint *endpoint = context;
+    int length = otMessageGetLength(message) - otMessageGetOffset(message);
+    if (length < 0 || length > BMX_THREAD_UDP_PAYLOAD || endpoint->count == BMX_THREAD_UDP_QUEUE) {
+        ++endpoint->dropped;
+        return;
+    }
+    BMXThreadDatagram *item = &endpoint->queue[(endpoint->head + endpoint->count) % BMX_THREAD_UDP_QUEUE];
+    item->length = (uint16_t)length;
+    item->port = info->mPeerPort;
+    item->address = info->mPeerAddr;
+    otMessageRead(message, otMessageGetOffset(message), item->data, item->length);
+    ++endpoint->count;
 }
 
 int bmx_thread_initialize(void) {
@@ -415,4 +447,118 @@ uint32_t bmx_thread_udp_dropped(void) {
     uint32_t count = bmx_udp_dropped;
     bmx_thread_platform_unlock();
     return count;
+}
+
+/* Handles encode a slot and generation, so a closed BlitzMax object cannot use
+ * a subsequently opened socket in the same slot. */
+int bmx_thread_udp_socket_open(int port) {
+    if (port < 1 || port > 65535) return -22;
+    int result = bmx_thread_initialize();
+    if (result) return result;
+    bmx_thread_platform_lock();
+    unsigned i;
+    for (i = 0; i < BMX_THREAD_UDP_SOCKETS && bmx_udp_endpoints[i].open; ++i) {}
+    if (i == BMX_THREAD_UDP_SOCKETS) {
+        bmx_thread_platform_unlock();
+        return -24;
+    }
+    BMXThreadUdpEndpoint *endpoint = &bmx_udp_endpoints[i];
+    memset(&endpoint->socket, 0, sizeof(endpoint->socket));
+    otInstance *instance = bmx_thread_platform_instance();
+    otError error = otUdpOpen(instance, &endpoint->socket, bmx_udp_endpoint_received, endpoint);
+    if (!error) {
+        otSockAddr local = {0};
+        local.mPort = (uint16_t)port;
+        error = otUdpBind(instance, &endpoint->socket, &local, OT_NETIF_THREAD_INTERNAL);
+        if (error) otUdpClose(instance, &endpoint->socket);
+    }
+    int handle = -(int)error;
+    if (!error) {
+        endpoint->head = endpoint->count = endpoint->dropped = 0;
+        endpoint->generation = (endpoint->generation + 1) & 0x7fffff;
+        if (!endpoint->generation) endpoint->generation = 1;
+        endpoint->open = 1;
+        handle = (int)((endpoint->generation << 8) | (i + 1));
+    }
+    bmx_thread_platform_unlock();
+    return handle;
+}
+
+int bmx_thread_udp_socket_close(int handle) {
+    if (handle <= 0) return -22;
+    int result = bmx_thread_initialize();
+    if (result) return result;
+    bmx_thread_platform_lock();
+    BMXThreadUdpEndpoint *endpoint = bmx_udp_endpoint(handle);
+    otError error = endpoint ? otUdpClose(bmx_thread_platform_instance(), &endpoint->socket) : OT_ERROR_INVALID_ARGS;
+    if (!error) endpoint->open = endpoint->head = endpoint->count = 0;
+    bmx_thread_platform_unlock();
+    return error ? -(int)error : 0;
+}
+
+int bmx_thread_udp_socket_send(int handle, const char *address, int port, const uint8_t *data, int length) {
+    if (handle <= 0 || !address || !data || port < 1 || port > 65535 ||
+            length < 0 || length > BMX_THREAD_UDP_PAYLOAD) return -22;
+    int result = bmx_thread_initialize();
+    if (result) return result;
+    bmx_thread_platform_lock();
+    BMXThreadUdpEndpoint *endpoint = bmx_udp_endpoint(handle);
+    if (!endpoint) {
+        bmx_thread_platform_unlock();
+        return -107;
+    }
+    otInstance *instance = bmx_thread_platform_instance();
+    otMessageInfo info = {0};
+    info.mPeerPort = (uint16_t)port;
+    otError error = otIp6AddressFromString(address, &info.mPeerAddr);
+    otMessage *message = NULL;
+    if (!error) {
+        message = otUdpNewMessage(instance, NULL);
+        if (!message) error = OT_ERROR_NO_BUFS;
+    }
+    if (!error) error = otMessageAppend(message, data, (uint16_t)length);
+    if (!error) error = otUdpSend(instance, &endpoint->socket, message, &info);
+    if (error && message) otMessageFree(message);
+    bmx_thread_platform_unlock();
+    return error ? -(int)error : length;
+}
+
+int bmx_thread_udp_socket_receive(int handle, uint8_t *data, int capacity, char *address,
+                                  int address_capacity, int *port) {
+    if (handle <= 0 || !data || capacity < 0 || !address ||
+            address_capacity < OT_IP6_ADDRESS_STRING_SIZE || !port) return -22;
+    int result = bmx_thread_initialize();
+    if (result) return result;
+    bmx_thread_platform_lock();
+    BMXThreadUdpEndpoint *endpoint = bmx_udp_endpoint(handle);
+    if (!endpoint) {
+        bmx_thread_platform_unlock();
+        return -107;
+    }
+    if (!endpoint->count) {
+        bmx_thread_platform_unlock();
+        return -11;
+    }
+    BMXThreadDatagram *item = &endpoint->queue[endpoint->head];
+    if (capacity < item->length) {
+        bmx_thread_platform_unlock();
+        return -90;
+    }
+    memcpy(data, item->data, item->length);
+    otIp6AddressToString(&item->address, address, (uint16_t)address_capacity);
+    *port = item->port;
+    int length = item->length;
+    endpoint->head = (endpoint->head + 1) % BMX_THREAD_UDP_QUEUE;
+    --endpoint->count;
+    bmx_thread_platform_unlock();
+    return length;
+}
+
+uint32_t bmx_thread_udp_socket_dropped(int handle) {
+    if (bmx_thread_initialize()) return 0;
+    bmx_thread_platform_lock();
+    BMXThreadUdpEndpoint *endpoint = bmx_udp_endpoint(handle);
+    uint32_t dropped = endpoint ? endpoint->dropped : 0;
+    bmx_thread_platform_unlock();
+    return dropped;
 }
