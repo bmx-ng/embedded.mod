@@ -84,7 +84,11 @@ path and support Thread IPv6 traffic on both targets.
 endpoint has its own eight-datagram, 512-byte receive queue and `Send`,
 `Receive`, `Dropped`, and `Close` methods. The older `ThreadUDP*` functions
 remain available. `Open` returns `Null` when binding fails. Deleting a socket
-object releases its port.
+object releases its port. The optional second argument selects the interface:
+`ThreadUDPNetifThread` (the default) uses OpenThread's internal mesh socket,
+while `ThreadUDPNetifAny` also allows a platform UDP socket where the target
+provides one. On an ESP32 border router, use `ThreadUDPNetifAny` to receive
+datagrams sent from the backbone to a local Thread address.
 
 Service discovery uses OpenThread SRP and DNS-SD. On an attached ESP32-S31 with
 `Embedded.Network.ThreadServer` imported,

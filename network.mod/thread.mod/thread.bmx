@@ -23,6 +23,8 @@ Const ThreadRoleDetached:Int = 1
 Const ThreadRoleChild:Int = 2
 Const ThreadRoleRouter:Int = 3
 Const ThreadRoleLeader:Int = 4
+Const ThreadUDPNetifThread:Int = 0
+Const ThreadUDPNetifAny:Int = 1
 Private
 
 Extern "C"
@@ -41,7 +43,7 @@ Extern "C"
 	Function _ThreadUDPReceive:Int(data:Byte Ptr, capacity:Int, address:Byte Ptr, ..
 		addressCapacity:Int, port:Int Var) = "bmx_thread_udp_receive"
 	Function _ThreadUDPDropped:UInt() = "bmx_thread_udp_dropped"
-	Function _ThreadUDPSocketOpen:Int(port:Int) = "bmx_thread_udp_socket_open"
+	Function _ThreadUDPSocketOpen:Int(port:Int, netif:Int) = "bmx_thread_udp_socket_open"
 	Function _ThreadUDPSocketClose:Int(handle:Int) = "bmx_thread_udp_socket_close"
 	Function _ThreadUDPSocketSend:Int(handle:Int, address:Byte Ptr, port:Int, data:Byte Ptr, length:Int) = "bmx_thread_udp_socket_send"
 	Function _ThreadUDPSocketReceive:Int(handle:Int, data:Byte Ptr, capacity:Int, address:Byte Ptr, ..
@@ -161,8 +163,8 @@ Type TThreadUDPSocket
 	Field handle:Int
 
 	Public
-	Function Open:TThreadUDPSocket(port:Int)
-		Local id:Int = _ThreadUDPSocketOpen(port)
+	Function Open:TThreadUDPSocket(port:Int, netif:Int = ThreadUDPNetifThread)
+		Local id:Int = _ThreadUDPSocketOpen(port, netif)
 		If id <= 0 Then Return Null
 		Local socket:TThreadUDPSocket = New TThreadUDPSocket
 		socket.handle = id

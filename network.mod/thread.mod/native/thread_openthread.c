@@ -469,8 +469,8 @@ uint32_t bmx_thread_udp_dropped(void) {
 
 /* Handles encode a slot and generation, so a closed BlitzMax object cannot use
  * a subsequently opened socket in the same slot. */
-int bmx_thread_udp_socket_open(int port) {
-    if (port < 1 || port > 65535) return -22;
+int bmx_thread_udp_socket_open(int port, int netif) {
+    if (port < 1 || port > 65535 || netif < 0 || netif > 1) return -22;
     int result = bmx_thread_initialize();
     if (result) return result;
     bmx_thread_platform_lock();
@@ -487,7 +487,8 @@ int bmx_thread_udp_socket_open(int port) {
     if (!error) {
         otSockAddr local = {0};
         local.mPort = (uint16_t)port;
-        error = otUdpBind(instance, &endpoint->socket, &local, OT_NETIF_THREAD_INTERNAL);
+        error = otUdpBind(instance, &endpoint->socket, &local,
+                          netif == 1 ? OT_NETIF_UNSPECIFIED : OT_NETIF_THREAD_INTERNAL);
         if (error) otUdpClose(instance, &endpoint->socket);
     }
     int handle = -(int)error;
