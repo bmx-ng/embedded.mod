@@ -41,5 +41,10 @@ nodes with matching board profiles. The printed dataset is a test aid only.
 
 On 2026-11-07, an ESP32-S31 formed a mesh as Leader and a nice!nano nRF52840
 joined as Child. Repeated four-byte UDP `PING` packets were received and echoed
-intact between the two physical boards. H2 and C6 firmware builds passed; their
-radio operation, border routing, and radio coexistence remain untested.
+intact between the two physical boards.
+
+On 2026-11-08, an ESP32-C6 SuperMini joined an ESP32-S31 standalone mesh and
+repeatedly exchanged the same four-byte UDP `PING` and echo. The C6 reported
+`THREAD_ECHO=pass`, while the S31 reported `THREAD_RX=4` and `THREAD_ECHO=4`.
+ESP32-H2 firmware builds passed, but H2 radio operation, border routing, and
+radio coexistence remain untested.
