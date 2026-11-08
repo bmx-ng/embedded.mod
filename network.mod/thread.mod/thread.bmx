@@ -28,6 +28,7 @@ Private
 
 Extern "C"
 	Function _ThreadInitialize:Int() = "bmx_thread_initialize"
+	Function _ThreadStartSaved:Int() = "bmx_thread_start_saved"
 	Function _ThreadForm:Int(name:Byte Ptr, channel:Int) = "bmx_thread_form"
 	Function _ThreadJoin:Int(dataset:Byte Ptr) = "bmx_thread_join"
 	Function _ThreadLeave:Int() = "bmx_thread_leave"
@@ -46,6 +47,13 @@ Public
 
 Function ThreadInitialize:Int()
 	Return _ThreadInitialize()
+End Function
+
+Const ThreadErrorNoSavedNetwork:Int = -61
+
+' Starts with the stored active dataset. Returns -61 if none has been saved.
+Function ThreadStartSaved:Int()
+	Return _ThreadStartSaved()
 End Function
 
 Function ThreadForm:Int(name:String, channel:Int = 15)

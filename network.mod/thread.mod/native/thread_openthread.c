@@ -56,6 +56,23 @@ int bmx_thread_initialize(void) {
     return bmx_thread_platform_initialize();
 }
 
+int bmx_thread_start_saved(void) {
+    int result = bmx_thread_initialize();
+    if (result) return result;
+    bmx_thread_platform_lock();
+    otInstance *instance = bmx_thread_platform_instance();
+    otOperationalDatasetTlvs dataset;
+    otError error = otDatasetGetActiveTlvs(instance, &dataset);
+    if (error == OT_ERROR_NOT_FOUND) {
+        bmx_thread_platform_unlock();
+        return -61;
+    }
+    if (!error) error = otIp6SetEnabled(instance, true);
+    if (!error) error = otThreadSetEnabled(instance, true);
+    bmx_thread_platform_unlock();
+    return error ? -(int)error : 0;
+}
+
 int bmx_thread_form(const char *name, int channel) {
     if (!name || strlen(name) == 0 || strlen(name) > OT_NETWORK_NAME_MAX_SIZE ||
             channel < 11 || channel > 26) return -22;

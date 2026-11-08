@@ -8,11 +8,16 @@ and has no adapter here.
 
 `ThreadForm(name, channel)` generates a fresh active operational dataset and
 starts a mesh. `ThreadActiveDataset()` returns that dataset as hexadecimal text.
+`ThreadStartSaved()` starts using the active dataset stored by OpenThread. It
+returns `ThreadErrorNoSavedNetwork` (`-61`) when no dataset is stored, so an
+application can call `ThreadForm()` only on first boot. `ThreadForm()` explicitly
+replaces any existing dataset; `ThreadLeave()` does not erase it. The ESP32
+adapter uses NVS and the nRF52 adapter uses Zephyr settings for persistence.
 `ThreadJoin(datasetHex)` installs an existing active dataset and starts the
 Thread interface. This is out-of-band provisioning: it does not perform Thread
 Joiner commissioning. `ThreadLeave()` disables the Thread interface; the
-installed dataset remains available for a later join. A dataset contains the
-network key: treat it as a secret and do not print it in production firmware.
+installed dataset remains available for `ThreadStartSaved()`. A dataset contains
+the network key: treat it as a secret and do not print it in production firmware.
 
 `ThreadRole()` returns Disabled (0), Detached (1), Child (2), Router (3), or
 Leader (4). `ThreadWaitForAttached(timeoutMs)` returns a role of at least Child
@@ -33,8 +38,9 @@ from the managed application task. These UDP calls use OpenThread's own socket
 path and support Thread IPv6 traffic on both targets.
 
 For a two-board test, build `nrf52_thread_echo.bmx` or `thread_form_echo.bmx`
-on the first board and `thread_udp_peer.bmx` on the second. Copy the first
-board's printed dataset and mesh IPv6 address into the peer example. The peer
+on the first board and `thread_udp_peer.bmx` on the second. The first board
+resumes its saved network after reboot, forming one only when none is saved.
+Copy its printed dataset and mesh IPv6 address into the peer example. The peer
 sends `PING` every four seconds, and the first board echoes it. The peer prints
 `THREAD_ECHO=pass` after an intact reply. H2, C6, and S31 may serve as ESP32
 nodes with matching board profiles. The printed dataset is a test aid only.
@@ -48,3 +54,9 @@ repeatedly exchanged the same four-byte UDP `PING` and echo. The C6 reported
 `THREAD_ECHO=pass`, while the S31 reported `THREAD_RX=4` and `THREAD_ECHO=4`.
 ESP32-H2 firmware builds passed, but H2 radio operation, border routing, and
 radio coexistence remain untested.
+
+On 2026-11-08, the S31 resumed its saved network after an application flash and
+another reset, reported `THREAD_NETWORK=resumed`, and remained Leader. Its UDP
+echo exchange with the C6 continued on the same mesh. The nRF52 saved-network
+path builds with Zephyr settings enabled but has not been tested across a
+physical reboot.
