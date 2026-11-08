@@ -57,6 +57,6 @@ radio coexistence remain untested.
 
 On 2026-11-08, the S31 resumed its saved network after an application flash and
 another reset, reported `THREAD_NETWORK=resumed`, and remained Leader. Its UDP
-echo exchange with the C6 continued on the same mesh. The nRF52 saved-network
-path builds with Zephyr settings enabled but has not been tested across a
-physical reboot.
+echo exchange with the C6 continued on the same mesh. The nice!nano nRF52840
+also reported `THREAD_NETWORK=resumed` after a new application flash and again
+after a physical reset, retaining the same mesh IPv6 addresses.
