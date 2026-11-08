@@ -9,6 +9,7 @@ select optional OpenThread features for each firmware build:
 | `Embedded.Network.ThreadCommissioning` | Joiner and Commissioner |
 | `Embedded.Network.ThreadDiscovery` | SRP client and DNS client |
 | `Embedded.Network.ThreadServer` | On-mesh SRP and DNS-SD server, plus discovery client |
+| `Embedded.Network.ThreadCoAP` | CoAP client and server |
 
 The server import is available on ESP32 builds. Each board/application build
 has its own OpenThread configuration and firmware image; the imports used by a
@@ -126,6 +127,18 @@ builds can select the SRP/DNS client APIs; server hosting is tested on S31 only.
 `thread_service_catalog.bmx` and `nrf52_thread_service_catalog_peer.bmx`
 examples exercise multiple services, TXT records, and refreshed browsing.
 
+`Embedded.Network.ThreadCoAP` adds a bounded CoAP endpoint. Call
+`ThreadCoAPStart(port)` (default 5683) and, on a server, register one URI path
+with `ThreadCoAPResource(path)`. Poll `ThreadCoAPReceive(buffer, method,
+sourceAddress)` from the managed task and answer with `ThreadCoAPRespond(code,
+payload)`. A client sends a confirmable GET or POST with `ThreadCoAPSend` and
+polls `ThreadCoAPResponse(buffer, code)`; -11 means the reply is pending.
+Requests and responses are limited to 512 payload bytes, with one outstanding
+request on each side. The initial API does not expose Observe, block transfers,
+or secure CoAP. The `thread_coap_resource.bmx` and
+`nrf52_thread_coap_peer.bmx` and `thread_coap_peer.bmx` examples use DNS-SD to
+find a CoAP resource before exchanging GET and POST requests.
+
 For unusual settings, `BMX_ESP32_EXTRA_SDKCONFIG` supplies an ESP-IDF
 configuration overlay and `BMX_NRF52_EXTRA_CONF_FILE` supplies a Zephyr
 overlay. Feature imports are the normal way to select support. Changing the
@@ -193,3 +206,9 @@ passed again after the service returned. The S31 continued echoing packets
 from the C6 throughout this test. The nRF52 saved-network echo app was then
 restored and reported `THREAD_NETWORK=resumed`; the restored S31 echo app again
 received and echoed the C6's four-byte packets.
+
+The initial CoAP API was tested on 2026-11-08 with the S31 hosting a DNS-SD
+advertised `status` resource and the nRF52840 resuming its saved mesh. The
+nRF52 resolved the CoAP service and received a confirmable GET response with
+`OK` and a POST response echoing `PING`; the S31 logged successful handling of
+both requests.
