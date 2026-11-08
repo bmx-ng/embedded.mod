@@ -1,7 +1,18 @@
 # Embedded.Network.Thread
 
 Import `NRF52.Network.Thread` or `ESP32.Network.Thread` to include the radio
-adapter and the portable `Embedded.Network.Thread` API. This module is opt-in.
+adapter and the portable `Embedded.Network.Thread` core and UDP API. Imports
+select optional OpenThread features for each firmware build:
+
+| Import | Feature selected |
+| --- | --- |
+| `Embedded.Network.ThreadCommissioning` | Joiner and Commissioner |
+| `Embedded.Network.ThreadDiscovery` | SRP client and DNS client |
+| `Embedded.Network.ThreadServer` | On-mesh SRP and DNS-SD server, plus discovery client |
+
+The server import is available on ESP32 builds. Each board/application build
+has its own OpenThread configuration and firmware image; the imports used by a
+C6 application do not affect an S31 or nRF application build.
 The current targets are nRF52840 with Zephyr 4.5.0 and ESP32-H2/C6/S31 with the
 project's ESP-IDF 6.1 toolchain. RP/Pico needs an external IEEE 802.15.4 radio
 and has no adapter here.
@@ -74,9 +85,10 @@ endpoint has its own eight-datagram, 512-byte receive queue and `Send`,
 remain available. `Open` returns `Null` when binding fails. Deleting a socket
 object releases its port.
 
-Service discovery uses OpenThread SRP and DNS-SD. On an attached ESP32-S31,
+Service discovery uses OpenThread SRP and DNS-SD. On an attached ESP32-S31 with
+`Embedded.Network.ThreadServer` imported,
 `ThreadServiceServerEnable()` starts an on-mesh SRP server; poll
-`ThreadServiceServerState()` for 1 (running). The ESP32 build enables the SRP
+`ThreadServiceServerState()` for 1 (running). The server import enables the SRP
 server and Thread network-data publisher without configuring Wi-Fi/Ethernet
 routing. On a client, `ThreadServiceClientEnable()` discovers the server from
 Thread network data; poll `ThreadServiceClientRunning()` before querying. Use
@@ -95,18 +107,14 @@ label with `ThreadServiceResolve(label, serviceType)` and poll
 return 1 and failures are negative OpenThread error codes. One browse and one
 resolve can be in flight per process. TXT records, multiple local services,
 and continuous browse updates are not yet exposed. The nRF52, C6, and H2
-builds support the SRP/DNS client APIs; server hosting is currently S31 only. The
+builds can select the SRP/DNS client APIs; server hosting is tested on S31 only. The
 `thread_service_echo.bmx`, `thread_service_peer.bmx`, and
 `nrf52_thread_service_peer.bmx` examples show a named UDP exchange.
 
-Thread features can be selected per firmware build. An application must import
-the Thread module to include OpenThread at all. On ESP32, the build's SDK
-configuration controls Joiner, Commissioner, SRP client, and DNS client support;
-set `BMX_ESP32_EXTRA_SDKCONFIG` to an extra SDK configuration file to override
-the defaults. The `BMX_THREAD_SRP_SERVER` option additionally enables the SRP
-and DNS-SD server (on by default for S31, off for C6/H2). On nRF52, use
-`BMX_NRF52_EXTRA_CONF_FILE` for a Zephyr configuration overlay. A changed
-OpenThread feature configuration requires a fresh firmware build.
+For unusual settings, `BMX_ESP32_EXTRA_SDKCONFIG` supplies an ESP-IDF
+configuration overlay and `BMX_NRF52_EXTRA_CONF_FILE` supplies a Zephyr
+overlay. Feature imports are the normal way to select support. Changing the
+feature set requires rebuilding that application's firmware image.
 
 For a two-board test, build `nrf52_thread_echo.bmx` or `thread_form_echo.bmx`
 on the first board and `thread_udp_peer.bmx` on the second. The first board

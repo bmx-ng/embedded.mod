@@ -2,6 +2,9 @@
  * SPDX-License-Identifier: Zlib */
 #include <stdint.h>
 #include <string.h>
+#if defined(ESP_PLATFORM)
+#include "sdkconfig.h"
+#endif
 
 #include <openthread/dataset.h>
 #include <openthread/dataset_ftd.h>
@@ -42,8 +45,10 @@ typedef struct {
     int open;
 } BMXThreadUdpEndpoint;
 static BMXThreadUdpEndpoint bmx_udp_endpoints[BMX_THREAD_UDP_SOCKETS];
+#if defined(CONFIG_OPENTHREAD_JOINER) && CONFIG_OPENTHREAD_JOINER
 static int bmx_joiner_status = -61;
 static int bmx_joiner_completed;
+#endif
 
 static int bmx_hex_digit(char c) {
     if (c >= '0' && c <= '9') return c - '0';
@@ -52,6 +57,8 @@ static int bmx_hex_digit(char c) {
     return -1;
 }
 
+#if (defined(CONFIG_OPENTHREAD_JOINER) && CONFIG_OPENTHREAD_JOINER) || \
+    (defined(CONFIG_OPENTHREAD_COMMISSIONER) && CONFIG_OPENTHREAD_COMMISSIONER)
 static int bmx_valid_pskd(const char *pskd) {
     if (!pskd) return 0;
     size_t length = strlen(pskd);
@@ -63,12 +70,15 @@ static int bmx_valid_pskd(const char *pskd) {
     }
     return 1;
 }
+#endif
 
+#if defined(CONFIG_OPENTHREAD_JOINER) && CONFIG_OPENTHREAD_JOINER
 static void bmx_joiner_finished(otError error, void *context) {
     (void)context;
     bmx_joiner_status = error ? -(int)error : 0;
     bmx_joiner_completed = 1;
 }
+#endif
 
 static void bmx_udp_received(void *context, otMessage *message, const otMessageInfo *info) {
     (void)context;
@@ -193,10 +203,14 @@ int bmx_thread_forget(void) {
     if (result) return result;
     bmx_thread_platform_lock();
     otInstance *instance = bmx_thread_platform_instance();
+#if defined(CONFIG_OPENTHREAD_JOINER) && CONFIG_OPENTHREAD_JOINER
     otJoinerStop(instance);
+#endif
     otError error = otInstanceErasePersistentInfo(instance);
+#if defined(CONFIG_OPENTHREAD_JOINER) && CONFIG_OPENTHREAD_JOINER
     bmx_joiner_status = -61;
     bmx_joiner_completed = 0;
+#endif
     bmx_thread_platform_unlock();
     return error ? -(int)error : 0;
 }
@@ -218,6 +232,7 @@ int bmx_thread_factory_eui64(char *value, int capacity) {
     return 16;
 }
 
+#if defined(CONFIG_OPENTHREAD_COMMISSIONER) && CONFIG_OPENTHREAD_COMMISSIONER
 int bmx_thread_commissioner_start(void) {
     int result = bmx_thread_initialize();
     if (result) return result;
@@ -266,7 +281,9 @@ int bmx_thread_commissioner_stop(void) {
     bmx_thread_platform_unlock();
     return error ? -(int)error : 0;
 }
+#endif
 
+#if defined(CONFIG_OPENTHREAD_JOINER) && CONFIG_OPENTHREAD_JOINER
 int bmx_thread_joiner_start(const char *pskd) {
     if (!bmx_valid_pskd(pskd)) return -22;
     int result = bmx_thread_initialize();
@@ -309,6 +326,7 @@ int bmx_thread_joiner_stop(void) {
     bmx_thread_platform_unlock();
     return 0;
 }
+#endif
 
 int bmx_thread_role(void) {
     int result = bmx_thread_initialize();
