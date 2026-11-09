@@ -13,6 +13,10 @@ Const TestRXPin:UInt = 5
 Const TestController:Int = UARTController1
 Const TestTXPin:UInt = 17
 Const TestRXPin:UInt = 18
+?esp8266
+Const TestController:Int = UARTController0
+Const TestTXPin:UInt = 15
+Const TestRXPin:UInt = 13
 ?
 
 Local checksPassed:Int = UARTConfigurePins(TestController, TestTXPin, TestRXPin)

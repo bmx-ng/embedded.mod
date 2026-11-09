@@ -1,7 +1,7 @@
-# MQTT on Pico W and ESP32
+# MQTT on Pico W, ESP32, and ESP8266
 
-`Embedded.Network.MQTT` is an MQTT 3.1.1 client for Pico W, Pico 2 W, and
-network-capable ESP32 boards. To try it, you need:
+`Embedded.Network.MQTT` is an MQTT 3.1.1 client for Pico W, Pico 2 W,
+network-capable ESP32 boards, and ESP8266 boards. To try it, you need:
 
 - A broker reachable from the board, such as one running on your LAN. The
   module is a client; it does not run a broker.
@@ -21,9 +21,10 @@ network-capable ESP32 boards. To try it, you need:
    bin/bmk makeapp -r -board pico2_w /path/to/mqtt_client.bmx
    ```
 
-   For ESP32, replace `pico2_w` with the board profile for your device. Follow
-   the [Pico](../../../pico.mod/README.md) or
-   [ESP32](../../../esp32.mod/README.md) target instructions to flash the
+   For ESP32 or ESP8266, replace `pico2_w` with the board profile for your
+   device. Follow the [Pico](../../../pico.mod/README.md),
+   [ESP32](../../../esp32.mod/README.md), or
+   [ESP8266](../../../esp8266.mod/README.md) target instructions to flash the
    resulting image and open its serial output.
 3. Run the board. It should print `MQTT connected`, then
    `blitzmax/example: hello from BlitzMax`. The example subscribes to the
@@ -154,7 +155,7 @@ you want automatic retries.
   Oversized messages are discarded and reported through `EVENT_MQTTERROR`.
 - Eight native events are queued. `mqtt.DroppedEvents()` reports how many were
   displaced when the queue filled. Poll frequently while messages arrive.
-- Incoming `qos` and `retained` fields are zero on Pico because its lwIP
-  callback does not provide them.
+- Incoming `qos` and `retained` fields are zero on Pico and ESP8266 because
+  their SDK callbacks do not provide them.
 - Plain `mqtt://` only. TLS, MQTT 5, will messages, and unsubscribe are not
   implemented.

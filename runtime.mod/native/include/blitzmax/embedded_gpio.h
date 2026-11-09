@@ -10,6 +10,10 @@ extern "C" {
 int32_t bmx_embedded_gpio_is_valid(uint32_t gpio);
 int32_t bmx_embedded_gpio_is_output_capable(uint32_t gpio);
 int32_t bmx_embedded_gpio_is_pull_capable(uint32_t gpio);
+int32_t bmx_embedded_gpio_is_pull_up_capable(uint32_t gpio);
+int32_t bmx_embedded_gpio_is_pull_down_capable(uint32_t gpio);
+int32_t bmx_embedded_gpio_is_drive_strength_configurable(uint32_t gpio);
+int32_t bmx_embedded_gpio_is_irq_capable(uint32_t gpio);
 int32_t bmx_embedded_gpio_init(uint32_t gpio);
 int32_t bmx_embedded_gpio_set_direction(uint32_t gpio, int32_t direction);
 int32_t bmx_embedded_gpio_get_direction(uint32_t gpio);
