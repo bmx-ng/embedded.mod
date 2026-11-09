@@ -7,10 +7,21 @@ Import Embedded.Hardware.GPIO
 Const TestPin:UInt = 2
 ?esp32
 Const TestPin:UInt = 4
+?esp8266
+Const TestPin:UInt = 4
 ?
 
 Local checksPassed:Int = GPIOIsValid(TestPin) And GPIOIsOutputCapable(TestPin)
 checksPassed :& GPIOIsPullCapable(TestPin)
+checksPassed :& GPIOIsPullUpCapable(TestPin)
+checksPassed :& GPIOIsIRQCapable(TestPin)
+?esp8266
+checksPassed :& Not GPIOIsPullDownCapable(TestPin)
+checksPassed :& Not GPIOIsDriveStrengthConfigurable(TestPin)
+?Not esp8266
+checksPassed :& GPIOIsPullDownCapable(TestPin)
+checksPassed :& GPIOIsDriveStrengthConfigurable(TestPin)
+?
 checksPassed :& Not GPIOIsValid($ffffffff) And Not GPIOInit($ffffffff)
 Local started:Int = MilliSecs()
 Delay 1
@@ -26,12 +37,20 @@ checksPassed :& GPIOPut(TestPin, True)
 checksPassed :& GPIOGetOutput(TestPin) = True
 checksPassed :& GPIOGet(TestPin) = True
 
+?esp8266
+checksPassed :& Not GPIOSetDriveStrength(TestPin, GPIODriveStrengthHigh)
+?Not esp8266
 checksPassed :& GPIOSetDriveStrength(TestPin, GPIODriveStrengthHigh)
 checksPassed :& GPIOGetDriveStrength(TestPin) = GPIODriveStrengthHigh
+?
 checksPassed :& GPIOSetPulls(TestPin, True, False)
 checksPassed :& GPIOIsPulledUp(TestPin) And Not GPIOIsPulledDown(TestPin)
+?esp8266
+checksPassed :& Not GPIOPullDown(TestPin)
+?Not esp8266
 checksPassed :& GPIOPullDown(TestPin)
 checksPassed :& Not GPIOIsPulledUp(TestPin) And GPIOIsPulledDown(TestPin)
+?
 checksPassed :& GPIODisablePulls(TestPin)
 checksPassed :& Not GPIOIsPulledUp(TestPin) And Not GPIOIsPulledDown(TestPin)
 checksPassed :& GPIOSetInput(TestPin)
