@@ -11,9 +11,13 @@ Const TestRXPin:UInt = 5
 Const TestController:Int = UARTController1
 Const TestTXPin:UInt = 17
 Const TestRXPin:UInt = 18
+?esp8266
+Const TestController:Int = UARTController0
+Const TestTXPin:UInt = 15
+Const TestRXPin:UInt = 13
 ?
 
-Local checksPassed:Int = UARTControllerCount() >= 2
+Local checksPassed:Int = UARTControllerCount() >= 1
 Local defaultController:Int = UARTDefaultController()
 checksPassed :& (defaultController = UARTUnavailableController And UARTDefaultBaudrate() = 0) Or ..
 	(defaultController >= 0 And defaultController < UARTControllerCount() And UARTDefaultBaudrate() > 0)
