@@ -8,7 +8,7 @@ bbdoc: MQTT 3.1.1 client for supported embedded network targets.
 about: Connect an IP interface before using this module. MQTT events are delivered while the application calls `PollSystem()` or `PollEvent()`.
 End Rem
 Module Embedded.Network.MQTT
-?embedded and (pico or esp32)
+?embedded and (pico or esp32 or esp8266)
 
 ModuleInfo "Version: 0.1"
 ModuleInfo "License: zlib/libpng"
@@ -75,11 +75,11 @@ Type TMQTTMessage
 	End Rem
 	Field payload:Byte[]
 	Rem
-	bbdoc: Incoming quality-of-service level; always zero on Pico because lwIP does not supply it.
+	bbdoc: Incoming quality-of-service level; always zero on Pico and ESP8266 because their SDK callbacks do not supply it.
 	End Rem
 	Field qos:Int
 	Rem
-	bbdoc: Whether the broker marked the message retained; always zero on Pico.
+	bbdoc: Whether the broker marked the message retained; always zero on Pico and ESP8266.
 	End Rem
 	Field retained:Int
 
