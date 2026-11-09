@@ -13,6 +13,8 @@ native adapter behind each portable API:
   boards.
 - [esp32.mod](https://github.com/bmx-ng/esp32.mod) supports Espressif ESP32
   devices.
+- [esp8266.mod](https://github.com/bmx-ng/esp8266.mod) supports legacy
+  Espressif ESP8266 devices.
 
 For dual-core devices, see [Writing multicore embedded apps](docs/multicore-apps.md)
 for a short introduction and runnable worker and web-server examples.
@@ -79,12 +81,14 @@ and other capabilities that do not share equivalent semantics.
 | `Embedded.IO.BufferedUART` | A managed receive buffer and `TStream`-compatible, line-oriented UART access |
 | `Embedded.Hardware.Watchdog` | Enable, feed, disable, timeout validation, status, and reset detection |
 | `Embedded.Network.WiFi` | Station initialization, scanning, joining, link state, and IPv4 configuration |
+| [`Embedded.Network.Time`](network.mod/time.mod/README.md) | One-shot or periodic NTP synchronization of the embedded UTC calendar |
 | [`Embedded.Network.MQTT`](network.mod/mqtt.mod/README.md) | MQTT client setup, publish, subscribe, events, and reconnect; includes a quick start and complete examples |
 | `Embedded.Network.Ethernet` | Wired-link lifecycle and events, DHCP waiting, IPv4 and MAC details, speed, and duplex state |
 | `Embedded.Network.Thread` | Opt-in Thread mesh formation, active-dataset joining, role and IPv6 observation, and bounded UDP/IPv6 traffic on nRF52840 and ESP32-H2/C6/S31 |
 | `Embedded.Network.BLE` | Scanning, advertising, connections, GATT client/server operation, security, bonding, MTU, and PHY controls |
 | `Embedded.Random` | Device entropy through the standard `Random.Core` generator API, plus raw values and buffer filling |
 | `Embedded.System.Time` | Monotonic microsecond/millisecond clocks and minimum-duration sleeps |
+| [`Embedded.System.Calendar`](system.mod/calendar.mod/README.md) | UTC civil time and one-shot absolute calendar alarms |
 | `Embedded.System.Device` | Unique device identity, normalized reset reasons, and reboot requests |
 | `Embedded.System.Power` | Capability-driven idle, returning sleep, dormant sleep, and low-leakage pin operations |
 | `Embedded.Text.Unicode` | Optional Unicode String case and case-folding tables; without it the compact runtime remains ASCII-only |
