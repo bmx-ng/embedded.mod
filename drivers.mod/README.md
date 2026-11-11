@@ -31,6 +31,28 @@ Concrete display drivers live beneath `Embedded.Drivers.Displays.*`.
 `Embedded.Hardware.I2C`, supports dirty page updates, and includes the 72x40
 EastRising-compatible preset used by common 0.42-inch OLED boards.
 
+## Bitmap fonts and text
+
+`Embedded.Drivers.Display.Font` renders compact, Unicode-addressed bitmap fonts
+into any `TDisplayBuffer`. Rendering and measurement perform no allocation, and
+integer pixel scaling reuses the original glyph data. Text coordinates specify
+the top-left of the first line rather than a controller-specific baseline.
+
+`Embedded.Drivers.Display.Fonts.Spleen5x8` provides the complete 472-glyph
+Spleen 5x8 font under its BSD 2-Clause licence. Importing the module links its
+11,360-byte font image; applications which do not import it pay no font cost.
+
+The desktop tool `tools/bdf2embeddedfont.bmx` converts BDF sources to the EBF1
+format used by `TBitmapFont`. An optional hexadecimal range list can retain only
+the code points an application needs:
+
+```sh
+bdf2embeddedfont input.bdf output.ebf 0020-007e,00a0-00ff
+```
+
+Font modules should retain the upstream font copyright and licence beside the
+generated data. The converter does not change or replace the font's licence.
+
 ## Graphics and UI libraries
 
 The display contract is intended to support an optional higher-level renderer.
