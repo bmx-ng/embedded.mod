@@ -1,0 +1,223 @@
+' Copyright (c) 2026 Bruce A Henderson and contributors
+' SPDX-License-Identifier: Zlib
+
+SuperStrict
+
+Rem
+bbdoc: SSD1306-compatible monochrome OLED displays over portable I2C.
+about: The driver accepts the row-major Mono1 format from
+Embedded.Drivers.Display and converts it to the controller's vertical page
+layout during synchronous presentation. The I2C controller must already be
+configured and initialized by the application.
+End Rem
+Module Embedded.Drivers.Displays.SSD1306
+?embedded
+
+ModuleInfo "Version: 0.1"
+ModuleInfo "License: zlib/libpng"
+
+Import Embedded.Drivers.Display
+Import Embedded.Hardware.I2C
+
+Const SSD1306DefaultAddress:UInt = $3c
+
+Rem
+bbdoc: An I2C SSD1306-compatible monochrome display.
+End Rem
+Type TSSD1306Display Extends TDisplay
+	Private
+	Field controller:Int
+	Field address:UInt
+	Field displayWidth:Int
+	Field displayHeight:Int
+	Field columnOffset:Int
+	Field pageOffset:Int
+	Field contrast:Byte
+	Field precharge:Byte
+	Field vcomh:Byte
+	Field comPins:Byte
+	Field internalIRef:Int
+	Field initialized:Int
+	Field commandBuffer:Byte[]
+	Field dataBuffer:Byte[]
+
+	Public
+	Rem
+	bbdoc: Creates a general SSD1306 display description.
+	about: This does not configure or initialize the I2C controller. Width may be
+	up to 128 pixels and height up to 64 pixels.
+	End Rem
+	Function Create:TSSD1306Display(controller:Int, address:UInt, width:Int, ..
+			height:Int, columnOffset:Int = 0, pageOffset:Int = 0)
+		If controller < 0 Or address > $7f Or width <= 0 Or width > 128 Or ..
+				height <= 0 Or height > 64 Or columnOffset < 0 Or ..
+				columnOffset + width > 128 Or pageOffset < 0 Or ..
+				pageOffset + ((height + 7) / 8) > 8 Then Return Null
+		Local display:TSSD1306Display = New TSSD1306Display
+		display.controller = controller
+		display.address = address
+		display.displayWidth = width
+		display.displayHeight = height
+		display.columnOffset = columnOffset
+		display.pageOffset = pageOffset
+		display.contrast = $7f
+		display.precharge = $f1
+		display.vcomh = $40
+		display.comPins = $02
+		If height > 32 Then display.comPins = $12
+		display.commandBuffer = New Byte[32]
+		display.dataBuffer = New Byte[width + 1]
+		Return display
+	End Function
+
+	Rem
+	bbdoc: Creates the common EastRising-compatible 72x40 SSD1306 configuration.
+	about: This preset uses a 28-column RAM offset and the panel-specific IREF,
+	contrast, precharge, and VCOMH settings used by 0.42-inch modules.
+	End Rem
+	Function Create72x40:TSSD1306Display(controller:Int, ..
+			address:UInt = SSD1306DefaultAddress)
+		Local display:TSSD1306Display = Create(controller, address, 72, 40, 28, 0)
+		If Not display Then Return Null
+		display.internalIRef = True
+		display.contrast = $af
+		display.precharge = $22
+		display.vcomh = $20
+		display.comPins = $12
+		Return display
+	End Function
+
+	Method Width:Int() Override
+		Return displayWidth
+	End Method
+
+	Method Height:Int() Override
+		Return displayHeight
+	End Method
+
+	Method PreferredPixelFormat:Int() Override
+		Return DisplayPixelFormatMono1
+	End Method
+
+	Rem
+	bbdoc: Initializes the panel and enables its output.
+	End Rem
+	Method Initialize:Int()
+		Local first:Byte[] = [Byte($ae), Byte($d5), Byte($80), ..
+			Byte($a8), Byte(displayHeight - 1), Byte($d3), Byte(0)]
+		If Not SendCommands(first) Then Return False
+		If internalIRef And Not SendPair($ad, $30) Then Return False
+		Local second:Byte[] = [Byte($8d), Byte($14), Byte($40), Byte($a6), ..
+			Byte($a4), Byte($20), Byte(0), Byte($a1), Byte($c8), ..
+			Byte($da), comPins, Byte($81), contrast, Byte($d9), precharge, ..
+			Byte($db), vcomh, Byte($2e)]
+		If Not SendCommands(second) Then Return False
+		initialized = SendCommand($af)
+		Return initialized
+	End Method
+
+	Method IsInitialized:Int()
+		Return initialized
+	End Method
+
+	Method SetEnabled:Int(enabled:Int) Override
+		If Not initialized Then Return False
+		If enabled Then Return SendCommand($af)
+		Return SendCommand($ae)
+	End Method
+
+	Method SetContrast:Int(value:Byte)
+		If Not initialized Then Return False
+		contrast = value
+		Return SendPair($81, value)
+	End Method
+
+	Method SetInverted:Int(inverted:Int)
+		If Not initialized Then Return False
+		If inverted Then Return SendCommand($a7)
+		Return SendCommand($a6)
+	End Method
+
+	Method SetFlipped:Int(flipped:Int)
+		If Not initialized Then Return False
+		If flipped Then
+			Local commands:Byte[] = [Byte($a0), Byte($c0)]
+			Return SendCommands(commands)
+		End If
+		Local commands:Byte[] = [Byte($a1), Byte($c8)]
+		Return SendCommands(commands)
+	End Method
+
+	Method PresentPixels:Int(pixels:Byte Ptr, stride:Int, format:Int, ..
+			x:Int, y:Int, width:Int, height:Int) Override
+		If Not initialized Or pixels = Null Then Return DisplayErrorInvalidArgument
+		If format <> DisplayPixelFormatMono1 Then Return DisplayErrorUnsupportedFormat
+		If stride < DisplayMinimumStride(displayWidth, format) Or width <= 0 Or ..
+				height <= 0 Then Return DisplayErrorInvalidArgument
+
+		Local x0:Int = x
+		Local y0:Int = y
+		Local x1:Int = x + width
+		Local y1:Int = y + height
+		If x0 < 0 Then x0 = 0
+		If y0 < 0 Then y0 = 0
+		If x1 > displayWidth Then x1 = displayWidth
+		If y1 > displayHeight Then y1 = displayHeight
+		If x0 >= x1 Or y0 >= y1 Then Return DisplayErrorInvalidArgument
+
+		Local firstPage:Int = y0 Shr 3
+		Local lastPage:Int = (y1 - 1) Shr 3
+		For Local page:Int = firstPage To lastPage
+			Local ramColumn:Int = columnOffset + x0
+			commandBuffer[0] = 0
+			commandBuffer[1] = Byte($b0 | (pageOffset + page))
+			commandBuffer[2] = Byte($10 | (ramColumn Shr 4))
+			commandBuffer[3] = Byte(ramColumn & $0f)
+			If I2CWriteBlocking(controller, address, Varptr commandBuffer[0], 4) <> 4 Then ..
+				Return DisplayErrorGeneric
+
+			dataBuffer[0] = $40
+			For Local px:Int = x0 Until x1
+				Local packed:Byte
+				For Local bit:Int = 0 Until 8
+					Local py:Int = page * 8 + bit
+					If py < displayHeight Then
+						Local source:Byte = pixels[py * stride + (px Shr 3)]
+						If source & ($80 Shr (px & 7)) Then packed :| Byte(1 Shl bit)
+					End If
+				Next
+				dataBuffer[px - x0 + 1] = packed
+			Next
+			Local transferLength:Int = x1 - x0 + 1
+			If I2CWriteBlocking(controller, address, Varptr dataBuffer[0], ..
+					transferLength) <> transferLength Then Return DisplayErrorGeneric
+		Next
+		Return True
+	End Method
+
+	Private
+	Method SendCommand:Int(command:Byte)
+		commandBuffer[0] = 0
+		commandBuffer[1] = command
+		Return I2CWriteBlocking(controller, address, Varptr commandBuffer[0], 2) = 2
+	End Method
+
+	Method SendPair:Int(command:Byte, argument:Byte)
+		commandBuffer[0] = 0
+		commandBuffer[1] = command
+		commandBuffer[2] = argument
+		Return I2CWriteBlocking(controller, address, Varptr commandBuffer[0], 3) = 3
+	End Method
+
+	Method SendCommands:Int(commands:Byte[])
+		If Not commands Or commands.length = 0 Or commands.length + 1 > commandBuffer.length Then ..
+			Return False
+		commandBuffer[0] = 0
+		For Local index:Int = 0 Until commands.length
+			commandBuffer[index + 1] = commands[index]
+		Next
+		Local length:Int = commands.length + 1
+		Return I2CWriteBlocking(controller, address, Varptr commandBuffer[0], length) = length
+	End Method
+End Type
+?
