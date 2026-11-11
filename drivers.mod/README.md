@@ -43,12 +43,43 @@ Spleen 5x8 font under its BSD 2-Clause licence. Importing the module links its
 11,360-byte font image; applications which do not import it pay no font cost.
 
 The desktop tool `tools/bdf2embeddedfont.bmx` converts BDF sources to the EBF1
-format used by `TBitmapFont`. An optional hexadecimal range list can retain only
-the code points an application needs:
+format used by `TBitmapFont`. It can retain hexadecimal ranges, the characters
+in literal text, or every character occurring in a UTF-8 text/resource file:
 
 ```sh
-bdf2embeddedfont input.bdf output.ebf 0020-007e,00a0-00ff
+bdf2embeddedfont input.bdf output.ebf --ranges 0020-007e,00a0-00ff
+bdf2embeddedfont input.bdf output.ebf --chars "Temperature: 0123456789.C"
+bdf2embeddedfont input.bdf output.ebf --chars-file application-text.txt
 ```
+
+Selection options may be repeated and combined. With no selection the complete
+BDF is emitted. The font's default glyph is always retained, so text containing
+an omitted or unknown code point still renders a visible replacement rather
+than disappearing. The older positional range-list syntax remains supported.
+
+For a repeatable application build, put its font requirements in a manifest:
+
+```ini
+# font-subset.manifest
+ranges=0030-0039,002e-002f
+chars=Temperature: °C
+chars-file=text/en.txt
+chars-file=text/sensor-labels.txt
+```
+
+Entries may be repeated. Character-file paths are resolved relative to the
+manifest, making it safe to invoke the tool from another directory. Generate or
+refresh the resource with:
+
+```sh
+bdf2embeddedfont input.bdf app-font.ebf --manifest font-subset.manifest --if-needed
+```
+
+`--if-needed` leaves an existing output untouched when it is at least as new as
+the BDF, manifest, and every referenced character file. This makes the command
+suitable for an application build step without forcing the font module to be
+rebuilt every time. Fixed labels belong in `chars` or a character file; ranges
+should be reserved for genuinely dynamic values such as numbers or user input.
 
 Font modules should retain the upstream font copyright and licence beside the
 generated data. The converter does not change or replace the font's licence.

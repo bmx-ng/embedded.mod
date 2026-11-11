@@ -75,6 +75,164 @@ Function CodePointSelected:Int(codePoint:Int, ranges:String)
 	Return False
 End Function
 
+Function NextCodePoint:Int(text:String, index:Int Var)
+	If index >= text.length Then Return -1
+	Local first:Int = text[index]
+	index :+ 1
+	If first >= $d800 And first <= $dbff And index < text.length Then
+		Local second:Int = text[index]
+		If second >= $dc00 And second <= $dfff Then
+			index :+ 1
+			Return $10000 + ((first - $d800) Shl 10) + (second - $dc00)
+		End If
+	End If
+	If first >= $d800 And first <= $dfff Then Return $fffd
+	Return first
+End Function
+
+' Some desktop runtimes expose UTF-8 command-line bytes as one character per
+' byte. Decode that representation, while leaving native Unicode arguments and
+' legacy single-byte arguments untouched.
+Function DecodeUTF8Argument:String(text:String)
+	Local hasSequence:Int
+	Local index:Int
+	While index < text.length
+		Local first:Int = text[index]
+		If first > 255 Then Return text
+		If first < $80 Then
+			index :+ 1
+			Continue
+		End If
+		Local count:Int
+		If first >= $c2 And first <= $df Then
+			count = 2
+		Else If first >= $e0 And first <= $ef Then
+			count = 3
+		Else If first >= $f0 And first <= $f4 Then
+			count = 4
+		Else
+			Return text
+		End If
+		If index + count > text.length Then Return text
+		For Local continuation:Int = 1 Until count
+			Local value:Int = text[index + continuation]
+			If value < $80 Or value > $bf Then Return text
+		Next
+		If count = 3 Then
+			Local second:Int = text[index + 1]
+			If first = $e0 And second < $a0 Then Return text
+			If first = $ed And second >= $a0 Then Return text
+		Else If count = 4 Then
+			Local second:Int = text[index + 1]
+			If first = $f0 And second < $90 Then Return text
+			If first = $f4 And second >= $90 Then Return text
+		End If
+		hasSequence = True
+		index :+ count
+	Wend
+	If Not hasSequence Then Return text
+	Local encoded:Byte[] = New Byte[text.length + 1]
+	For index = 0 Until text.length
+		encoded[index] = Byte(text[index])
+	Next
+	Return String.FromUTF8String(Varptr encoded[0])
+End Function
+
+Function AddCharacters:Int[](codePoints:Int[], text:String)
+	Local index:Int
+	While index < text.length
+		Local codePoint:Int = NextCodePoint(text, index)
+		Local found:Int
+		For Local existing:Int = EachIn codePoints
+			If existing = codePoint Then
+				found = True
+				Exit
+			End If
+		Next
+		If Not found Then
+			codePoints = codePoints[..codePoints.length + 1]
+			codePoints[codePoints.length - 1] = codePoint
+		End If
+	Wend
+	Return codePoints
+End Function
+
+Function CharacterSelected:Int(codePoint:Int, codePoints:Int[])
+	For Local selected:Int = EachIn codePoints
+		If selected = codePoint Then Return True
+	Next
+	Return False
+End Function
+
+Function ManifestRelativePath:String(baseDirectory:String, path:String)
+	path = path.Trim()
+	If path.StartsWith("/") Or path.StartsWith("\\") Or ..
+			(path.length > 1 And path[1] = Asc(":")) Then Return RealPath(path)
+	Return RealPath(baseDirectory + "/" + path)
+End Function
+
+Type TFontSelection
+	Field ranges:String
+	Field codePoints:Int[]
+	Field dependencies:String[]
+	Field enabled:Int
+
+	Method AddDependency(path:String)
+		path = RealPath(path)
+		For Local existing:String = EachIn dependencies
+			If existing = path Then Return
+		Next
+		dependencies = dependencies[..dependencies.length + 1]
+		dependencies[dependencies.length - 1] = path
+	End Method
+
+	Method AddRanges(value:String)
+		If ranges.length Then ranges :+ ","
+		ranges :+ value.Trim()
+		enabled = True
+	End Method
+
+	Method AddText(value:String)
+		codePoints = AddCharacters(codePoints, value)
+		enabled = True
+	End Method
+
+	Method AddTextFile(path:String)
+		path = RealPath(path)
+		If FileType(path) <> FILETYPE_FILE Then Fail("could not read character file '" + path + "'")
+		AddText(LoadText(path))
+		AddDependency(path)
+	End Method
+
+	Method AddManifest(path:String)
+		path = RealPath(path)
+		If FileType(path) <> FILETYPE_FILE Then Fail("could not read font manifest '" + path + "'")
+		enabled = True
+		AddDependency(path)
+		Local baseDirectory:String = ExtractDir(path)
+		Local lines:String[] = LoadText(path).Replace("~r", "").Split("~n")
+		For Local lineIndex:Int = 0 Until lines.length
+			Local line:String = lines[lineIndex]
+			Local trimmed:String = line.Trim()
+			If Not trimmed.length Or trimmed.StartsWith("#") Then Continue
+			Local separator:Int = line.Find("=")
+			If separator < 0 Then Fail("expected key=value at " + path + ":" + (lineIndex + 1))
+			Local key:String = line[..separator].Trim().ToLower()
+			Local value:String = line[separator + 1..].Trim()
+			Select key
+				Case "ranges"
+					AddRanges(value)
+				Case "chars"
+					AddText(value)
+				Case "chars-file"
+					AddTextFile(ManifestRelativePath(baseDirectory, value))
+				Default
+					Fail("unknown manifest key '" + key + "' at " + path + ":" + (lineIndex + 1))
+			End Select
+		Next
+	End Method
+End Type
+
 Function AddGlyph:TBdfGlyph[](glyphs:TBdfGlyph[], glyph:TBdfGlyph)
 	If Not glyph Or glyph.codePoint < 0 Or Not glyph.bitmap Then Return glyphs
 	glyphs = glyphs[..glyphs.length + 1]
@@ -115,17 +273,69 @@ Function WriteS8(stream:TStream, value:Int)
 	stream.WriteByte(value & $ff)
 End Function
 
-If AppArgs.length < 3 Or AppArgs.length > 4 Then
-	Print "Usage: bdf2embeddedfont <input.bdf> <output.ebf> [hex-ranges]"
-	Print "Example ranges: 0020-007e,00a0-00ff"
+If AppArgs.length < 3 Then
+	Print "Usage: bdf2embeddedfont <input.bdf> <output.ebf> [options]"
+	Print "       bdf2embeddedfont <input.bdf> <output.ebf> [hex-ranges]"
+	Print "Options:"
+	Print "  --ranges <list>      Include hexadecimal ranges, such as 0020-007e,00a0-00ff"
+	Print "  --chars <text>       Include every Unicode character occurring in text"
+	Print "  --chars-file <path>  Include every Unicode character occurring in a UTF-8 file"
+	Print "  --manifest <path>    Read ranges, chars, and chars-file entries from a manifest"
+	Print "  --if-needed          Do nothing when the output is newer than every input"
+	Print "Selection options may be repeated and are combined. The BDF default glyph is always included."
 	RuntimeError "Missing or invalid arguments"
 End If
 
 ChangeDir LaunchDir
 Local inputPath:String = AppArgs[1]
 Local outputPath:String = AppArgs[2]
-Local ranges:String
-If AppArgs.length = 4 Then ranges = AppArgs[3]
+Local selection:TFontSelection = New TFontSelection
+selection.AddDependency(inputPath)
+Local ifNeeded:Int
+Local argument:Int = 3
+While argument < AppArgs.length
+	Local option:String = AppArgs[argument]
+	If Not option.StartsWith("--") Then
+		If AppArgs.length <> 4 Then Fail("hexadecimal ranges must be the only optional argument")
+		selection.AddRanges(option)
+		argument :+ 1
+		Continue
+	End If
+	If option = "--if-needed" Then
+		ifNeeded = True
+		argument :+ 1
+		Continue
+	End If
+	If argument + 1 >= AppArgs.length Then Fail("missing value for '" + option + "'")
+	Select option
+		Case "--ranges"
+			selection.AddRanges(AppArgs[argument + 1])
+		Case "--chars"
+			selection.AddText(DecodeUTF8Argument(AppArgs[argument + 1]))
+		Case "--chars-file"
+			selection.AddTextFile(AppArgs[argument + 1])
+		Case "--manifest"
+			selection.AddManifest(AppArgs[argument + 1])
+		Default
+			Fail("unknown option '" + option + "'")
+	End Select
+	argument :+ 2
+Wend
+
+If ifNeeded And FileType(outputPath) = FILETYPE_FILE Then
+	Local outputTime:Long = FileTime(outputPath)
+	Local current:Int = outputTime > 0
+	For Local dependency:String = EachIn selection.dependencies
+		If FileTime(dependency) > outputTime Then
+			current = False
+			Exit
+		End If
+	Next
+	If current Then
+		Print "Up to date: " + outputPath
+		End
+	End If
+End If
 
 Local source:String = LoadText(inputPath).Replace("~r", "")
 If Not source.length Then Fail("could not read '" + inputPath + "'")
@@ -147,7 +357,9 @@ For Local lineIndex:Int = 0 Until lines.length
 	Else If line.StartsWith("STARTCHAR") Then
 		current = New TBdfGlyph
 	Else If line = "ENDCHAR" Then
-		If current And (CodePointSelected(current.codePoint, ranges) Or ..
+		If current And (Not selection.enabled Or ..
+				(selection.ranges.length And CodePointSelected(current.codePoint, selection.ranges)) Or ..
+				CharacterSelected(current.codePoint, selection.codePoints) Or ..
 				current.codePoint = defaultCodePoint) Then glyphs = AddGlyph(glyphs, current)
 		current = Null
 	Else If current
