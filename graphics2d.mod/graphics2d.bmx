@@ -33,36 +33,51 @@ Const GraphicsRotation0:Int = DisplayOrientation0
 Const GraphicsRotation90:Int = DisplayOrientation90
 Const GraphicsRotation180:Int = DisplayOrientation180
 Const GraphicsRotation270:Int = DisplayOrientation270
+Const EmbeddedGraphicsStateMaximum:Int = 16
 
 Private
 
 ' A logical drawing view over a physical framebuffer. Keeping this as a buffer
 ' adapter means fonts, images, and future raster operations all inherit the
 ' same exact quarter-turn transform without allocating while drawing.
-Type TRotatedDisplayBuffer Extends TDisplayBuffer
+Type TGraphicsDisplayBuffer Extends TDisplayBuffer
 	Field target:TDisplayBuffer
-	Field rotation:Int
+	Field logicalWidth:Int
+	Field logicalHeight:Int
+	Field xx:Int = 1
+	Field xy:Int
+	Field yx:Int
+	Field yy:Int = 1
+	Field tx:Int
+	Field ty:Int
 
-	Function Create:TRotatedDisplayBuffer(target:TDisplayBuffer)
-		Local view:TRotatedDisplayBuffer = New TRotatedDisplayBuffer
+	Function Create:TGraphicsDisplayBuffer(target:TDisplayBuffer)
+		Local view:TGraphicsDisplayBuffer = New TGraphicsDisplayBuffer
 		view.target = target
+		If target Then
+			view.logicalWidth = target.Width()
+			view.logicalHeight = target.Height()
+		End If
 		Return view
 	End Function
 
-	Method SetRotation(rotation:Int)
-		Self.rotation = rotation
+	Method SetTransform(width:Int, height:Int, xx:Int, xy:Int, yx:Int, yy:Int, tx:Int, ty:Int)
+		logicalWidth = width
+		logicalHeight = height
+		Self.xx = xx
+		Self.xy = xy
+		Self.yx = yx
+		Self.yy = yy
+		Self.tx = tx
+		Self.ty = ty
 	End Method
 
 	Method Width:Int() Override
-		If Not target Then Return 0
-		If rotation = GraphicsRotation90 Or rotation = GraphicsRotation270 Then Return target.Height()
-		Return target.Width()
+		Return logicalWidth
 	End Method
 
 	Method Height:Int() Override
-		If Not target Then Return 0
-		If rotation = GraphicsRotation90 Or rotation = GraphicsRotation270 Then Return target.Width()
-		Return target.Height()
+		Return logicalHeight
 	End Method
 
 	Method Stride:Int() Override
@@ -92,29 +107,12 @@ Type TRotatedDisplayBuffer Extends TDisplayBuffer
 
 	Method SetPixel(x:Int, y:Int, color:UInt = $ffffff) Override
 		If Not target Or x < 0 Or y < 0 Or x >= Width() Or y >= Height() Then Return
-		Select rotation
-			Case GraphicsRotation90
-				target.SetPixel(target.Width() - 1 - y, x, color)
-			Case GraphicsRotation180
-				target.SetPixel(target.Width() - 1 - x, target.Height() - 1 - y, color)
-			Case GraphicsRotation270
-				target.SetPixel(y, target.Height() - 1 - x, color)
-			Default
-				target.SetPixel(x, y, color)
-		End Select
+		target.SetPixel(xx * x + xy * y + tx, yx * x + yy * y + ty, color)
 	End Method
 
 	Method Pixel:UInt(x:Int, y:Int) Override
 		If Not target Or x < 0 Or y < 0 Or x >= Width() Or y >= Height() Then Return 0
-		Select rotation
-			Case GraphicsRotation90
-				Return target.Pixel(target.Width() - 1 - y, x)
-			Case GraphicsRotation180
-				Return target.Pixel(target.Width() - 1 - x, target.Height() - 1 - y)
-			Case GraphicsRotation270
-				Return target.Pixel(y, target.Height() - 1 - x)
-		End Select
-		Return target.Pixel(x, y)
+		Return target.Pixel(xx * x + xy * y + tx, yx * x + yy * y + ty)
 	End Method
 
 	Method FillRect(x:Int, y:Int, width:Int, height:Int, color:UInt = $ffffff) Override
@@ -126,19 +124,23 @@ Type TRotatedDisplayBuffer Extends TDisplayBuffer
 		If x1 > Width() Then x1 = Width()
 		If y1 > Height() Then y1 = Height()
 		If x >= x1 Or y >= y1 Then Return
-		width = x1 - x
-		height = y1 - y
-		Select rotation
-			Case GraphicsRotation90
-				target.FillRect(target.Width() - y - height, x, height, width, color)
-			Case GraphicsRotation180
-				target.FillRect(target.Width() - x - width, target.Height() - y - height, ..
-					width, height, color)
-			Case GraphicsRotation270
-				target.FillRect(y, target.Height() - x - width, height, width, color)
-			Default
-				target.FillRect(x, y, width, height, color)
-		End Select
+		Local px0:Int
+		Local py0:Int
+		Local px1:Int
+		Local py1:Int
+		MapPoint(x, y, px0, py0)
+		MapPoint(x1 - 1, y1 - 1, px1, py1)
+		If px0 > px1 Then
+			Local swap:Int = px0
+			px0 = px1
+			px1 = swap
+		End If
+		If py0 > py1 Then
+			Local swap:Int = py0
+			py0 = py1
+			py1 = swap
+		End If
+		target.FillRect(px0, py0, px1 - px0 + 1, py1 - py0 + 1, color)
 	End Method
 
 	Method DrawLine(x0:Int, y0:Int, x1:Int, y1:Int, color:UInt = $ffffff) Override
@@ -154,21 +156,36 @@ Type TRotatedDisplayBuffer Extends TDisplayBuffer
 
 	Private
 	Method MapPoint(x:Int, y:Int, targetX:Int Var, targetY:Int Var)
-		Select rotation
-			Case GraphicsRotation90
-				targetX = target.Width() - 1 - y
-				targetY = x
-			Case GraphicsRotation180
-				targetX = target.Width() - 1 - x
-				targetY = target.Height() - 1 - y
-			Case GraphicsRotation270
-				targetX = y
-				targetY = target.Height() - 1 - x
-			Default
-				targetX = x
-				targetY = y
-		End Select
+		targetX = xx * x + xy * y + tx
+		targetY = yx * x + yy * y + ty
 	End Method
+End Type
+
+Type TEmbedded2DSavedState
+	Field font:TBitmapFont
+	Field drawColor:UInt
+	Field clearColor:UInt
+	Field originX:Int
+	Field originY:Int
+	Field viewportX:Int
+	Field viewportY:Int
+	Field viewportWidth:Int
+	Field viewportHeight:Int
+	Field viewClipX:Int
+	Field viewClipY:Int
+	Field viewClipWidth:Int
+	Field viewClipHeight:Int
+	Field logicalWidth:Int
+	Field logicalHeight:Int
+	Field xx:Int
+	Field xy:Int
+	Field yx:Int
+	Field yy:Int
+	Field tx:Int
+	Field ty:Int
+	Field rotation:Int
+	Field viewDepth:Int
+	Field viewBoundary:Int
 End Type
 
 Public
@@ -176,7 +193,7 @@ Public
 Rem
 bbdoc: Stateful allocation-free drawing context for one display buffer.
 about: Origins affect drawing coordinates. Viewports are always expressed in
-physical target-buffer coordinates and clip every primitive, including text.
+the current logical view and clip every primitive, including text.
 End Rem
 Type TEmbedded2DContext Final
 	Private
@@ -191,10 +208,31 @@ Type TEmbedded2DContext Final
 	Field viewportY:Int
 	Field viewportWidth:Int
 	Field viewportHeight:Int
+	Field viewClipX:Int
+	Field viewClipY:Int
+	Field viewClipWidth:Int
+	Field viewClipHeight:Int
+	Field logicalWidth:Int
+	Field logicalHeight:Int
+	Field transformXX:Int = 1
+	Field transformXY:Int
+	Field transformYX:Int
+	Field transformYY:Int = 1
+	Field transformTX:Int
+	Field transformTY:Int
 	Field rotation:Int
-	Field rotatedTarget:TRotatedDisplayBuffer
+	Field drawingTarget:TGraphicsDisplayBuffer
+	Field savedStates:TEmbedded2DSavedState[EmbeddedGraphicsStateMaximum]
+	Field stateDepth:Int
+	Field viewDepth:Int
 
 	Public
+	Method New()
+		For Local index:Int = 0 Until EmbeddedGraphicsStateMaximum
+			savedStates[index] = New TEmbedded2DSavedState
+		Next
+	End Method
+
 	Function Create:TEmbedded2DContext(target:TDisplayBuffer, display:TDisplay = Null)
 		Local context:TEmbedded2DContext = New TEmbedded2DContext
 		context.SetRenderTarget(target, display)
@@ -204,21 +242,23 @@ Type TEmbedded2DContext Final
 	Method SetRenderTarget(target:TDisplayBuffer, display:TDisplay = Null)
 		Self.target = target
 		boundDisplay = display
-		rotatedTarget = TRotatedDisplayBuffer.Create(target)
-		rotatedTarget.SetRotation(EffectiveRotation())
+		drawingTarget = TGraphicsDisplayBuffer.Create(target)
+		stateDepth = 0
+		viewDepth = 0
 		originX = 0
 		originY = 0
-		ResetViewport()
+		ResetRootTransform()
 	End Method
 
 	Method RenderTarget:TDisplayBuffer()
 		Return target
 	End Method
 
-	Method SetDisplay(display:TDisplay)
+	Method SetDisplay:Int(display:TDisplay)
+		If stateDepth Then Return False
 		boundDisplay = display
-		If rotatedTarget Then rotatedTarget.SetRotation(EffectiveRotation())
-		ResetViewport()
+		ResetRootTransform()
+		Return True
 	End Method
 
 	Method Display:TDisplay()
@@ -233,11 +273,11 @@ Type TEmbedded2DContext Final
 	returns: True when the requested angle is a supported quarter turn.
 	End Rem
 	Method SetRotation:Int(degrees:Int)
+		If viewDepth Then Return False
 		Local normalized:Int = NormalizeDisplayOrientation(degrees)
 		If normalized < 0 Then Return False
 		rotation = normalized
-		If rotatedTarget Then rotatedTarget.SetRotation(EffectiveRotation())
-		ResetViewport()
+		ResetRootTransform()
 		Return True
 	End Method
 
@@ -260,9 +300,9 @@ Type TEmbedded2DContext Final
 	orientation so its events remain aligned.
 	End Rem
 	Method SetDisplayOrientation:Int(degrees:Int)
+		If stateDepth Then Return False
 		If Not boundDisplay Or Not boundDisplay.SetOrientation(degrees) Then Return False
-		If rotatedTarget Then rotatedTarget.SetRotation(EffectiveRotation())
-		ResetViewport()
+		ResetRootTransform()
 		Return True
 	End Method
 
@@ -277,18 +317,14 @@ Type TEmbedded2DContext Final
 	bbdoc: Returns the logical drawing width after rotation.
 	End Rem
 	Method Width:Int()
-		Local drawingTarget:TDisplayBuffer = DrawingTarget()
-		If drawingTarget Then Return drawingTarget.Width()
-		Return 0
+		Return logicalWidth
 	End Method
 
 	Rem
 	bbdoc: Returns the logical drawing height after rotation.
 	End Rem
 	Method Height:Int()
-		Local drawingTarget:TDisplayBuffer = DrawingTarget()
-		If drawingTarget Then Return drawingTarget.Height()
-		Return 0
+		Return logicalHeight
 	End Method
 
 	Method SetFont(font:TBitmapFont)
@@ -348,10 +384,12 @@ Type TEmbedded2DContext Final
 		End If
 		Local x1:Int = x + width
 		Local y1:Int = y + height
-		If x < 0 Then x = 0
-		If y < 0 Then y = 0
-		If x1 > Width() Then x1 = Width()
-		If y1 > Height() Then y1 = Height()
+		Local clipX1:Int = viewClipX + viewClipWidth
+		Local clipY1:Int = viewClipY + viewClipHeight
+		If x < viewClipX Then x = viewClipX
+		If y < viewClipY Then y = viewClipY
+		If x1 > clipX1 Then x1 = clipX1
+		If y1 > clipY1 Then y1 = clipY1
 		If x1 <= x Or y1 <= y Then
 			viewportWidth = 0
 			viewportHeight = 0
@@ -365,10 +403,10 @@ Type TEmbedded2DContext Final
 
 	Method ResetViewport()
 		If target Then
-			viewportX = 0
-			viewportY = 0
-			viewportWidth = Width()
-			viewportHeight = Height()
+			viewportX = viewClipX
+			viewportY = viewClipY
+			viewportWidth = viewClipWidth
+			viewportHeight = viewClipHeight
 		Else
 			viewportX = 0
 			viewportY = 0
@@ -395,7 +433,7 @@ Type TEmbedded2DContext Final
 
 	Method Cls()
 		If Not target Or viewportWidth <= 0 Or viewportHeight <= 0 Then Return
-		If viewportX = 0 And viewportY = 0 And viewportWidth = Width() And ..
+		If viewDepth = 0 And viewportX = 0 And viewportY = 0 And viewportWidth = Width() And ..
 				viewportHeight = Height() Then
 			target.Clear(clearColor)
 		Else
@@ -441,6 +479,142 @@ Type TEmbedded2DContext Final
 		If x1 > viewportX1 Then x1 = viewportX1
 		If y1 > viewportY1 Then y1 = viewportY1
 		If x < x1 And y < y1 Then DrawingTarget().FillRect(x, y, x1 - x, y1 - y, drawColor)
+	End Method
+
+	Rem
+	bbdoc: Saves the complete drawing state on a fixed-depth stack.
+	returns: False when the sixteen-entry stack is full.
+	End Rem
+	Method PushState:Int()
+		Return PushStateInternal(False)
+	End Method
+
+	Rem
+	bbdoc: Restores the most recently saved drawing state.
+	returns: False when the stack is empty.
+	End Rem
+	Method PopState:Int()
+		If stateDepth <= 0 Then Return False
+		stateDepth :- 1
+		RestoreState(savedStates[stateDepth])
+		Return True
+	End Method
+
+	Method StateDepth:Int()
+		Return stateDepth
+	End Method
+
+	Rem
+	bbdoc: Begins a clipped local drawing view with an optional clockwise quarter-turn.
+	about: The rectangle is expressed in the parent view. Drawing inside it uses
+	local coordinates, origin, viewport, and logical dimensions. Views may be nested.
+	returns: False for an invalid rotation, empty size, or full state stack.
+	End Rem
+	Method BeginView:Int(x:Int, y:Int, width:Int, height:Int, viewRotation:Int = 0)
+		Local normalized:Int = NormalizeDisplayOrientation(viewRotation)
+		If Not target Or width <= 0 Or height <= 0 Or normalized < 0 Then Return False
+
+		x :+ originX
+		y :+ originY
+		If Not PushStateInternal(True) Then Return False
+
+		Local intersectionX0:Int = x
+		Local intersectionY0:Int = y
+		Local intersectionX1:Int = x + width
+		Local intersectionY1:Int = y + height
+		If intersectionX0 < viewportX Then intersectionX0 = viewportX
+		If intersectionY0 < viewportY Then intersectionY0 = viewportY
+		If intersectionX1 > viewportX + viewportWidth Then intersectionX1 = viewportX + viewportWidth
+		If intersectionY1 > viewportY + viewportHeight Then intersectionY1 = viewportY + viewportHeight
+		If intersectionX1 < intersectionX0 Then intersectionX1 = intersectionX0
+		If intersectionY1 < intersectionY0 Then intersectionY1 = intersectionY0
+
+		Local childXX:Int = 1
+		Local childXY:Int
+		Local childYX:Int
+		Local childYY:Int = 1
+		Local childTX:Int = x
+		Local childTY:Int = y
+		Local clipX0:Int
+		Local clipY0:Int
+		Local clipX1:Int
+		Local clipY1:Int
+
+		Select normalized
+			Case DisplayOrientation0
+				logicalWidth = width
+				logicalHeight = height
+				clipX0 = intersectionX0 - x
+				clipY0 = intersectionY0 - y
+				clipX1 = intersectionX1 - x
+				clipY1 = intersectionY1 - y
+			Case DisplayOrientation90
+				logicalWidth = height
+				logicalHeight = width
+				childXX = 0
+				childXY = -1
+				childYX = 1
+				childYY = 0
+				childTX = x + width - 1
+				clipX0 = intersectionY0 - y
+				clipX1 = intersectionY1 - y
+				clipY0 = x + width - intersectionX1
+				clipY1 = x + width - intersectionX0
+			Case DisplayOrientation180
+				logicalWidth = width
+				logicalHeight = height
+				childXX = -1
+				childYY = -1
+				childTX = x + width - 1
+				childTY = y + height - 1
+				clipX0 = x + width - intersectionX1
+				clipX1 = x + width - intersectionX0
+				clipY0 = y + height - intersectionY1
+				clipY1 = y + height - intersectionY0
+			Case DisplayOrientation270
+				logicalWidth = height
+				logicalHeight = width
+				childXX = 0
+				childXY = 1
+				childYX = -1
+				childYY = 0
+				childTX = x
+				childTY = y + height - 1
+				clipX0 = y + height - intersectionY1
+				clipX1 = y + height - intersectionY0
+				clipY0 = intersectionX0 - x
+				clipY1 = intersectionX1 - x
+		End Select
+
+		Local parent:TEmbedded2DSavedState = savedStates[stateDepth - 1]
+		transformXX = parent.xx * childXX + parent.xy * childYX
+		transformXY = parent.xx * childXY + parent.xy * childYY
+		transformYX = parent.yx * childXX + parent.yy * childYX
+		transformYY = parent.yx * childXY + parent.yy * childYY
+		transformTX = parent.xx * childTX + parent.xy * childTY + parent.tx
+		transformTY = parent.yx * childTX + parent.yy * childTY + parent.ty
+		viewClipX = clipX0
+		viewClipY = clipY0
+		viewClipWidth = clipX1 - clipX0
+		viewClipHeight = clipY1 - clipY0
+		originX = 0
+		originY = 0
+		viewDepth :+ 1
+		ResetViewport()
+		ApplyTransform()
+		Return True
+	End Method
+
+	Rem
+	bbdoc: Ends the innermost local view and restores its parent drawing state.
+	End Rem
+	Method EndView:Int()
+		If stateDepth <= 0 Or Not savedStates[stateDepth - 1].viewBoundary Then Return False
+		Return PopState()
+	End Method
+
+	Method ViewDepth:Int()
+		Return viewDepth
 	End Method
 
 	Method DrawText:Int(text:String, x:Int, y:Int, scale:Int = 1)
@@ -493,8 +667,123 @@ Type TEmbedded2DContext Final
 
 	Private
 	Method DrawingTarget:TDisplayBuffer()
-		If EffectiveRotation() And rotatedTarget Then Return rotatedTarget
+		If drawingTarget And (transformXX <> 1 Or transformXY Or transformYX Or transformYY <> 1 Or ..
+				transformTX Or transformTY Or logicalWidth <> target.Width() Or logicalHeight <> target.Height()) Then
+			Return drawingTarget
+		End If
 		Return target
+	End Method
+
+	Method ApplyTransform()
+		If drawingTarget Then drawingTarget.SetTransform(logicalWidth, logicalHeight, ..
+			transformXX, transformXY, transformYX, transformYY, transformTX, transformTY)
+	End Method
+
+	Method ResetRootTransform()
+		transformXX = 1
+		transformXY = 0
+		transformYX = 0
+		transformYY = 1
+		transformTX = 0
+		transformTY = 0
+		logicalWidth = 0
+		logicalHeight = 0
+		If target Then
+			Local physicalWidth:Int = target.Width()
+			Local physicalHeight:Int = target.Height()
+			Select EffectiveRotation()
+				Case DisplayOrientation0
+					logicalWidth = physicalWidth
+					logicalHeight = physicalHeight
+				Case DisplayOrientation90
+					logicalWidth = physicalHeight
+					logicalHeight = physicalWidth
+					transformXX = 0
+					transformXY = -1
+					transformYX = 1
+					transformYY = 0
+					transformTX = physicalWidth - 1
+				Case DisplayOrientation180
+					logicalWidth = physicalWidth
+					logicalHeight = physicalHeight
+					transformXX = -1
+					transformYY = -1
+					transformTX = physicalWidth - 1
+					transformTY = physicalHeight - 1
+				Case DisplayOrientation270
+					logicalWidth = physicalHeight
+					logicalHeight = physicalWidth
+					transformXX = 0
+					transformXY = 1
+					transformYX = -1
+					transformYY = 0
+					transformTY = physicalHeight - 1
+			End Select
+		End If
+		viewClipX = 0
+		viewClipY = 0
+		viewClipWidth = logicalWidth
+		viewClipHeight = logicalHeight
+		ApplyTransform()
+		ResetViewport()
+	End Method
+
+	Method PushStateInternal:Int(viewBoundary:Int)
+		If stateDepth >= EmbeddedGraphicsStateMaximum Then Return False
+		Local state:TEmbedded2DSavedState = savedStates[stateDepth]
+		state.font = currentFont
+		state.drawColor = drawColor
+		state.clearColor = clearColor
+		state.originX = originX
+		state.originY = originY
+		state.viewportX = viewportX
+		state.viewportY = viewportY
+		state.viewportWidth = viewportWidth
+		state.viewportHeight = viewportHeight
+		state.viewClipX = viewClipX
+		state.viewClipY = viewClipY
+		state.viewClipWidth = viewClipWidth
+		state.viewClipHeight = viewClipHeight
+		state.logicalWidth = logicalWidth
+		state.logicalHeight = logicalHeight
+		state.xx = transformXX
+		state.xy = transformXY
+		state.yx = transformYX
+		state.yy = transformYY
+		state.tx = transformTX
+		state.ty = transformTY
+		state.rotation = rotation
+		state.viewDepth = viewDepth
+		state.viewBoundary = viewBoundary
+		stateDepth :+ 1
+		Return True
+	End Method
+
+	Method RestoreState(state:TEmbedded2DSavedState)
+		currentFont = state.font
+		drawColor = state.drawColor
+		clearColor = state.clearColor
+		originX = state.originX
+		originY = state.originY
+		viewportX = state.viewportX
+		viewportY = state.viewportY
+		viewportWidth = state.viewportWidth
+		viewportHeight = state.viewportHeight
+		viewClipX = state.viewClipX
+		viewClipY = state.viewClipY
+		viewClipWidth = state.viewClipWidth
+		viewClipHeight = state.viewClipHeight
+		logicalWidth = state.logicalWidth
+		logicalHeight = state.logicalHeight
+		transformXX = state.xx
+		transformXY = state.xy
+		transformYX = state.yx
+		transformYY = state.yy
+		transformTX = state.tx
+		transformTY = state.ty
+		rotation = state.rotation
+		viewDepth = state.viewDepth
+		ApplyTransform()
 	End Method
 
 	Method PointVisible:Int(x:Int, y:Int)
@@ -631,6 +920,30 @@ End Function
 
 Function SetOrigin(x:Int, y:Int)
 	Default2DContext().SetOrigin(x, y)
+End Function
+
+Function PushGraphicsState:Int()
+	Return Default2DContext().PushState()
+End Function
+
+Function PopGraphicsState:Int()
+	Return Default2DContext().PopState()
+End Function
+
+Function GraphicsStateDepth:Int()
+	Return Default2DContext().StateDepth()
+End Function
+
+Function BeginView:Int(x:Int, y:Int, width:Int, height:Int, rotation:Int = 0)
+	Return Default2DContext().BeginView(x, y, width, height, rotation)
+End Function
+
+Function EndView:Int()
+	Return Default2DContext().EndView()
+End Function
+
+Function GraphicsViewDepth:Int()
+	Return Default2DContext().ViewDepth()
 End Function
 
 Function SetViewport(x:Int, y:Int, width:Int, height:Int)

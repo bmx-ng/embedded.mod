@@ -30,8 +30,9 @@ then present it without additional frame-time allocation.
 `Embedded.Graphics2D` is an optional familiar drawing facade over this layer.
 It provides `Cls`, `SetColor`, `SetFont`, `DrawText`, `DrawImage`,
 `DrawImageRect`, `DrawImageRegion`, `Plot`, `DrawLine`, `DrawRect`, `FillRect`,
-origins, viewports, text metrics, exact quarter-turn canvas rotation, and `Present`. The
-global functions use one default context for compact applications;
+origins, viewports, nested local views, saved drawing state, text metrics, exact
+quarter-turn canvas rotation, and `Present`. The global functions use one default
+context for compact applications;
 `TEmbedded2DContext` exposes the same operations without global state for
 libraries or applications using multiple displays. It owns no second buffer and
 does not allocate while drawing.
@@ -64,6 +65,31 @@ swapped. `SetDisplayOrientation` changes it through the active Graphics2D contex
 at runtime, retaining the current relative drawing rotation and resetting the
 viewport. This supports sensor-driven auto-rotation without rotating the complete
 framebuffer or allocating another one.
+
+`BeginView` creates a clipped local coordinate system within the current view.
+Its optional rotation is clockwise and limited to exact `0`, `90`, `180`, or
+`270` degree turns. Views compose when nested, so a widget or library can draw
+at `(0, 0)` without knowing its final position or orientation. `EndView`
+restores the parent automatically:
+
+```blitzmax
+BeginView 20, 12, 120, 64
+SetClsColor 12, 20, 32
+Cls
+DrawText "Status", 4, 4
+
+BeginView 88, 8, 24, 48, 90
+DrawRect 0, 0, GraphicsWidth(), GraphicsHeight()
+EndView
+EndView
+```
+
+`PushGraphicsState` and `PopGraphicsState` save and restore the font, colours,
+origin, viewport, relative canvas rotation, and current view transform. The
+stack has sixteen entries which are allocated with the context, so pushing,
+popping, and drawing do not allocate. Overflow and underflow return `False`.
+Device orientation is hardware configuration and deliberately is not part of
+the saved drawing state.
 
 Concrete display drivers live beneath `Embedded.Drivers.Displays.*`.
 `Embedded.Drivers.Displays.SSD1306` is the first controller implementation. It uses
