@@ -17,6 +17,7 @@ ModuleInfo "License: zlib/libpng"
 
 Import Embedded.Drivers.Display
 Import Embedded.Drivers.Display.Font
+Import Embedded.Drivers.Display.Image
 
 Private
 
@@ -242,6 +243,31 @@ Type TEmbedded2DContext Final
 		Return currentFont.LineHeight() * scale
 	End Method
 
+	Method DrawImage(image:TEmbeddedImage, x:Int, y:Int)
+		If Not target Or Not image Then Return
+		image.DrawRegionClipped(target, x + originX, y + originY, 0, 0, ..
+			image.Width(), image.Height(), drawColor, ..
+			viewportX, viewportY, viewportWidth, viewportHeight)
+	End Method
+
+	Rem
+	bbdoc: Draws an image scaled to the supplied destination rectangle.
+	about: Scaling uses nearest-neighbour sampling.
+	End Rem
+	Method DrawImageRect(image:TEmbeddedImage, x:Int, y:Int, width:Int, height:Int)
+		If Not target Or Not image Then Return
+		image.DrawRectClipped(target, x + originX, y + originY, width, height, drawColor, ..
+			viewportX, viewportY, viewportWidth, viewportHeight)
+	End Method
+
+	Method DrawImageRegion(image:TEmbeddedImage, x:Int, y:Int, sourceX:Int, sourceY:Int, ..
+			width:Int, height:Int)
+		If Not target Or Not image Then Return
+		image.DrawRegionClipped(target, x + originX, y + originY, ..
+			sourceX, sourceY, width, height, drawColor, ..
+			viewportX, viewportY, viewportWidth, viewportHeight)
+	End Method
+
 	Method Present:Int(display:TDisplay = Null)
 		If Not target Then Return DisplayErrorInvalidArgument
 		If Not display Then display = boundDisplay
@@ -396,6 +422,19 @@ End Function
 
 Function FontHeight:Int(scale:Int = 1)
 	Return Default2DContext().FontHeight(scale)
+End Function
+
+Function DrawImage(image:TEmbeddedImage, x:Int, y:Int)
+	Default2DContext().DrawImage(image, x, y)
+End Function
+
+Function DrawImageRect(image:TEmbeddedImage, x:Int, y:Int, width:Int, height:Int)
+	Default2DContext().DrawImageRect(image, x, y, width, height)
+End Function
+
+Function DrawImageRegion(image:TEmbeddedImage, x:Int, y:Int, sourceX:Int, sourceY:Int, ..
+		width:Int, height:Int)
+	Default2DContext().DrawImageRegion(image, x, y, sourceX, sourceY, width, height)
 End Function
 
 Function Present:Int(display:TDisplay = Null)

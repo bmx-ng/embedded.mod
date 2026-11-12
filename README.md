@@ -78,6 +78,7 @@ and other capabilities that do not share equivalent semantics.
 | `Embedded.Hardware.I2C` | Master setup, deadline reads and writes, and repeated-Start write/read transactions |
 | `Embedded.Hardware.SPI` | 8-bit and 16-bit blocking simplex and full-duplex transfers |
 | [`Embedded.Drivers.Display`](drivers.mod/README.md) | Mono1, RGB565, and RGB888 raster buffers with full or dirty-region presentation |
+| [`Embedded.Drivers.Display.Image`](drivers.mod/README.md) | Validated firmware-resident Mono1, RGB565, and RGB888 images with transparency, clipping, tinting, and scaling |
 | [`Embedded.Drivers.Display.Font`](drivers.mod/README.md) | Allocation-free Unicode bitmap-font measurement and rendering |
 | [`Embedded.Drivers.Display.Fonts.Spleen5x8`](drivers.mod/README.md) | Complete 5x8 Spleen bitmap font stored in firmware |
 | [`Embedded.Drivers.Displays.SSD1306`](drivers.mod/README.md) | Portable I2C SSD1306 OLED driver, including the 72x40 0.42-inch panel preset |

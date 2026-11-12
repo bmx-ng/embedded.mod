@@ -27,8 +27,9 @@ status applications can allocate one buffer, draw pixels, lines and rectangles,
 then present it without additional frame-time allocation.
 
 `Embedded.Graphics2D` is an optional familiar drawing facade over this layer.
-It provides `Cls`, `SetColor`, `SetFont`, `DrawText`, `Plot`, `DrawLine`,
-`DrawRect`, `FillRect`, origins, viewports, text metrics, and `Present`. The
+It provides `Cls`, `SetColor`, `SetFont`, `DrawText`, `DrawImage`,
+`DrawImageRect`, `DrawImageRegion`, `Plot`, `DrawLine`, `DrawRect`, `FillRect`,
+origins, viewports, text metrics, and `Present`. The
 global functions use one default context for compact applications;
 `TEmbedded2DContext` exposes the same operations without global state for
 libraries or applications using multiple displays. It owns no second buffer and
@@ -48,6 +49,51 @@ Concrete display drivers live beneath `Embedded.Drivers.Displays.*`.
 `Embedded.Drivers.Displays.SSD1306` is the first controller implementation. It uses
 `Embedded.Hardware.I2C`, supports dirty page updates, and includes the 72x40
 EastRising-compatible preset used by common 0.42-inch OLED boards.
+
+## Images and bitmaps
+
+`Embedded.Drivers.Display.Image` loads the compact EBI1 format from persistent
+firmware memory. An EBI1 image contains raw Mono1, RGB565, or RGB888 pixels and
+an optional one-bit transparency mask. The header and every data range are
+validated when `TEmbeddedImage.Create` is called. Drawing thereafter is
+allocation-free and supports clipping, colour tinting, pixel-format conversion,
+unscaled source regions, and deterministic nearest-neighbour scaling.
+
+The desktop converter in `tools/image2embedded.bmx` uses the normal BlitzMax
+`image.mod` loaders. It accepts PNG, JPEG, BMP, GIF, TGA, PNM, QOI, WebP, TIFF,
+and SVG inputs. Build it once with the desktop SDK, then select the smallest
+format suitable for the target display:
+
+```sh
+bmk makeapp -r -o image2embedded tools/image2embedded.bmx
+image2embedded icon.svg icon.ebi --format mono1 --mask auto
+image2embedded splash.png splash.ebi --format rgb565 --mask auto
+```
+
+`--threshold` controls monochrome conversion, `--alpha-threshold` controls the
+one-bit transparency decision, and `--mask auto|always|none` controls whether a
+mask is emitted. `auto` only adds one when the source contains transparency.
+RGB565 is little-endian and is generally the compact colour choice; RGB888
+avoids colour quantisation. No decoder or source image library is linked into
+the firmware.
+
+Embed the converted asset and draw it through either `TEmbeddedImage` directly
+or `Embedded.Graphics2D`:
+
+```blitzmax
+Incbin "icon.ebi"
+
+Local icon:TEmbeddedImage = TEmbeddedImage.Create(IncbinPtr("icon.ebi"), ..
+    IncbinLen("icon.ebi"))
+SetRenderTarget frame, display
+SetColor 255, 255, 255
+DrawImage icon, 2, 2
+DrawImageRect icon, 24, 2, 32, 32
+Present
+```
+
+Image pixels live in flash through `Incbin`; only the display framebuffer uses
+RAM. Applications only pay for assets and the image module when they import it.
 
 ## Bitmap fonts and text
 
