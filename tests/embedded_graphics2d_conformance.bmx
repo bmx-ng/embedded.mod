@@ -351,6 +351,11 @@ dirtyGraphics.Plot(4, 5)
 dirtyGraphics.Plot(7, 9)
 passed :& dirtyGraphics.DirtyRect(dirtyX, dirtyY, dirtyWidth, dirtyHeight)
 passed :& dirtyX = 4 And dirtyY = 5 And dirtyWidth = 4 And dirtyHeight = 5
+passed :& dirtyGraphics.DirtyRegionCount() = 2
+passed :& dirtyGraphics.DirtyRegion(0, dirtyX, dirtyY, dirtyWidth, dirtyHeight)
+passed :& dirtyX = 4 And dirtyY = 5 And dirtyWidth = 1 And dirtyHeight = 1
+passed :& dirtyGraphics.DirtyRegion(1, dirtyX, dirtyY, dirtyWidth, dirtyHeight)
+passed :& dirtyX = 7 And dirtyY = 9 And dirtyWidth = 1 And dirtyHeight = 1
 dirtyGraphics.ResetDirty()
 dirtyGraphics.InvalidateRect(6, 7, 3, 2)
 passed :& dirtyGraphics.DirtyRect(dirtyX, dirtyY, dirtyWidth, dirtyHeight)
@@ -368,6 +373,38 @@ dirtyGraphics.Plot(1, 1)
 passed :& dirtyGraphics.PresentDiscard() = 1 And dirtyDisplay.presentations = 4
 passed :& dirtyDisplay.discardPresentations = 1
 passed :& Not dirtyGraphics.DirtyRect(dirtyX, dirtyY, dirtyWidth, dirtyHeight)
+
+' Distant changes remain separate and are submitted through one logical
+' presentation. Touching changes merge, while excessive fragmentation falls
+' back to one complete-frame rectangle without allocating.
+Local regionFrame:TDisplayBuffer = TDisplayBuffer.Create(16, 16, DisplayPixelFormatMono1)
+Local regionDisplay:TTestDisplay = New TTestDisplay
+Local regionGraphics:TEmbedded2DContext = TEmbedded2DContext.Create(regionFrame, regionDisplay)
+regionGraphics.SetDirtyTracking(True)
+regionGraphics.InvalidateRect(1, 1, 2, 2)
+regionGraphics.InvalidateRect(12, 12, 2, 2)
+passed :& regionGraphics.DirtyRegionCount() = 2
+passed :& regionGraphics.PresentDirty() = 1 And regionDisplay.presentations = 2
+passed :& regionDisplay.lastX = 12 And regionDisplay.lastY = 12
+passed :& regionDisplay.lastWidth = 2 And regionDisplay.lastHeight = 2
+regionGraphics.InvalidateRect(1, 1, 2, 2)
+regionGraphics.InvalidateRect(3, 1, 2, 2)
+passed :& regionGraphics.DirtyRegionCount() = 1
+passed :& regionGraphics.DirtyRegion(0, dirtyX, dirtyY, dirtyWidth, dirtyHeight)
+passed :& dirtyX = 1 And dirtyY = 1 And dirtyWidth = 4 And dirtyHeight = 2
+regionGraphics.ResetDirty()
+regionGraphics.InvalidateRect(0, 0, 1, 1)
+regionGraphics.InvalidateRect(3, 0, 1, 1)
+regionGraphics.InvalidateRect(6, 0, 1, 1)
+regionGraphics.InvalidateRect(9, 0, 1, 1)
+regionGraphics.InvalidateRect(12, 0, 1, 1)
+regionGraphics.InvalidateRect(0, 3, 1, 1)
+regionGraphics.InvalidateRect(3, 3, 1, 1)
+regionGraphics.InvalidateRect(6, 3, 1, 1)
+regionGraphics.InvalidateRect(9, 3, 1, 1)
+passed :& regionGraphics.DirtyRegionCount() = 1
+passed :& regionGraphics.DirtyRect(dirtyX, dirtyY, dirtyWidth, dirtyHeight)
+passed :& dirtyX = 0 And dirtyY = 0 And dirtyWidth = 16 And dirtyHeight = 16
 
 Local dirtyRotatedFrame:TDisplayBuffer = TDisplayBuffer.Create(10, 6, DisplayPixelFormatMono1)
 Local dirtyRotated:TEmbedded2DContext = TEmbedded2DContext.Create(dirtyRotatedFrame)

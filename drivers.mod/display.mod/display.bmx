@@ -527,5 +527,23 @@ Type TDisplay Abstract
 		Return PresentPixels(buffer.Pixels(), buffer.Stride(), buffer.Format(), ..
 		x, y, width, height)
 	End Method
+
+	Rem
+	bbdoc: Presents several independent dirty rectangles from one raster.
+	about: The default synchronous implementation submits each rectangle in order.
+	Framebuffer-swap drivers should override this method so the complete list is
+	presented as one frame. Rectangle arrays must each contain at least count items.
+	End Rem
+	Method PresentRegions:Int(buffer:TDisplayBuffer, x:Int Ptr, y:Int Ptr, ..
+			width:Int Ptr, height:Int Ptr, count:Int)
+		If Not buffer Or buffer.Width() < Width() Or buffer.Height() < Height() Or ..
+				Not x Or Not y Or Not width Or Not height Or count <= 0 Then ..
+			Return DisplayErrorInvalidArgument
+		For Local index:Int = 0 Until count
+			Local result:Int = PresentRegion(buffer, x[index], y[index], width[index], height[index])
+			If result <= 0 Then Return result
+		Next
+		Return True
+	End Method
 End Type
 ?

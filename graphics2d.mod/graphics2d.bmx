@@ -34,6 +34,7 @@ Const GraphicsRotation90:Int = DisplayOrientation90
 Const GraphicsRotation180:Int = DisplayOrientation180
 Const GraphicsRotation270:Int = DisplayOrientation270
 Const EmbeddedGraphicsStateMaximum:Int = 16
+Const EmbeddedGraphicsDirtyMaximum:Int = 8
 Const TextAlignLeft:Int = EmbeddedTextAlignLeft
 Const TextAlignCenter:Int = EmbeddedTextAlignCenter
 Const TextAlignRight:Int = EmbeddedTextAlignRight
@@ -237,6 +238,11 @@ Type TEmbedded2DContext Final
 	Field dirtyY0:Int
 	Field dirtyX1:Int
 	Field dirtyY1:Int
+	Field dirtyCount:Int
+	Field dirtyRegionX0:Int[EmbeddedGraphicsDirtyMaximum]
+	Field dirtyRegionY0:Int[EmbeddedGraphicsDirtyMaximum]
+	Field dirtyRegionX1:Int[EmbeddedGraphicsDirtyMaximum]
+	Field dirtyRegionY1:Int[EmbeddedGraphicsDirtyMaximum]
 
 	Public
 	Method New()
@@ -485,10 +491,37 @@ Type TEmbedded2DContext Final
 	End Rem
 	Method ResetDirty()
 		dirtyValid = False
+		dirtyCount = 0
 		dirtyX0 = 0
 		dirtyY0 = 0
 		dirtyX1 = 0
 		dirtyY1 = 0
+	End Method
+
+	Rem
+	bbdoc: Returns the number of independent accumulated dirty rectangles.
+	End Rem
+	Method DirtyRegionCount:Int()
+		Return dirtyCount
+	End Method
+
+	Rem
+	bbdoc: Returns one accumulated physical framebuffer rectangle.
+	returns: False when index is outside the current dirty-region list.
+	End Rem
+	Method DirtyRegion:Int(index:Int, x:Int Var, y:Int Var, width:Int Var, height:Int Var)
+		If index < 0 Or index >= dirtyCount Then
+			x = 0
+			y = 0
+			width = 0
+			height = 0
+			Return False
+		End If
+		x = dirtyRegionX0[index]
+		y = dirtyRegionY0[index]
+		width = dirtyRegionX1[index] - x
+		height = dirtyRegionY1[index] - y
+		Return True
 	End Method
 
 	Rem
@@ -1136,10 +1169,10 @@ Type TEmbedded2DContext Final
 	End Method
 
 	Rem
-	bbdoc: Presents only the accumulated physical dirty rectangle.
+	bbdoc: Presents the accumulated physical dirty rectangles as one frame.
 	about: When tracking is disabled this falls back to a complete presentation.
 	An empty enabled tracker succeeds without calling the display driver. A
-	successful transfer clears the region; failures retain it for retry.
+	successful transfer clears the regions; failures retain them for retry.
 	End Rem
 	Method PresentDirty:Int(display:TDisplay = Null)
 		If Not target Then Return DisplayErrorInvalidArgument
@@ -1147,8 +1180,14 @@ Type TEmbedded2DContext Final
 		If Not display Then Return DisplayErrorInvalidArgument
 		If Not dirtyTracking Then Return Present(display)
 		If Not dirtyValid Then Return True
-		Local result:Int = display.PresentRegion(target, dirtyX0, dirtyY0, ..
-			dirtyX1 - dirtyX0, dirtyY1 - dirtyY0)
+		Local widths:Int[EmbeddedGraphicsDirtyMaximum]
+		Local heights:Int[EmbeddedGraphicsDirtyMaximum]
+		For Local index:Int = 0 Until dirtyCount
+			widths[index] = dirtyRegionX1[index] - dirtyRegionX0[index]
+			heights[index] = dirtyRegionY1[index] - dirtyRegionY0[index]
+		Next
+		Local result:Int = display.PresentRegions(target, Varptr dirtyRegionX0[0], ..
+			Varptr dirtyRegionY0[0], Varptr widths[0], Varptr heights[0], dirtyCount)
 		If result > 0 Then ResetDirty()
 		Return result
 	End Method
@@ -1215,12 +1254,71 @@ Type TEmbedded2DContext Final
 			dirtyX1 = x1
 			dirtyY1 = y1
 			dirtyValid = True
+		Else
+			If x0 < dirtyX0 Then dirtyX0 = x0
+			If y0 < dirtyY0 Then dirtyY0 = y0
+			If x1 > dirtyX1 Then dirtyX1 = x1
+			If y1 > dirtyY1 Then dirtyY1 = y1
+		End If
+
+		' Keep overlapping and edge-adjacent changes together, but retain distant
+		' rectangles independently. Removing a merged entry and restarting makes
+		' transitive joins deterministic without allocating or sorting.
+		Local index:Int
+		While index < dirtyCount
+			If x0 <= dirtyRegionX1[index] And x1 >= dirtyRegionX0[index] And ..
+					y0 <= dirtyRegionY1[index] And y1 >= dirtyRegionY0[index] Then
+				If dirtyRegionX0[index] < x0 Then x0 = dirtyRegionX0[index]
+				If dirtyRegionY0[index] < y0 Then y0 = dirtyRegionY0[index]
+				If dirtyRegionX1[index] > x1 Then x1 = dirtyRegionX1[index]
+				If dirtyRegionY1[index] > y1 Then y1 = dirtyRegionY1[index]
+				RemoveDirtyRegion(index)
+				index = 0
+			Else
+				index :+ 1
+			End If
+		Wend
+
+		If dirtyCount >= EmbeddedGraphicsDirtyMaximum Then
+			SetDirtyFull()
 			Return
 		End If
-		If x0 < dirtyX0 Then dirtyX0 = x0
-		If y0 < dirtyY0 Then dirtyY0 = y0
-		If x1 > dirtyX1 Then dirtyX1 = x1
-		If y1 > dirtyY1 Then dirtyY1 = y1
+		dirtyRegionX0[dirtyCount] = x0
+		dirtyRegionY0[dirtyCount] = y0
+		dirtyRegionX1[dirtyCount] = x1
+		dirtyRegionY1[dirtyCount] = y1
+		dirtyCount :+ 1
+
+		Local dirtyArea:Long
+		For index = 0 Until dirtyCount
+			dirtyArea :+ Long(dirtyRegionX1[index] - dirtyRegionX0[index]) * ..
+				Long(dirtyRegionY1[index] - dirtyRegionY0[index])
+		Next
+		Local frameArea:Long = Long(target.Width()) * Long(target.Height())
+		If dirtyArea * 100 >= frameArea * 60 Then SetDirtyFull()
+	End Method
+
+	Method RemoveDirtyRegion(index:Int)
+		dirtyCount :- 1
+		For Local move:Int = index Until dirtyCount
+			dirtyRegionX0[move] = dirtyRegionX0[move + 1]
+			dirtyRegionY0[move] = dirtyRegionY0[move + 1]
+			dirtyRegionX1[move] = dirtyRegionX1[move + 1]
+			dirtyRegionY1[move] = dirtyRegionY1[move + 1]
+		Next
+	End Method
+
+	Method SetDirtyFull()
+		dirtyCount = 1
+		dirtyRegionX0[0] = 0
+		dirtyRegionY0[0] = 0
+		dirtyRegionX1[0] = target.Width()
+		dirtyRegionY1[0] = target.Height()
+		dirtyX0 = 0
+		dirtyY0 = 0
+		dirtyX1 = target.Width()
+		dirtyY1 = target.Height()
+		dirtyValid = True
 	End Method
 
 	Method DrawingTarget:TDisplayBuffer()
@@ -1589,6 +1687,14 @@ End Function
 
 Function DirtyRect:Int(x:Int Var, y:Int Var, width:Int Var, height:Int Var)
 	Return Default2DContext().DirtyRect(x, y, width, height)
+End Function
+
+Function DirtyRegionCount:Int()
+	Return Default2DContext().DirtyRegionCount()
+End Function
+
+Function DirtyRegion:Int(index:Int, x:Int Var, y:Int Var, width:Int Var, height:Int Var)
+	Return Default2DContext().DirtyRegion(index, x, y, width, height)
 End Function
 
 Function InvalidateRect(x:Int, y:Int, width:Int, height:Int)

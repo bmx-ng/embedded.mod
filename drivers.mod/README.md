@@ -47,10 +47,11 @@ DrawLine 0, 12, 71, 12
 Present
 ```
 
-For displays where transfer bandwidth matters, Graphics2D can accumulate one
-conservative dirty rectangle without allocating a tile list or inspecting the
-framebuffer. Tracking is opt-in, so applications that always present complete
-frames do no dirty-bound calculations:
+For displays where transfer bandwidth matters, Graphics2D accumulates a small
+fixed list of physical dirty rectangles without inspecting the framebuffer or
+allocating while drawing. Overlapping and edge-adjacent changes are merged;
+distant changes remain independent. Tracking is opt-in, so applications that
+always present complete frames do no dirty-bound calculations:
 
 ```blitzmax
 SetDirtyTracking True
@@ -62,13 +63,21 @@ DrawText "42", 24, 16
 PresentDirty
 ```
 
-`PresentDirty` calls the display's existing `PresentRegion` boundary and clears
-the region only after a successful transfer. If nothing changed, it succeeds
-without calling the driver. A failed transfer retains the rectangle for retry.
-`DirtyRect` exposes the accumulated physical bounds for diagnostics,
+`PresentDirty` submits the complete list through `TDisplay.PresentRegions` and
+clears it only after a successful transfer. The default synchronous driver
+implementation presents each region in order; framebuffer-swap drivers can
+override the method to preserve one atomic frame transition. If nothing
+changed, it succeeds without calling the driver. A failed transfer retains all
+regions for retry. `DirtyRegionCount` and `DirtyRegion` expose individual
+rectangles, while `DirtyRect` retains the convenient bounding-union view.
 `ResetDirty` discards them, and `InvalidateRect` or `InvalidateAll` covers
-changes made outside Graphics2D. Drivers remain free to expand a request to
-page, row, DMA, or controller-specific transfer boundaries.
+changes made outside Graphics2D.
+
+The tracker holds at most eight rectangles. A ninth independent fragment, or
+dirty coverage reaching 60 percent of the framebuffer, deterministically
+collapses the list to one full-screen update. This bounds bookkeeping and
+driver-call costs without heap allocation. Drivers remain free to expand a
+request to page, row, DMA, or controller-specific transfer boundaries.
 
 `TDisplay.Capabilities` distinguishes partial presentation, a live scanout
 framebuffer, vertical synchronization, true buffer swapping, optimized discard
