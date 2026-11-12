@@ -243,7 +243,10 @@ Type TFontSelection
 End Type
 
 Function AddGlyph:TBdfGlyph[](glyphs:TBdfGlyph[], glyph:TBdfGlyph)
-	If Not glyph Or glyph.codePoint < 0 Or Not glyph.bitmap Then Return glyphs
+	If Not glyph Or glyph.codePoint < 0 Then Return glyphs
+	' BDF permits a zero-sized bitmap for blank glyphs such as space. A missing
+	' bitmap is only malformed when the glyph declares visible dimensions.
+	If Not glyph.bitmap And (glyph.width > 0 Or glyph.height > 0) Then Return glyphs
 	glyphs = glyphs[..glyphs.length + 1]
 	glyphs[glyphs.length - 1] = glyph
 	Return glyphs

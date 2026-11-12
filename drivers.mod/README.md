@@ -123,9 +123,27 @@ into any `TDisplayBuffer`. Rendering and measurement perform no allocation, and
 integer pixel scaling reuses the original glyph data. Text coordinates specify
 the top-left of the first line rather than a controller-specific baseline.
 
+The bundled bitmap-font catalogue contains only fonts with clear
+redistribution-friendly licences. Every face or size is an independently
+imported module and carries its upstream licence as `FONT-LICENSE.txt`:
+
+| Family | Native faces | Glyph coverage | Font licence |
+| --- | --- | ---: | --- |
+| ANAKRON | 8x12 | 2,006 | SIL OFL 1.1 |
+| Cozette | 6x13 | 6,046 | MIT |
+| Scientifica | 11-pixel regular, bold, and italic | 981-1,082 | SIL OFL 1.1 |
+| Spleen | 5x8, 6x12, 8x16, 12x24, 16x32, and 32x64 | 472-1,004 | BSD 2-Clause |
+| Tamzen | 5x9, 6x12, 7x13, 7x14, 8x15, 8x16, and 10x20; regular and bold | 189-190 | permissive Tamzen/Tamsyn licence |
+| Terminus | 6x12 through 16x32; regular and bold except 6x12 | 1,356 | SIL OFL 1.1 |
+
+Module names reflect family, weight, and native size. For example,
+`Embedded.Drivers.Display.Fonts.Cozette.Regular6x13` exposes
+`Cozette6x13Font()`, while
+`Embedded.Drivers.Display.Fonts.Terminus.Bold12x24` exposes
+`Terminus12x24BoldFont()`.
+
 The complete Spleen bitmap family is grouped below
-`Embedded.Drivers.Display.Fonts.Spleen` and is available as independently
-imported modules under its BSD 2-Clause licence:
+`Embedded.Drivers.Display.Fonts.Spleen`:
 
 | Module suffix | Native cell | Glyphs | EBF1 data |
 | --- | ---: | ---: | ---: |
