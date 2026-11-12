@@ -48,11 +48,14 @@ Type TSSD1306Display Extends TDisplay
 	up to 128 pixels and height up to 64 pixels.
 	End Rem
 	Function Create:TSSD1306Display(controller:Int, address:UInt, width:Int, ..
-			height:Int, columnOffset:Int = 0, pageOffset:Int = 0)
+		height:Int, columnOffset:Int = 0, pageOffset:Int = 0)
 		If controller < 0 Or address > $7f Or width <= 0 Or width > 128 Or ..
 				height <= 0 Or height > 64 Or columnOffset < 0 Or ..
 				columnOffset + width > 128 Or pageOffset < 0 Or ..
-				pageOffset + ((height + 7) / 8) > 8 Then Return Null
+				pageOffset + ((height + 7) / 8) > 8 Then
+			Return Null
+		End If
+
 		Local display:TSSD1306Display = New TSSD1306Display
 		display.controller = controller
 		display.address = address
@@ -64,7 +67,10 @@ Type TSSD1306Display Extends TDisplay
 		display.precharge = $f1
 		display.vcomh = $40
 		display.comPins = $02
-		If height > 32 Then display.comPins = $12
+		If height > 32 Then
+			display.comPins = $12
+		End If
+
 		display.commandBuffer = New Byte[32]
 		display.dataBuffer = New Byte[width + 1]
 		Return display
@@ -76,9 +82,12 @@ Type TSSD1306Display Extends TDisplay
 	contrast, precharge, and VCOMH settings used by 0.42-inch modules.
 	End Rem
 	Function Create72x40:TSSD1306Display(controller:Int, ..
-			address:UInt = SSD1306DefaultAddress)
+		address:UInt = SSD1306DefaultAddress)
 		Local display:TSSD1306Display = Create(controller, address, 72, 40, 28, 0)
-		If Not display Then Return Null
+		If Not display Then
+			Return Null
+		End If
+
 		display.internalIRef = True
 		display.contrast = $af
 		display.precharge = $22
@@ -105,13 +114,22 @@ Type TSSD1306Display Extends TDisplay
 	Method Initialize:Int()
 		Local first:Byte[] = [Byte($ae), Byte($d5), Byte($80), ..
 			Byte($a8), Byte(displayHeight - 1), Byte($d3), Byte(0)]
-		If Not SendCommands(first) Then Return False
-		If internalIRef And Not SendPair($ad, $30) Then Return False
+		If Not SendCommands(first) Then
+			Return False
+		End If
+
+		If internalIRef And Not SendPair($ad, $30) Then
+			Return False
+		End If
+
 		Local second:Byte[] = [Byte($8d), Byte($14), Byte($40), Byte($a6), ..
 			Byte($a4), Byte($20), Byte(0), Byte($a1), Byte($c8), ..
 			Byte($da), comPins, Byte($81), contrast, Byte($d9), precharge, ..
 			Byte($db), vcomh, Byte($2e)]
-		If Not SendCommands(second) Then Return False
+		If Not SendCommands(second) Then
+			Return False
+		End If
+
 		initialized = SendCommand($af)
 		Return initialized
 	End Method
@@ -121,49 +139,90 @@ Type TSSD1306Display Extends TDisplay
 	End Method
 
 	Method SetEnabled:Int(enabled:Int) Override
-		If Not initialized Then Return False
-		If enabled Then Return SendCommand($af)
+		If Not initialized Then
+			Return False
+		End If
+
+		If enabled Then
+			Return SendCommand($af)
+		End If
+
 		Return SendCommand($ae)
 	End Method
 
 	Method SetContrast:Int(value:Byte)
-		If Not initialized Then Return False
+		If Not initialized Then
+			Return False
+		End If
+
 		contrast = value
 		Return SendPair($81, value)
 	End Method
 
 	Method SetInverted:Int(inverted:Int)
-		If Not initialized Then Return False
-		If inverted Then Return SendCommand($a7)
+		If Not initialized Then
+			Return False
+		End If
+
+		If inverted Then
+			Return SendCommand($a7)
+		End If
+
 		Return SendCommand($a6)
 	End Method
 
 	Method SetFlipped:Int(flipped:Int)
-		If Not initialized Then Return False
+		If Not initialized Then
+			Return False
+		End If
+
 		If flipped Then
 			Local commands:Byte[] = [Byte($a0), Byte($c0)]
 			Return SendCommands(commands)
 		End If
+
 		Local commands:Byte[] = [Byte($a1), Byte($c8)]
 		Return SendCommands(commands)
 	End Method
 
 	Method PresentPixels:Int(pixels:Byte Ptr, stride:Int, format:Int, ..
 			x:Int, y:Int, width:Int, height:Int) Override
-		If Not initialized Or pixels = Null Then Return DisplayErrorInvalidArgument
-		If format <> DisplayPixelFormatMono1 Then Return DisplayErrorUnsupportedFormat
+		If Not initialized Or pixels = Null Then
+			Return DisplayErrorInvalidArgument
+		End If
+
+		If format <> DisplayPixelFormatMono1 Then
+			Return DisplayErrorUnsupportedFormat
+		End If
+
 		If stride < DisplayMinimumStride(displayWidth, format) Or width <= 0 Or ..
-				height <= 0 Then Return DisplayErrorInvalidArgument
+				height <= 0 Then
+			Return DisplayErrorInvalidArgument
+		End If
 
 		Local x0:Int = x
 		Local y0:Int = y
 		Local x1:Int = x + width
 		Local y1:Int = y + height
-		If x0 < 0 Then x0 = 0
-		If y0 < 0 Then y0 = 0
-		If x1 > displayWidth Then x1 = displayWidth
-		If y1 > displayHeight Then y1 = displayHeight
-		If x0 >= x1 Or y0 >= y1 Then Return DisplayErrorInvalidArgument
+		If x0 < 0 Then
+			x0 = 0
+		End If
+
+		If y0 < 0 Then
+			y0 = 0
+		End If
+
+		If x1 > displayWidth Then
+			x1 = displayWidth
+		End If
+
+		If y1 > displayHeight Then
+			y1 = displayHeight
+		End If
+
+		If x0 >= x1 Or y0 >= y1 Then
+			Return DisplayErrorInvalidArgument
+		End If
 
 		Local firstPage:Int = y0 Shr 3
 		Local lastPage:Int = (y1 - 1) Shr 3
@@ -173,8 +232,9 @@ Type TSSD1306Display Extends TDisplay
 			commandBuffer[1] = Byte($b0 | (pageOffset + page))
 			commandBuffer[2] = Byte($10 | (ramColumn Shr 4))
 			commandBuffer[3] = Byte(ramColumn & $0f)
-			If I2CWriteBlocking(controller, address, Varptr commandBuffer[0], 4) <> 4 Then ..
+			If I2CWriteBlocking(controller, address, Varptr commandBuffer[0], 4) <> 4 Then
 				Return DisplayErrorGeneric
+			End If
 
 			dataBuffer[0] = $40
 			For Local px:Int = x0 Until x1
@@ -183,15 +243,21 @@ Type TSSD1306Display Extends TDisplay
 					Local py:Int = page * 8 + bit
 					If py < displayHeight Then
 						Local source:Byte = pixels[py * stride + (px Shr 3)]
-						If source & ($80 Shr (px & 7)) Then packed :| Byte(1 Shl bit)
+						If source & ($80 Shr (px & 7)) Then
+							packed :| Byte(1 Shl bit)
+						End If
 					End If
 				Next
+
 				dataBuffer[px - x0 + 1] = packed
 			Next
+
 			Local transferLength:Int = x1 - x0 + 1
-			If I2CWriteBlocking(controller, address, Varptr dataBuffer[0], ..
-					transferLength) <> transferLength Then Return DisplayErrorGeneric
+			If I2CWriteBlocking(controller, address, Varptr dataBuffer[0], transferLength) <> transferLength Then
+				Return DisplayErrorGeneric
+			End If
 		Next
+
 		Return True
 	End Method
 
@@ -210,12 +276,15 @@ Type TSSD1306Display Extends TDisplay
 	End Method
 
 	Method SendCommands:Int(commands:Byte[])
-		If Not commands Or commands.length = 0 Or commands.length + 1 > commandBuffer.length Then ..
+		If Not commands Or commands.length = 0 Or commands.length + 1 > commandBuffer.length Then
 			Return False
+		End If
+
 		commandBuffer[0] = 0
 		For Local index:Int = 0 Until commands.length
 			commandBuffer[index + 1] = commands[index]
 		Next
+
 		Local length:Int = commands.length + 1
 		Return I2CWriteBlocking(controller, address, Varptr commandBuffer[0], length) = length
 	End Method
