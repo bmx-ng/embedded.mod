@@ -76,6 +76,34 @@ DrawRect 2, 2, 4, 4
 passed :& frame.Pixel(1, 1) = 1 And frame.Pixel(3, 3) = 1
 passed :& frame.Pixel(6, 6) = 1 And Present() = 1
 
+' Quarter-turns expose logical dimensions and rotate all drawing through the
+' same integer coordinate mapping.
+Local rotated:TDisplayBuffer = TDisplayBuffer.Create(10, 6, DisplayPixelFormatMono1)
+Local rotatedGraphics:TEmbedded2DContext = TEmbedded2DContext.Create(rotated)
+passed :& rotatedGraphics.SetRotation(90)
+passed :& rotatedGraphics.Rotation() = 90 And rotatedGraphics.Width() = 6 And rotatedGraphics.Height() = 10
+rotatedGraphics.Plot(0, 0)
+rotatedGraphics.Plot(5, 9)
+passed :& rotated.Pixel(9, 0) = 1 And rotated.Pixel(0, 5) = 1
+rotatedGraphics.SetColor(255, 255, 255)
+rotatedGraphics.FillRect(1, 2, 2, 3)
+passed :& rotated.Pixel(5, 1) = 1 And rotated.Pixel(7, 2) = 1
+rotated.Clear()
+rotatedGraphics.SetFont(Spleen5x8Font())
+rotatedGraphics.DrawText("A", 0, 0)
+passed :& rotated.Pixel(8, 1) = 1 And rotated.Pixel(8, 2) = 1
+rotated.Clear()
+passed :& rotatedGraphics.SetRotation(180)
+rotatedGraphics.Plot(0, 0)
+rotatedGraphics.Plot(9, 5)
+passed :& rotated.Pixel(9, 5) = 1 And rotated.Pixel(0, 0) = 1
+rotated.Clear()
+passed :& rotatedGraphics.SetRotation(-90) And rotatedGraphics.Rotation() = 270
+rotatedGraphics.Plot(0, 0)
+rotatedGraphics.Plot(5, 9)
+passed :& rotated.Pixel(0, 5) = 1 And rotated.Pixel(9, 0) = 1
+passed :& Not rotatedGraphics.SetRotation(45) And rotatedGraphics.Rotation() = 270
+
 If passed Then
 	Print "Embedded Graphics2D conformance test passed"
 Else

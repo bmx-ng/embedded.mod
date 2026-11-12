@@ -29,6 +29,150 @@ End Function
 
 Public
 
+Const GraphicsRotation0:Int = 0
+Const GraphicsRotation90:Int = 90
+Const GraphicsRotation180:Int = 180
+Const GraphicsRotation270:Int = 270
+
+Private
+
+' A logical drawing view over a physical framebuffer. Keeping this as a buffer
+' adapter means fonts, images, and future raster operations all inherit the
+' same exact quarter-turn transform without allocating while drawing.
+Type TRotatedDisplayBuffer Extends TDisplayBuffer
+	Field target:TDisplayBuffer
+	Field rotation:Int
+
+	Function Create:TRotatedDisplayBuffer(target:TDisplayBuffer)
+		Local view:TRotatedDisplayBuffer = New TRotatedDisplayBuffer
+		view.target = target
+		Return view
+	End Function
+
+	Method SetRotation(rotation:Int)
+		Self.rotation = rotation
+	End Method
+
+	Method Width:Int() Override
+		If Not target Then Return 0
+		If rotation = GraphicsRotation90 Or rotation = GraphicsRotation270 Then Return target.Height()
+		Return target.Width()
+	End Method
+
+	Method Height:Int() Override
+		If Not target Then Return 0
+		If rotation = GraphicsRotation90 Or rotation = GraphicsRotation270 Then Return target.Width()
+		Return target.Height()
+	End Method
+
+	Method Stride:Int() Override
+		Return 0
+	End Method
+
+	Method Format:Int() Override
+		If target Then Return target.Format()
+		Return 0
+	End Method
+
+	Method Size:Int() Override
+		Return 0
+	End Method
+
+	Method Bytes:Byte[]() Override
+		Return Null
+	End Method
+
+	Method Pixels:Byte Ptr() Override
+		Return Null
+	End Method
+
+	Method Clear(color:UInt = 0) Override
+		If target Then target.Clear(color)
+	End Method
+
+	Method SetPixel(x:Int, y:Int, color:UInt = $ffffff) Override
+		If Not target Or x < 0 Or y < 0 Or x >= Width() Or y >= Height() Then Return
+		Select rotation
+			Case GraphicsRotation90
+				target.SetPixel(target.Width() - 1 - y, x, color)
+			Case GraphicsRotation180
+				target.SetPixel(target.Width() - 1 - x, target.Height() - 1 - y, color)
+			Case GraphicsRotation270
+				target.SetPixel(y, target.Height() - 1 - x, color)
+			Default
+				target.SetPixel(x, y, color)
+		End Select
+	End Method
+
+	Method Pixel:UInt(x:Int, y:Int) Override
+		If Not target Or x < 0 Or y < 0 Or x >= Width() Or y >= Height() Then Return 0
+		Select rotation
+			Case GraphicsRotation90
+				Return target.Pixel(target.Width() - 1 - y, x)
+			Case GraphicsRotation180
+				Return target.Pixel(target.Width() - 1 - x, target.Height() - 1 - y)
+			Case GraphicsRotation270
+				Return target.Pixel(y, target.Height() - 1 - x)
+		End Select
+		Return target.Pixel(x, y)
+	End Method
+
+	Method FillRect(x:Int, y:Int, width:Int, height:Int, color:UInt = $ffffff) Override
+		If Not target Or width <= 0 Or height <= 0 Then Return
+		Local x1:Int = x + width
+		Local y1:Int = y + height
+		If x < 0 Then x = 0
+		If y < 0 Then y = 0
+		If x1 > Width() Then x1 = Width()
+		If y1 > Height() Then y1 = Height()
+		If x >= x1 Or y >= y1 Then Return
+		width = x1 - x
+		height = y1 - y
+		Select rotation
+			Case GraphicsRotation90
+				target.FillRect(target.Width() - y - height, x, height, width, color)
+			Case GraphicsRotation180
+				target.FillRect(target.Width() - x - width, target.Height() - y - height, ..
+					width, height, color)
+			Case GraphicsRotation270
+				target.FillRect(y, target.Height() - x - width, height, width, color)
+			Default
+				target.FillRect(x, y, width, height, color)
+		End Select
+	End Method
+
+	Method DrawLine(x0:Int, y0:Int, x1:Int, y1:Int, color:UInt = $ffffff) Override
+		If Not target Then Return
+		Local tx0:Int
+		Local ty0:Int
+		Local tx1:Int
+		Local ty1:Int
+		MapPoint(x0, y0, tx0, ty0)
+		MapPoint(x1, y1, tx1, ty1)
+		target.DrawLine(tx0, ty0, tx1, ty1, color)
+	End Method
+
+	Private
+	Method MapPoint(x:Int, y:Int, targetX:Int Var, targetY:Int Var)
+		Select rotation
+			Case GraphicsRotation90
+				targetX = target.Width() - 1 - y
+				targetY = x
+			Case GraphicsRotation180
+				targetX = target.Width() - 1 - x
+				targetY = target.Height() - 1 - y
+			Case GraphicsRotation270
+				targetX = y
+				targetY = target.Height() - 1 - x
+			Default
+				targetX = x
+				targetY = y
+		End Select
+	End Method
+End Type
+
+Public
+
 Rem
 bbdoc: Stateful allocation-free drawing context for one display buffer.
 about: Origins affect drawing coordinates. Viewports are always expressed in
@@ -47,6 +191,8 @@ Type TEmbedded2DContext Final
 	Field viewportY:Int
 	Field viewportWidth:Int
 	Field viewportHeight:Int
+	Field rotation:Int
+	Field rotatedTarget:TRotatedDisplayBuffer
 
 	Public
 	Function Create:TEmbedded2DContext(target:TDisplayBuffer, display:TDisplay = Null)
@@ -57,6 +203,8 @@ Type TEmbedded2DContext Final
 
 	Method SetRenderTarget(target:TDisplayBuffer, display:TDisplay = Null)
 		Self.target = target
+		rotatedTarget = TRotatedDisplayBuffer.Create(target)
+		rotatedTarget.SetRotation(rotation)
 		boundDisplay = display
 		originX = 0
 		originY = 0
@@ -73,6 +221,46 @@ Type TEmbedded2DContext Final
 
 	Method Display:TDisplay()
 		Return boundDisplay
+	End Method
+
+	Rem
+	bbdoc: Selects clockwise logical canvas rotation in quarter turns.
+	about: Valid values are 0, 90, 180, and 270 degrees. Negative and greater-than-
+	360 values are normalized. A successful change resets the viewport to the new
+	logical canvas dimensions while retaining the origin, colours, and font.
+	returns: True when the requested angle is a supported quarter turn.
+	End Rem
+	Method SetRotation:Int(degrees:Int)
+		degrees :Mod 360
+		If degrees < 0 Then degrees :+ 360
+		If degrees <> GraphicsRotation0 And degrees <> GraphicsRotation90 And ..
+				degrees <> GraphicsRotation180 And degrees <> GraphicsRotation270 Then Return False
+		rotation = degrees
+		If rotatedTarget Then rotatedTarget.SetRotation(rotation)
+		ResetViewport()
+		Return True
+	End Method
+
+	Method Rotation:Int()
+		Return rotation
+	End Method
+
+	Rem
+	bbdoc: Returns the logical drawing width after rotation.
+	End Rem
+	Method Width:Int()
+		Local drawingTarget:TDisplayBuffer = DrawingTarget()
+		If drawingTarget Then Return drawingTarget.Width()
+		Return 0
+	End Method
+
+	Rem
+	bbdoc: Returns the logical drawing height after rotation.
+	End Rem
+	Method Height:Int()
+		Local drawingTarget:TDisplayBuffer = DrawingTarget()
+		If drawingTarget Then Return drawingTarget.Height()
+		Return 0
 	End Method
 
 	Method SetFont(font:TBitmapFont)
@@ -134,8 +322,8 @@ Type TEmbedded2DContext Final
 		Local y1:Int = y + height
 		If x < 0 Then x = 0
 		If y < 0 Then y = 0
-		If x1 > target.Width() Then x1 = target.Width()
-		If y1 > target.Height() Then y1 = target.Height()
+		If x1 > Width() Then x1 = Width()
+		If y1 > Height() Then y1 = Height()
 		If x1 <= x Or y1 <= y Then
 			viewportWidth = 0
 			viewportHeight = 0
@@ -151,8 +339,8 @@ Type TEmbedded2DContext Final
 		If target Then
 			viewportX = 0
 			viewportY = 0
-			viewportWidth = target.Width()
-			viewportHeight = target.Height()
+			viewportWidth = Width()
+			viewportHeight = Height()
 		Else
 			viewportX = 0
 			viewportY = 0
@@ -179,11 +367,11 @@ Type TEmbedded2DContext Final
 
 	Method Cls()
 		If Not target Or viewportWidth <= 0 Or viewportHeight <= 0 Then Return
-		If viewportX = 0 And viewportY = 0 And viewportWidth = target.Width() And ..
-				viewportHeight = target.Height() Then
+		If viewportX = 0 And viewportY = 0 And viewportWidth = Width() And ..
+				viewportHeight = Height() Then
 			target.Clear(clearColor)
 		Else
-			target.FillRect(viewportX, viewportY, viewportWidth, viewportHeight, clearColor)
+			DrawingTarget().FillRect(viewportX, viewportY, viewportWidth, viewportHeight, clearColor)
 		End If
 	End Method
 
@@ -191,7 +379,7 @@ Type TEmbedded2DContext Final
 		If Not target Then Return
 		x :+ originX
 		y :+ originY
-		If PointVisible(x, y) Then target.SetPixel(x, y, drawColor)
+		If PointVisible(x, y) Then DrawingTarget().SetPixel(x, y, drawColor)
 	End Method
 
 	Method DrawLine(x0:Int, y0:Int, x1:Int, y1:Int)
@@ -201,7 +389,7 @@ Type TEmbedded2DContext Final
 		x1 :+ originX
 		y1 :+ originY
 		If Not ClipLine(x0, y0, x1, y1) Then Return
-		target.DrawLine(x0, y0, x1, y1, drawColor)
+		DrawingTarget().DrawLine(x0, y0, x1, y1, drawColor)
 	End Method
 
 	Method DrawRect(x:Int, y:Int, width:Int, height:Int)
@@ -224,12 +412,12 @@ Type TEmbedded2DContext Final
 		If y < viewportY Then y = viewportY
 		If x1 > viewportX1 Then x1 = viewportX1
 		If y1 > viewportY1 Then y1 = viewportY1
-		If x < x1 And y < y1 Then target.FillRect(x, y, x1 - x, y1 - y, drawColor)
+		If x < x1 And y < y1 Then DrawingTarget().FillRect(x, y, x1 - x, y1 - y, drawColor)
 	End Method
 
 	Method DrawText:Int(text:String, x:Int, y:Int, scale:Int = 1)
 		If Not target Or Not currentFont Then Return x
-		Return currentFont.DrawTextClipped(target, text, x + originX, y + originY, ..
+		Return currentFont.DrawTextClipped(DrawingTarget(), text, x + originX, y + originY, ..
 			drawColor, scale, viewportX, viewportY, viewportWidth, viewportHeight) - originX
 	End Method
 
@@ -245,7 +433,7 @@ Type TEmbedded2DContext Final
 
 	Method DrawImage(image:TEmbeddedImage, x:Int, y:Int)
 		If Not target Or Not image Then Return
-		image.DrawRegionClipped(target, x + originX, y + originY, 0, 0, ..
+		image.DrawRegionClipped(DrawingTarget(), x + originX, y + originY, 0, 0, ..
 			image.Width(), image.Height(), drawColor, ..
 			viewportX, viewportY, viewportWidth, viewportHeight)
 	End Method
@@ -256,14 +444,14 @@ Type TEmbedded2DContext Final
 	End Rem
 	Method DrawImageRect(image:TEmbeddedImage, x:Int, y:Int, width:Int, height:Int)
 		If Not target Or Not image Then Return
-		image.DrawRectClipped(target, x + originX, y + originY, width, height, drawColor, ..
+		image.DrawRectClipped(DrawingTarget(), x + originX, y + originY, width, height, drawColor, ..
 			viewportX, viewportY, viewportWidth, viewportHeight)
 	End Method
 
 	Method DrawImageRegion(image:TEmbeddedImage, x:Int, y:Int, sourceX:Int, sourceY:Int, ..
 			width:Int, height:Int)
 		If Not target Or Not image Then Return
-		image.DrawRegionClipped(target, x + originX, y + originY, ..
+		image.DrawRegionClipped(DrawingTarget(), x + originX, y + originY, ..
 			sourceX, sourceY, width, height, drawColor, ..
 			viewportX, viewportY, viewportWidth, viewportHeight)
 	End Method
@@ -276,6 +464,11 @@ Type TEmbedded2DContext Final
 	End Method
 
 	Private
+	Method DrawingTarget:TDisplayBuffer()
+		If rotation And rotatedTarget Then Return rotatedTarget
+		Return target
+	End Method
+
 	Method PointVisible:Int(x:Int, y:Int)
 		Return viewportWidth > 0 And viewportHeight > 0 And x >= viewportX And y >= viewportY And ..
 			x < viewportX + viewportWidth And y < viewportY + viewportHeight
@@ -358,6 +551,22 @@ End Function
 
 Function SetDisplay(display:TDisplay)
 	Default2DContext().SetDisplay(display)
+End Function
+
+Function SetRotation:Int(degrees:Int)
+	Return Default2DContext().SetRotation(degrees)
+End Function
+
+Function Rotation:Int()
+	Return Default2DContext().Rotation()
+End Function
+
+Function GraphicsWidth:Int()
+	Return Default2DContext().Width()
+End Function
+
+Function GraphicsHeight:Int()
+	Return Default2DContext().Height()
 End Function
 
 Function SetFont(font:TBitmapFont)

@@ -30,7 +30,7 @@ then present it without additional frame-time allocation.
 `Embedded.Graphics2D` is an optional familiar drawing facade over this layer.
 It provides `Cls`, `SetColor`, `SetFont`, `DrawText`, `DrawImage`,
 `DrawImageRect`, `DrawImageRegion`, `Plot`, `DrawLine`, `DrawRect`, `FillRect`,
-origins, viewports, text metrics, and `Present`. The
+origins, viewports, text metrics, exact quarter-turn canvas rotation, and `Present`. The
 global functions use one default context for compact applications;
 `TEmbedded2DContext` exposes the same operations without global state for
 libraries or applications using multiple displays. It owns no second buffer and
@@ -43,6 +43,17 @@ SetColor 255, 255, 255
 Cls
 DrawText "Hello", 2, 2
 DrawLine 0, 12, 71, 12
+Present
+```
+
+`SetRotation` accepts clockwise `0`, `90`, `180`, or `270` degree orientation.
+All primitives, text, and images use the rotated logical canvas; `GraphicsWidth`
+and `GraphicsHeight` report its dimensions. Rotation remaps integer coordinates
+without trigonometry, filtering, another framebuffer, or frame-time allocation:
+
+```blitzmax
+SetRotation 90
+DrawText "Portrait", 4, 4
 Present
 ```
 

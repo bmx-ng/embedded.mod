@@ -193,11 +193,12 @@ Type TEmbeddedImage Final
 		If y + height > clipY1 Then height = clipY1 - y
 		If width <= 0 Or height <= 0 Then Return
 
-		If tint = $ffffff And Not HasMask() And imageFormat = target.Format() And ..
+		Local targetPixels:Byte Ptr = target.Pixels()
+		If targetPixels And tint = $ffffff And Not HasMask() And imageFormat = target.Format() And ..
 				imageFormat <> DisplayPixelFormatMono1 Then
 			Local bytesPerPixel:Int = DisplayPixelFormatBits(imageFormat) / 8
 			For Local row:Int = 0 Until height
-				MemCopy(target.Pixels() + (y + row) * target.Stride() + x * bytesPerPixel, ..
+				MemCopy(targetPixels + (y + row) * target.Stride() + x * bytesPerPixel, ..
 					data + pixelOffset + (sourceY + row) * pixelStride + sourceX * bytesPerPixel, ..
 					Size_T(width * bytesPerPixel))
 			Next

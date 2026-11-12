@@ -70,6 +70,15 @@ DrawImageRect image, 0, 0, 4, 4
 passed :& scaled.Pixel(0, 0) = 0 And scaled.Pixel(3, 3) = 0
 passed :& scaled.Pixel(1, 1) = $800000 And scaled.Pixel(2, 1) = $00ff00
 
+' Rotation is applied to images by the shared Graphics2D canvas view.
+Local rotatedImage:TDisplayBuffer = TDisplayBuffer.Create(3, 2, DisplayPixelFormatRGB888)
+SetRenderTarget rotatedImage
+passed :& SetRotation(90)
+DrawImage image, 0, 0
+passed :& GraphicsWidth() = 2 And GraphicsHeight() = 3
+passed :& rotatedImage.Pixel(2, 0) = $ff0000 And rotatedImage.Pixel(2, 1) = $00ff00
+passed :& rotatedImage.Pixel(1, 0) = $0000ff And rotatedImage.Pixel(1, 1) = $ffffff
+
 ' The first pixel is visible red; the second is transparent green.
 Local maskedData:Byte[] = New Byte[39]
 Header(maskedData, EmbeddedImageFlagMask, 2, 1, DisplayPixelFormatRGB888, 6, 32, 1, 38)
