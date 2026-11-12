@@ -16,6 +16,14 @@ Module Embedded.Drivers.Display
 ModuleInfo "Version: 0.1"
 ModuleInfo "License: zlib/libpng"
 
+Import "native/embedded_display_raster.c"
+
+Extern "C"
+	Function _DisplayFillRGB565(pixels:Byte Ptr, stride:Int, bufferWidth:Int, ..
+		bufferHeight:Int, x:Int, y:Int, width:Int, height:Int, color:UInt) = ..
+		"bmx_embedded_display_fill_rgb565"
+End Extern
+
 Rem
 bbdoc: One bit per pixel, rows stored top-to-bottom and most-significant bit first.
 End Rem
@@ -59,6 +67,11 @@ Rem
 bbdoc: The display can discard render-buffer contents after complete presentation.
 End Rem
 Const DisplayCapabilityDiscardPresent:Int = 16
+
+Rem
+bbdoc: Large solid fills may be handled by a target-specific hardware engine.
+End Rem
+Const DisplayCapabilityAcceleratedFill:Int = 32
 
 Const DisplayOrientation0:Int = 0
 Const DisplayOrientation90:Int = 90
@@ -325,18 +338,8 @@ Type TDisplayBuffer
 		If Not pixels Then Return
 		Select bufferFormat
 			Case DisplayPixelFormatRGB565
-				Local red:UInt = (color Shr 19) & $1f
-				Local green:UInt = (color Shr 10) & $3f
-				Local blue:UInt = (color Shr 3) & $1f
-				Local rgb565:UInt = (red Shl 11) | (green Shl 5) | blue
-				For Local py:Int = y0 Until y1
-					Local offset:Int = py * bufferStride + x0 * 2
-					For Local px:Int = x0 Until x1
-						pixels[offset] = Byte(rgb565)
-						pixels[offset + 1] = Byte(rgb565 Shr 8)
-						offset :+ 2
-					Next
-				Next
+				_DisplayFillRGB565(pixels, bufferStride, bufferWidth, bufferHeight, ..
+					x0, y0, x1 - x0, y1 - y0, color)
 				Return
 			Case DisplayPixelFormatRGB888
 				Local red:Byte = Byte(color Shr 16)

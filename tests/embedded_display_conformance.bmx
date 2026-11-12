@@ -61,6 +61,12 @@ rgb565.SetPixel(0, 0, $ff0000)
 rgb565.SetPixel(1, 0, $00ff00)
 passed :& rgb565.Pixel(0, 0) = $ff0000
 passed :& rgb565.Pixel(1, 0) = $00ff00
+Local rgb565Fill:TDisplayBuffer = TDisplayBuffer.Create(5, 3, DisplayPixelFormatRGB565)
+rgb565Fill.Clear($0000ff)
+rgb565Fill.FillRect(1, 1, 3, 1, $ff0000)
+passed :& rgb565Fill.Pixel(0, 0) = $0000ff And rgb565Fill.Pixel(4, 2) = $0000ff
+passed :& rgb565Fill.Pixel(0, 1) = $0000ff And rgb565Fill.Pixel(4, 1) = $0000ff
+passed :& rgb565Fill.Pixel(1, 1) = $ff0000 And rgb565Fill.Pixel(3, 1) = $ff0000
 
 Local rgb888:TDisplayBuffer = TDisplayBuffer.Create(1, 1, DisplayPixelFormatRGB888)
 rgb888.SetPixel(0, 0, $123456)
