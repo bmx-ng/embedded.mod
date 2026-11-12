@@ -50,12 +50,13 @@ in literal text, or every character occurring in a UTF-8 text/resource file:
 bdf2embeddedfont input.bdf output.ebf --ranges 0020-007e,00a0-00ff
 bdf2embeddedfont input.bdf output.ebf --chars "Temperature: 0123456789.C"
 bdf2embeddedfont input.bdf output.ebf --chars-file application-text.txt
+bdf2embeddedfont input.bdf output.ebf --chars "0123456789" --fallback 003f
 ```
 
 Selection options may be repeated and combined. With no selection the complete
-BDF is emitted. The font's default glyph is always retained, so text containing
-an omitted or unknown code point still renders a visible replacement rather
-than disappearing. The older positional range-list syntax remains supported.
+BDF is emitted. The font's default glyph is always retained. Use `--fallback`
+to select a different replacement such as `003f` (`?`) when the BDF default is
+blank. The older positional range-list syntax remains supported.
 
 For a repeatable application build, put its font requirements in a manifest:
 
@@ -63,6 +64,7 @@ For a repeatable application build, put its font requirements in a manifest:
 # font-subset.manifest
 ranges=0030-0039,002e-002f
 chars=Temperature: °C
+fallback=003f
 chars-file=text/en.txt
 chars-file=text/sensor-labels.txt
 ```

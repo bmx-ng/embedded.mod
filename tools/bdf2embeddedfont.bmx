@@ -176,6 +176,8 @@ Type TFontSelection
 	Field codePoints:Int[]
 	Field dependencies:String[]
 	Field enabled:Int
+	Field fallbackCodePoint:Int
+	Field hasFallback:Int
 
 	Method AddDependency(path:String)
 		path = RealPath(path)
@@ -195,6 +197,11 @@ Type TFontSelection
 	Method AddText(value:String)
 		codePoints = AddCharacters(codePoints, value)
 		enabled = True
+	End Method
+
+	Method SetFallback(value:String)
+		fallbackCodePoint = ParseHex(value)
+		hasFallback = True
 	End Method
 
 	Method AddTextFile(path:String)
@@ -226,6 +233,8 @@ Type TFontSelection
 					AddText(value)
 				Case "chars-file"
 					AddTextFile(ManifestRelativePath(baseDirectory, value))
+				Case "fallback"
+					SetFallback(value)
 				Default
 					Fail("unknown manifest key '" + key + "' at " + path + ":" + (lineIndex + 1))
 			End Select
@@ -280,6 +289,7 @@ If AppArgs.length < 3 Then
 	Print "  --ranges <list>      Include hexadecimal ranges, such as 0020-007e,00a0-00ff"
 	Print "  --chars <text>       Include every Unicode character occurring in text"
 	Print "  --chars-file <path>  Include every Unicode character occurring in a UTF-8 file"
+	Print "  --fallback <hex>     Use and retain this code point for missing glyphs"
 	Print "  --manifest <path>    Read ranges, chars, and chars-file entries from a manifest"
 	Print "  --if-needed          Do nothing when the output is newer than every input"
 	Print "Selection options may be repeated and are combined. The BDF default glyph is always included."
@@ -314,6 +324,8 @@ While argument < AppArgs.length
 			selection.AddText(DecodeUTF8Argument(AppArgs[argument + 1]))
 		Case "--chars-file"
 			selection.AddTextFile(AppArgs[argument + 1])
+		Case "--fallback"
+			selection.SetFallback(AppArgs[argument + 1])
 		Case "--manifest"
 			selection.AddManifest(AppArgs[argument + 1])
 		Default
@@ -357,10 +369,12 @@ For Local lineIndex:Int = 0 Until lines.length
 	Else If line.StartsWith("STARTCHAR") Then
 		current = New TBdfGlyph
 	Else If line = "ENDCHAR" Then
+		Local retainedDefault:Int = defaultCodePoint
+		If selection.hasFallback Then retainedDefault = selection.fallbackCodePoint
 		If current And (Not selection.enabled Or ..
 				(selection.ranges.length And CodePointSelected(current.codePoint, selection.ranges)) Or ..
 				CharacterSelected(current.codePoint, selection.codePoints) Or ..
-				current.codePoint = defaultCodePoint) Then glyphs = AddGlyph(glyphs, current)
+				current.codePoint = retainedDefault) Then glyphs = AddGlyph(glyphs, current)
 		current = Null
 	Else If current
 		Local fields:String[] = Fields(line)
@@ -400,6 +414,15 @@ Next
 If ascent < 0 Or descent < 0 Then Fail("BDF font has no ascent/descent properties")
 If glyphs.length = 0 Then Fail("no glyphs selected")
 SortGlyphs(glyphs)
+If selection.hasFallback Then defaultCodePoint = selection.fallbackCodePoint
+Local hasDefaultGlyph:Int
+For Local glyph:TBdfGlyph = EachIn glyphs
+	If glyph.codePoint = defaultCodePoint Then
+		hasDefaultGlyph = True
+		Exit
+	End If
+Next
+If Not hasDefaultGlyph Then Fail("fallback glyph " + defaultCodePoint + " is not present in the BDF")
 
 Local bitmapSize:Int
 For Local glyph:TBdfGlyph = EachIn glyphs
