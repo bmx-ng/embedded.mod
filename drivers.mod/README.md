@@ -207,14 +207,18 @@ semantics.
 ## Images and bitmaps
 
 `Embedded.Drivers.Display.Image` loads the compact EBI1 format from persistent
-firmware memory. An EBI1 image contains raw Mono1, RGB565, or RGB888 pixels and
-an optional one-bit transparency mask. The header and every data range are
+firmware memory. An EBI1 image contains raw Mono1, RGB565, RGB888, or packed
+1-, 2-, 4-, or 8-bit indexed pixels and an optional one-bit transparency mask.
+Indexed palettes contain only the colours actually used and retain exact
+24-bit RGB values. The header, palette indices, and every data range are
 validated when `TEmbeddedImage.Create` is called. Drawing thereafter is
-allocation-free and supports clipping, colour tinting, pixel-format conversion,
-unscaled source regions, deterministic nearest-neighbour scaling, horizontal
-and vertical flips, 0..255 opacity, and source colour-key transparency. Existing
-one-bit masks and colour keys may be used together; either can suppress a pixel.
-Opacity uses straight source-over blending against the current framebuffer.
+allocation-free: indexed pixels are expanded individually while rendering,
+never into a full-size temporary bitmap. Drawing supports clipping, colour
+tinting, pixel-format conversion, unscaled source regions, deterministic
+nearest-neighbour scaling, horizontal and vertical flips, 0..255 opacity, and
+source colour-key transparency. Existing one-bit masks and colour keys may be
+used together; either can suppress a pixel. Opacity uses straight source-over
+blending against the current framebuffer.
 
 RGB565 and RGB888 images drawn to RGB565 targets use a shared native raster
 path for copies, format conversion, clipping, nearest-neighbour scaling,
@@ -234,14 +238,20 @@ format suitable for the target display:
 bmk makeapp -r -o image2embedded tools/image2embedded.bmx
 image2embedded icon.svg icon.ebi --format mono1 --mask auto
 image2embedded splash.png splash.ebi --format rgb565 --mask auto
+image2embedded sprites.png sprites.ebi --format auto --mask auto
+image2embedded ui-icons.png ui-icons.ebi --format indexed4 --mask auto
 ```
 
 `--threshold` controls monochrome conversion, `--alpha-threshold` controls the
 one-bit transparency decision, and `--mask auto|always|none` controls whether a
 mask is emitted. `auto` only adds one when the source contains transparency.
-RGB565 is little-endian and is generally the compact colour choice; RGB888
-avoids colour quantisation. No decoder or source image library is linked into
-the firmware.
+The `auto` pixel format chooses the smallest exact indexed representation for
+images containing no more than 256 colours, otherwise it falls back to RGB565.
+An explicit indexed format requires the source to fit its 2-, 4-, 16-, or
+256-colour capacity and reports an error rather than silently quantising it.
+RGB565 is little-endian and is generally the compact photographic choice;
+RGB888 avoids colour quantisation. No decoder or source image library is linked
+into the firmware.
 
 Embed the converted asset and draw it through either `TEmbeddedImage` directly
 or `Embedded.Graphics2D`:

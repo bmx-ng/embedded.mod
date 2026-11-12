@@ -5,9 +5,9 @@ SuperStrict
 
 Rem
 bbdoc: Compact firmware-resident images and allocation-free raster drawing.
-about: EBI1 images contain raw Mono1, RGB565, or RGB888 pixels and an optional
-one-bit transparency mask. Images are validated once when opened and can then
-be clipped, tinted, converted, or nearest-neighbour scaled while drawing.
+about: EBI1 images contain raw Mono1, RGB565, RGB888, or indexed pixels and an
+optional one-bit transparency mask. Images are validated once when opened and
+can then be clipped, tinted, converted, or nearest-neighbour scaled while drawing.
 End Rem
 Module Embedded.Drivers.Display.Image
 ?embedded
@@ -30,6 +30,10 @@ End Extern
 Const EmbeddedImageVersion:Int = 1
 Const EmbeddedImageEncodingRaw:Int = 0
 Const EmbeddedImageFlagMask:Int = 1
+Const EmbeddedImageFormatIndexed1:Int = $101
+Const EmbeddedImageFormatIndexed2:Int = $102
+Const EmbeddedImageFormatIndexed4:Int = $104
+Const EmbeddedImageFormatIndexed8:Int = $108
 Const EmbeddedImageDrawFlipX:Int = 1
 Const EmbeddedImageDrawFlipY:Int = 2
 Const EmbeddedImageColorKeyDisabled:UInt = $ffffffff:UInt
@@ -55,6 +59,20 @@ Function BlendComponent:UInt(source:UInt, destination:UInt, opacity:UInt)
 	Return (source * opacity + destination * (255 - opacity) + 127) / 255
 End Function
 
+Function IndexedFormatBits:Int(format:Int)
+	Select format
+		Case EmbeddedImageFormatIndexed1
+			Return 1
+		Case EmbeddedImageFormatIndexed2
+			Return 2
+		Case EmbeddedImageFormatIndexed4
+			Return 4
+		Case EmbeddedImageFormatIndexed8
+			Return 8
+	End Select
+	Return 0
+End Function
+
 Public
 
 Rem
@@ -72,6 +90,7 @@ Type TEmbeddedImage Final
 	Field maskStride:Int
 	Field maskOffset:Int
 	Field imageFlags:Int
+	Field paletteEntries:Int
 
 	Public
 	Rem
@@ -93,11 +112,32 @@ Type TEmbeddedImage Final
 		Local pixels:Int = Int(ImageU32(data, 20))
 		Local alphaStride:Int = Int(ImageU32(data, 24))
 		Local alpha:Int = Int(ImageU32(data, 28))
-		Local minimumStride:Int = DisplayMinimumStride(width, format)
+		Local indexedBits:Int = IndexedFormatBits(format)
+		Local minimumStride:Int
+		Local paletteEntries:Int
+		If indexedBits Then
+			minimumStride = (width * indexedBits + 7) / 8
+			If pixels < 35 Or ((pixels - 32) Mod 3) <> 0 Then Return Null
+			paletteEntries = (pixels - 32) / 3
+			If paletteEntries <= 0 Or paletteEntries > (1 Shl indexedBits) Then Return Null
+		Else
+			minimumStride = DisplayMinimumStride(width, format)
+			If pixels < 32 Then Return Null
+		End If
 		If width <= 0 Or height <= 0 Or minimumStride <= 0 Or ..
-				encoding <> EmbeddedImageEncodingRaw Or stride < minimumStride Or pixels < 32 Then Return Null
+				encoding <> EmbeddedImageEncodingRaw Or stride < minimumStride Then Return Null
 		Local pixelEnd:Long = Long(pixels) + Long(stride) * Long(height)
 		If pixelEnd > length Then Return Null
+		If indexedBits Then
+			For Local y:Int = 0 Until height
+				For Local x:Int = 0 Until width
+					Local packed:Int = Int(data[pixels + y * stride + ((x * indexedBits) Shr 3)]) & $ff
+					Local shift:Int = 8 - indexedBits - ((x * indexedBits) & 7)
+					Local index:Int = (packed Shr shift) & ((1 Shl indexedBits) - 1)
+					If index >= paletteEntries Then Return Null
+				Next
+			Next
+		End If
 		If flags & EmbeddedImageFlagMask Then
 			Local minimumMaskStride:Int = (width + 7) / 8
 			If alphaStride < minimumMaskStride Or alpha < 32 Then Return Null
@@ -117,6 +157,7 @@ Type TEmbeddedImage Final
 		image.maskStride = alphaStride
 		image.maskOffset = alpha
 		image.imageFlags = flags
+		image.paletteEntries = paletteEntries
 		Return image
 	End Function
 
@@ -134,6 +175,14 @@ Type TEmbeddedImage Final
 
 	Method HasMask:Int()
 		Return (imageFlags & EmbeddedImageFlagMask) <> 0
+	End Method
+
+	Method IsIndexed:Int()
+		Return paletteEntries > 0
+	End Method
+
+	Method PaletteSize:Int()
+		Return paletteEntries
 	End Method
 
 	Rem
@@ -337,6 +386,15 @@ Type TEmbeddedImage Final
 
 	Method Pixel:UInt(x:Int, y:Int)
 		Local offset:Int
+		Local indexedBits:Int = IndexedFormatBits(imageFormat)
+		If indexedBits Then
+			Local packed:Int = Int(data[pixelOffset + y * pixelStride + ((x * indexedBits) Shr 3)]) & $ff
+			Local shift:Int = 8 - indexedBits - ((x * indexedBits) & 7)
+			Local index:Int = (packed Shr shift) & ((1 Shl indexedBits) - 1)
+			offset = 32 + index * 3
+			Return (UInt(Int(data[offset]) & $ff) Shl 16) | ..
+				(UInt(Int(data[offset + 1]) & $ff) Shl 8) | UInt(Int(data[offset + 2]) & $ff)
+		End If
 		Select imageFormat
 			Case DisplayPixelFormatMono1
 				offset = pixelOffset + y * pixelStride + (x Shr 3)

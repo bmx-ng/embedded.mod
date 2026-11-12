@@ -50,6 +50,52 @@ Local image:TEmbeddedImage = TEmbeddedImage.Create(Varptr rgbData[0], rgbData.le
 passed :& image <> Null And image.Width() = 2 And image.Height() = 2
 passed :& image.Format() = DisplayPixelFormatRGB888 And Not image.HasMask()
 
+' Indexed pixels use an exact RGB888 palette held directly before the pixels.
+Local indexedData:Byte[] = New Byte[46]
+Header(indexedData, 0, 2, 2, EmbeddedImageFormatIndexed2, 1, 44)
+' Red, green, blue, white palette.
+indexedData[32] = $ff
+indexedData[36] = $ff
+indexedData[40] = $ff
+indexedData[41] = $ff
+indexedData[42] = $ff
+indexedData[43] = $ff
+indexedData[44] = $10 ' indices 0, 1
+indexedData[45] = $b0 ' indices 2, 3
+Local indexedImage:TEmbeddedImage = TEmbeddedImage.Create(Varptr indexedData[0], indexedData.length)
+passed :& indexedImage <> Null And indexedImage.IsIndexed() And indexedImage.PaletteSize() = 4
+passed :& indexedImage.Format() = EmbeddedImageFormatIndexed2
+Local indexedTarget:TDisplayBuffer = TDisplayBuffer.Create(4, 4, DisplayPixelFormatRGB565)
+indexedImage.DrawRect(indexedTarget, 0, 0, 4, 4)
+passed :& indexedTarget.Pixel(0, 0) = $ff0000 And indexedTarget.Pixel(3, 0) = $00ff00
+passed :& indexedTarget.Pixel(0, 3) = $0000ff And indexedTarget.Pixel(3, 3) = $ffffff
+
+' All packed index widths use the same most-significant-bit-first row layout.
+Local indexed1Data:Byte[] = New Byte[39]
+Header(indexed1Data, 0, 2, 1, EmbeddedImageFormatIndexed1, 1, 38)
+indexed1Data[35] = $ff; indexed1Data[36] = $ff; indexed1Data[37] = $ff
+indexed1Data[38] = $40
+Local indexed1:TEmbeddedImage = TEmbeddedImage.Create(Varptr indexed1Data[0], indexed1Data.length)
+Local indexedWidthsTarget:TDisplayBuffer = TDisplayBuffer.Create(2, 3, DisplayPixelFormatRGB888)
+indexed1.Draw(indexedWidthsTarget, 0, 0)
+passed :& indexedWidthsTarget.Pixel(0, 0) = 0 And indexedWidthsTarget.Pixel(1, 0) = $ffffff
+
+Local indexed4Data:Byte[] = New Byte[42]
+Header(indexed4Data, 0, 2, 1, EmbeddedImageFormatIndexed4, 1, 41)
+indexed4Data[32] = $ff; indexed4Data[36] = $ff; indexed4Data[40] = $ff
+indexed4Data[41] = $12
+Local indexed4:TEmbeddedImage = TEmbeddedImage.Create(Varptr indexed4Data[0], indexed4Data.length)
+indexed4.Draw(indexedWidthsTarget, 0, 1)
+passed :& indexedWidthsTarget.Pixel(0, 1) = $00ff00 And indexedWidthsTarget.Pixel(1, 1) = $0000ff
+
+Local indexed8Data:Byte[] = New Byte[40]
+Header(indexed8Data, 0, 2, 1, EmbeddedImageFormatIndexed8, 2, 38)
+indexed8Data[32] = $ff; indexed8Data[37] = $ff
+indexed8Data[38] = 0; indexed8Data[39] = 1
+Local indexed8:TEmbeddedImage = TEmbeddedImage.Create(Varptr indexed8Data[0], indexed8Data.length)
+indexed8.Draw(indexedWidthsTarget, 0, 2)
+passed :& indexedWidthsTarget.Pixel(0, 2) = $ff0000 And indexedWidthsTarget.Pixel(1, 2) = $0000ff
+
 ' The native RGB565 path preserves clipping, nearest-neighbour scaling, and flips.
 Local rgb565Data:Byte[] = New Byte[40]
 Header(rgb565Data, 0, 2, 2, DisplayPixelFormatRGB565, 4, 32)
@@ -159,6 +205,14 @@ Header(truncated, 0, 2, 2, DisplayPixelFormatRGB888, 6, 32)
 passed :& TEmbeddedImage.Create(Varptr truncated[0], truncated.length) = Null
 truncated[0] = Asc("X")
 passed :& TEmbeddedImage.Create(Varptr truncated[0], truncated.length) = Null
+
+' An index outside the stored palette is rejected during one-time validation.
+Local invalidIndexed:Byte[] = New Byte[39]
+Header(invalidIndexed, 0, 1, 1, EmbeddedImageFormatIndexed2, 1, 38)
+invalidIndexed[32] = $ff
+invalidIndexed[35] = $ff
+invalidIndexed[38] = $c0
+passed :& TEmbeddedImage.Create(Varptr invalidIndexed[0], invalidIndexed.length) = Null
 
 If passed Then
 	Print "Embedded display image conformance test passed"
