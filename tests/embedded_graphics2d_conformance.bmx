@@ -2,7 +2,7 @@ SuperStrict
 
 Import BRL.StandardIO
 Import Embedded.Drivers.Display
-Import Embedded.Drivers.Display.Fonts.Spleen5x8
+Import Embedded.Drivers.Display.Fonts.Spleen.Size5x8
 Import Embedded.Graphics2D
 
 Type TTestDisplay Extends TDisplay

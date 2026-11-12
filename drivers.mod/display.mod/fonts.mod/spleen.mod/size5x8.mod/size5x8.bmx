@@ -10,7 +10,7 @@ about: The complete Spleen 5x8 BDF character set is stored in firmware using
 the compact EBF1 representation. Spleen is distributed under the BSD 2-Clause
 license; see FONT-LICENSE.txt in this module.
 End Rem
-Module Embedded.Drivers.Display.Fonts.Spleen5x8
+Module Embedded.Drivers.Display.Fonts.Spleen.Size5x8
 ?embedded
 
 ModuleInfo "Version: 0.1"

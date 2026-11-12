@@ -80,7 +80,7 @@ and other capabilities that do not share equivalent semantics.
 | [`Embedded.Drivers.Display`](drivers.mod/README.md) | Mono1, RGB565, and RGB888 raster buffers with full or dirty-region presentation |
 | [`Embedded.Drivers.Display.Image`](drivers.mod/README.md) | Validated firmware-resident Mono1, RGB565, and RGB888 images with transparency, clipping, tinting, and scaling |
 | [`Embedded.Drivers.Display.Font`](drivers.mod/README.md) | Allocation-free Unicode bitmap-font measurement and rendering |
-| [`Embedded.Drivers.Display.Fonts.Spleen5x8`](drivers.mod/README.md) | Complete 5x8 Spleen bitmap font stored in firmware |
+| [`Embedded.Drivers.Display.Fonts.Spleen.*`](drivers.mod/README.md) | Independently imported Spleen bitmap fonts at 5x8, 6x12, 8x16, 12x24, 16x32, and 32x64 |
 | [`Embedded.Drivers.Displays.SSD1306`](drivers.mod/README.md) | Portable I2C SSD1306 OLED driver, including the 72x40 0.42-inch panel preset |
 | [`Embedded.Drivers.Touch`](drivers.mod/README.md) | Controller-neutral multitouch polling translated to standard `BRL.Event` touch events |
 | [`Embedded.Graphics2D`](drivers.mod/README.md) | Optional Max2D-style stateful drawing facade over portable display buffers |

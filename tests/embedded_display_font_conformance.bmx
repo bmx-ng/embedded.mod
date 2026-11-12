@@ -3,7 +3,7 @@ SuperStrict
 Import BRL.StandardIO
 Import Embedded.Drivers.Display
 Import Embedded.Drivers.Display.Font
-Import Embedded.Drivers.Display.Fonts.Spleen5x8
+Import Embedded.Drivers.Display.Fonts.Spleen.Size5x8
 
 Local passed:Int = True
 Local font:TBitmapFont = Spleen5x8Font()

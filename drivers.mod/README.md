@@ -123,9 +123,24 @@ into any `TDisplayBuffer`. Rendering and measurement perform no allocation, and
 integer pixel scaling reuses the original glyph data. Text coordinates specify
 the top-left of the first line rather than a controller-specific baseline.
 
-`Embedded.Drivers.Display.Fonts.Spleen5x8` provides the complete 472-glyph
-Spleen 5x8 font under its BSD 2-Clause licence. Importing the module links its
-11,360-byte font image; applications which do not import it pay no font cost.
+The complete Spleen bitmap family is grouped below
+`Embedded.Drivers.Display.Fonts.Spleen` and is available as independently
+imported modules under its BSD 2-Clause licence:
+
+| Module suffix | Native cell | Glyphs | EBF1 data |
+| --- | ---: | ---: | ---: |
+| `Size5x8` | 5x8 | 472 | 11,360 bytes |
+| `Size6x12` | 6x12 | 548 | 15,376 bytes |
+| `Size8x16` | 8x16 | 1,004 | 32,160 bytes |
+| `Size12x24` | 12x24 | 975 | 62,432 bytes |
+| `Size16x32` | 16x32 | 1,004 | 80,352 bytes |
+| `Size32x64` | 32x64 | 1,004 | 273,120 bytes |
+
+For example, importing `Embedded.Drivers.Display.Fonts.Spleen.Size8x16`
+exposes `Spleen8x16Font()`. Only that module's EBF1 data is linked;
+applications which do not import a size pay no flash cost for it. Use the
+native size where possible. The renderer can still apply exact integer
+enlargement when useful.
 
 The desktop tool `tools/bdf2embeddedfont.bmx` converts BDF sources to the EBF1
 format used by `TBitmapFont`. It can retain hexadecimal ranges, the characters
