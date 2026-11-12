@@ -92,6 +92,12 @@ Type TUITheme
 	Field button:TUIStyle
 	Field buttonPressed:TUIStyle
 	Field buttonDisabled:TUIStyle
+	Field control:TUIStyle
+	Field controlActive:TUIStyle
+	Field controlPressed:TUIStyle
+	Field controlDisabled:TUIStyle
+	Field progress:TUIStyle
+	Field progressFill:TUIStyle
 
 	Function Dark:TUITheme(font:TBitmapFont = Null)
 		Local theme:TUITheme = New TUITheme
@@ -109,6 +115,23 @@ Type TUITheme
 		theme.buttonDisabled = theme.button.Copy()
 		theme.buttonDisabled.foreground = $86919a
 		theme.buttonDisabled.background = $303941
+		theme.control = TUIStyle.Create($e8edf2, $26323d, True)
+		theme.control.border = $71818e
+		theme.control.borderWidth = 1
+		theme.control.cornerRadius = 4
+		theme.control.SetPaddingEdges(4, 4, 4, 4)
+		theme.controlActive = theme.control.Copy()
+		theme.controlActive.background = $2d8fca
+		theme.controlActive.border = $8dd8ff
+		theme.controlPressed = theme.controlActive.Copy()
+		theme.controlPressed.background = $1d668f
+		theme.controlDisabled = theme.control.Copy()
+		theme.controlDisabled.foreground = $86919a
+		theme.controlDisabled.background = $303941
+		theme.progress = theme.control.Copy()
+		theme.progress.background = $202a33
+		theme.progressFill = theme.controlActive.Copy()
+		theme.progressFill.borderWidth = 0
 		theme.SetFont(font)
 		Return theme
 	End Function
@@ -121,12 +144,24 @@ Type TUITheme
 		button.font = font
 		buttonPressed.font = font
 		buttonDisabled.font = font
+		control.font = font
+		controlActive.font = font
+		controlPressed.font = font
+		controlDisabled.font = font
+		progress.font = font
+		progressFill.font = font
 		screen.fontScale = scale
 		container.fontScale = scale
 		label.fontScale = scale
 		button.fontScale = scale
 		buttonPressed.fontScale = scale
 		buttonDisabled.fontScale = scale
+		control.fontScale = scale
+		controlActive.fontScale = scale
+		controlPressed.fontScale = scale
+		controlDisabled.fontScale = scale
+		progress.fontScale = scale
+		progressFill.fontScale = scale
 	End Method
 End Type
 
@@ -292,6 +327,7 @@ Type TUIWidget
 	End Method
 
 	Method SetStyle(style:TUIStyle)
+		_Invalidate()
 		uiStyle = style
 		_RequestLayout()
 	End Method
@@ -428,6 +464,37 @@ Type TUIContainer Extends TUIWidget
 	Method Button:TUIButton(text:String = "") Final
 		Local widget:TUIButton = New TUIButton
 		widget.SetText(text)
+		Add(widget)
+		Return widget
+	End Method
+
+	Method CheckBox:TUICheckBox(text:String = "", checked:Int = False) Final
+		Local widget:TUICheckBox = New TUICheckBox
+		widget.SetText(text)
+		widget.SetChecked(checked)
+		Add(widget)
+		Return widget
+	End Method
+
+	Method Switch:TUISwitch(value:Int = False) Final
+		Local widget:TUISwitch = New TUISwitch
+		widget.SetValue(value)
+		Add(widget)
+		Return widget
+	End Method
+
+	Method Slider:TUISlider(minimum:Int = 0, maximum:Int = 100, value:Int = 0) Final
+		Local widget:TUISlider = New TUISlider
+		widget.SetRange(minimum, maximum)
+		widget.SetValue(value)
+		Add(widget)
+		Return widget
+	End Method
+
+	Method ProgressBar:TUIProgressBar(minimum:Int = 0, maximum:Int = 100, value:Int = 0) Final
+		Local widget:TUIProgressBar = New TUIProgressBar
+		widget.SetRange(minimum, maximum)
+		widget.SetValue(value)
 		Add(widget)
 		Return widget
 	End Method
@@ -609,6 +676,7 @@ Type TUILabel Extends TUIWidget Final
 	Method SetText(text:String)
 		If Not text Then text = ""
 		If labelText = text Then Return
+		_Invalidate()
 		labelText = text
 		_RequestLayout()
 	End Method
@@ -660,6 +728,7 @@ Type TUIButton Extends TUIWidget Final
 	Method SetText(text:String)
 		If Not text Then text = ""
 		If buttonText = text Then Return
+		_Invalidate()
 		buttonText = text
 		_RequestLayout()
 	End Method
@@ -731,6 +800,341 @@ Type TUIButton Extends TUIWidget Final
 	Public
 	Method _Activate()
 		If clickHandler Then clickHandler(Self)
+	End Method
+End Type
+
+Type TUICheckBox Extends TUIWidget Final
+	Public
+	Field checkText:String
+	Field checked:Int
+	Field changeHandler(checkBox:TUICheckBox)
+
+	Public
+	Method New()
+		clickable = True
+	End Method
+
+	Method SetText(text:String)
+		If Not text Then text = ""
+		If checkText = text Then Return
+		_Invalidate()
+		checkText = text
+		_RequestLayout()
+	End Method
+
+	Method Text:String()
+		Return checkText
+	End Method
+
+	Method SetChecked(value:Int)
+		value = value <> 0
+		If checked = value Then Return
+		checked = value
+		_Invalidate()
+	End Method
+
+	Method Checked:Int()
+		Return checked
+	End Method
+
+	Method OnChange(handler(checkBox:TUICheckBox))
+		changeHandler = handler
+	End Method
+
+	Method DefaultStyle:TUIStyle() Override
+		If Context() And Context().Theme() Then
+			If Not Enabled() Then Return Context().Theme().controlDisabled
+			If Pressed() Then Return Context().Theme().controlPressed
+			If checked Then Return Context().Theme().controlActive
+			Return Context().Theme().control
+		End If
+		Return Super.DefaultStyle()
+	End Method
+
+	Method PreferredSize(availableWidth:Int, availableHeight:Int, width:Int Var, height:Int Var) Override
+		Local style:TUIStyle = DefaultStyle()
+		If uiStyle Then style = uiStyle
+		Local lineHeight:Int = 16
+		Local textWidth:Int
+		If style.font Then
+			lineHeight = style.font.LineHeight() * style.fontScale
+			textWidth = style.font.TextWidth(checkText, style.fontScale)
+		End If
+		Local boxSize:Int = lineHeight
+		width = boxSize + style.paddingLeft + style.paddingRight
+		If checkText.Length Then width :+ textWidth + Max(style.fontScale * 4, 6)
+		height = Max(lineHeight, boxSize) + style.paddingTop + style.paddingBottom
+		If requestedWidth >= 0 Then width = requestedWidth
+		If requestedHeight >= 0 Then height = requestedHeight
+	End Method
+
+	Method Draw(graphics:TEmbedded2DContext) Override
+		Local style:TUIStyle = DefaultStyle()
+		If uiStyle Then style = uiStyle
+		Local contentHeight:Int = Height() - style.paddingTop - style.paddingBottom
+		Local boxSize:Int = Max(Min(contentHeight, 24 * style.fontScale), 8)
+		Local boxX:Int = X() + style.paddingLeft
+		Local boxY:Int = Y() + (Height() - boxSize) / 2
+		graphics.SetColorValue(style.background)
+		If style.cornerRadius > 0 Then
+			graphics.FillRoundRect(boxX, boxY, boxSize, boxSize, Min(style.cornerRadius, boxSize / 3))
+		Else
+			graphics.FillRect(boxX, boxY, boxSize, boxSize)
+		End If
+		If style.borderWidth > 0 Then
+			graphics.SetColorValue(style.border)
+			graphics.DrawRoundRect(boxX, boxY, boxSize, boxSize, Min(style.cornerRadius, boxSize / 3))
+		End If
+		If checked Then
+			graphics.SetColorValue(style.foreground)
+			Local inset:Int = Max(boxSize / 5, 2)
+			graphics.DrawLine(boxX + inset, boxY + boxSize / 2, boxX + boxSize * 2 / 5, boxY + boxSize - inset)
+			graphics.DrawLine(boxX + boxSize * 2 / 5, boxY + boxSize - inset, boxX + boxSize - inset, boxY + inset)
+		End If
+		If style.font And checkText.Length Then
+			graphics.SetFont(style.font)
+			graphics.SetColorValue(style.foreground)
+			Local textHeight:Int = style.font.LineHeight() * style.fontScale
+			graphics.DrawText(checkText, boxX + boxSize + Max(style.fontScale * 4, 6), ..
+				Y() + (Height() - textHeight) / 2, style.fontScale)
+		End If
+	End Method
+
+	Public
+	Method _Activate()
+		SetChecked(Not checked)
+		If changeHandler Then changeHandler(Self)
+		EmitEvent(CreateEvent(EVENT_UIVALUECHANGED, Self, checked))
+	End Method
+End Type
+
+Type TUISwitch Extends TUIWidget Final
+	Public
+	Field switchValue:Int
+	Field changeHandler(switchControl:TUISwitch)
+
+	Public
+	Method New()
+		clickable = True
+	End Method
+
+	Method SetValue(value:Int)
+		value = value <> 0
+		If switchValue = value Then Return
+		switchValue = value
+		_Invalidate()
+	End Method
+
+	Method Value:Int()
+		Return switchValue
+	End Method
+
+	Method OnChange(handler(switchControl:TUISwitch))
+		changeHandler = handler
+	End Method
+
+	Method DefaultStyle:TUIStyle() Override
+		If Context() And Context().Theme() Then
+			If Not Enabled() Then Return Context().Theme().controlDisabled
+			If Pressed() Then Return Context().Theme().controlPressed
+			If switchValue Then Return Context().Theme().controlActive
+			Return Context().Theme().control
+		End If
+		Return Super.DefaultStyle()
+	End Method
+
+	Method PreferredSize(availableWidth:Int, availableHeight:Int, width:Int Var, height:Int Var) Override
+		Local style:TUIStyle = DefaultStyle()
+		If uiStyle Then style = uiStyle
+		Local unit:Int = 16 * style.fontScale
+		width = unit * 2 + style.paddingLeft + style.paddingRight
+		height = unit + style.paddingTop + style.paddingBottom
+		If requestedWidth >= 0 Then width = requestedWidth
+		If requestedHeight >= 0 Then height = requestedHeight
+	End Method
+
+	Method Draw(graphics:TEmbedded2DContext) Override
+		Local style:TUIStyle = DefaultStyle()
+		If uiStyle Then style = uiStyle
+		Local trackX:Int = X() + style.paddingLeft
+		Local trackY:Int = Y() + style.paddingTop
+		Local trackWidth:Int = Width() - style.paddingLeft - style.paddingRight
+		Local trackHeight:Int = Height() - style.paddingTop - style.paddingBottom
+		Local radius:Int = trackHeight / 2
+		graphics.SetColorValue(style.background)
+		graphics.FillRoundRect(trackX, trackY, trackWidth, trackHeight, radius)
+		If style.borderWidth > 0 Then
+			graphics.SetColorValue(style.border)
+			graphics.DrawRoundRect(trackX, trackY, trackWidth, trackHeight, radius)
+		End If
+		Local thumbRadius:Int = Max(radius - Max(style.borderWidth, 1) - 2, 2)
+		Local thumbX:Int = trackX + radius
+		If switchValue Then thumbX = trackX + trackWidth - radius
+		graphics.SetColorValue(style.foreground)
+		graphics.FillCircle(thumbX, trackY + radius, thumbRadius)
+	End Method
+
+	Public
+	Method _Activate()
+		SetValue(Not switchValue)
+		If changeHandler Then changeHandler(Self)
+		EmitEvent(CreateEvent(EVENT_UIVALUECHANGED, Self, switchValue))
+	End Method
+End Type
+
+Type TUIRangeWidget Extends TUIWidget
+	Public
+	Field minimumValue:Int
+	Field maximumValue:Int = 100
+	Field currentValue:Int
+
+	Public
+	Method SetRange(minimum:Int, maximum:Int)
+		If maximum < minimum Then maximum = minimum
+		If minimumValue = minimum And maximumValue = maximum Then Return
+		minimumValue = minimum
+		maximumValue = maximum
+		If currentValue < minimumValue Then currentValue = minimumValue
+		If currentValue > maximumValue Then currentValue = maximumValue
+		_Invalidate()
+	End Method
+
+	Method Minimum:Int()
+		Return minimumValue
+	End Method
+
+	Method Maximum:Int()
+		Return maximumValue
+	End Method
+
+	Method SetValue(value:Int)
+		If value < minimumValue Then value = minimumValue
+		If value > maximumValue Then value = maximumValue
+		If currentValue = value Then Return
+		currentValue = value
+		_Invalidate()
+	End Method
+
+	Method Value:Int()
+		Return currentValue
+	End Method
+
+	Method Fraction:Int(scale:Int)
+		If maximumValue <= minimumValue Then Return 0
+		Return Int(Long(currentValue - minimumValue) * scale / Long(maximumValue - minimumValue))
+	End Method
+End Type
+
+Type TUISlider Extends TUIRangeWidget Final
+	Public
+	Field changeHandler(slider:TUISlider)
+
+	Public
+	Method New()
+		clickable = True
+	End Method
+
+	Method OnChange(handler(slider:TUISlider))
+		changeHandler = handler
+	End Method
+
+	Method DefaultStyle:TUIStyle() Override
+		If Context() And Context().Theme() Then
+			If Not Enabled() Then Return Context().Theme().controlDisabled
+			If Pressed() Then Return Context().Theme().controlPressed
+			Return Context().Theme().control
+		End If
+		Return Super.DefaultStyle()
+	End Method
+
+	Method PreferredSize(availableWidth:Int, availableHeight:Int, width:Int Var, height:Int Var) Override
+		Local style:TUIStyle = DefaultStyle()
+		If uiStyle Then style = uiStyle
+		width = 120 * style.fontScale + style.paddingLeft + style.paddingRight
+		height = 20 * style.fontScale + style.paddingTop + style.paddingBottom
+		If requestedWidth >= 0 Then width = requestedWidth
+		If requestedHeight >= 0 Then height = requestedHeight
+	End Method
+
+	Method Draw(graphics:TEmbedded2DContext) Override
+		Local style:TUIStyle = DefaultStyle()
+		If uiStyle Then style = uiStyle
+		Local active:TUIStyle = style
+		If Context() And Context().Theme() And Enabled() Then active = Context().Theme().controlActive
+		Local radius:Int = Max((Height() - style.paddingTop - style.paddingBottom) / 2, 3)
+		Local startX:Int = X() + style.paddingLeft + radius
+		Local endX:Int = X() + Width() - style.paddingRight - radius
+		If endX < startX Then endX = startX
+		Local centerY:Int = Y() + Height() / 2
+		Local trackHeight:Int = Max(radius / 3, 2)
+		Local thumbX:Int = startX + Fraction(endX - startX)
+		graphics.SetColorValue(style.background)
+		graphics.FillRoundRect(startX, centerY - trackHeight / 2, endX - startX, trackHeight, trackHeight / 2)
+		If thumbX > startX Then
+			graphics.SetColorValue(active.background)
+			graphics.FillRoundRect(startX, centerY - trackHeight / 2, thumbX - startX, trackHeight, trackHeight / 2)
+		End If
+		graphics.SetColorValue(active.foreground)
+		graphics.FillCircle(thumbX, centerY, Max(radius - 2, 2))
+	End Method
+
+	Public
+	Method _TrackPointer(x:Int)
+		Local style:TUIStyle = DefaultStyle()
+		If uiStyle Then style = uiStyle
+		Local radius:Int = Max((Height() - style.paddingTop - style.paddingBottom) / 2, 3)
+		Local startX:Int = X() + style.paddingLeft + radius
+		Local endX:Int = X() + Width() - style.paddingRight - radius
+		Local value:Int = minimumValue
+		If endX > startX Then
+			If x < startX Then x = startX
+			If x > endX Then x = endX
+			value = minimumValue + Int((Long(x - startX) * Long(maximumValue - minimumValue) + ..
+				Long(endX - startX) / 2) / Long(endX - startX))
+		End If
+		If value = currentValue Then Return
+		SetValue(value)
+		If changeHandler Then changeHandler(Self)
+		EmitEvent(CreateEvent(EVENT_UIVALUECHANGED, Self, currentValue))
+	End Method
+End Type
+
+Type TUIProgressBar Extends TUIRangeWidget Final
+	Method DefaultStyle:TUIStyle() Override
+		If Context() And Context().Theme() Then Return Context().Theme().progress
+		Return Super.DefaultStyle()
+	End Method
+
+	Method PreferredSize(availableWidth:Int, availableHeight:Int, width:Int Var, height:Int Var) Override
+		Local style:TUIStyle = DefaultStyle()
+		If uiStyle Then style = uiStyle
+		width = 120 * style.fontScale + style.paddingLeft + style.paddingRight
+		height = 12 * style.fontScale + style.paddingTop + style.paddingBottom
+		If requestedWidth >= 0 Then width = requestedWidth
+		If requestedHeight >= 0 Then height = requestedHeight
+	End Method
+
+	Method Draw(graphics:TEmbedded2DContext) Override
+		Local style:TUIStyle = DefaultStyle()
+		If uiStyle Then style = uiStyle
+		Local fill:TUIStyle = style
+		If Context() And Context().Theme() Then fill = Context().Theme().progressFill
+		Local barX:Int = X() + style.paddingLeft
+		Local barY:Int = Y() + style.paddingTop
+		Local barWidth:Int = Width() - style.paddingLeft - style.paddingRight
+		Local barHeight:Int = Height() - style.paddingTop - style.paddingBottom
+		Local radius:Int = Min(style.cornerRadius, barHeight / 2)
+		graphics.SetColorValue(style.background)
+		graphics.FillRoundRect(barX, barY, barWidth, barHeight, radius)
+		Local fillWidth:Int = Fraction(barWidth)
+		If fillWidth > 0 Then
+			graphics.SetColorValue(fill.background)
+			graphics.FillRoundRect(barX, barY, fillWidth, barHeight, radius)
+		End If
+		If style.borderWidth > 0 Then
+			graphics.SetColorValue(style.border)
+			graphics.DrawRoundRect(barX, barY, barWidth, barHeight, radius)
+		End If
 	End Method
 End Type
 
@@ -806,6 +1210,7 @@ Type TUIContext
 		If Not theme Then Return
 		themeValue = theme
 		rootWidget.uiStyle = theme.screen
+		InvalidateAll()
 		RequestLayout()
 	End Method
 
@@ -819,7 +1224,6 @@ Type TUIContext
 
 	Method RequestLayout()
 		layoutPending = True
-		InvalidateAll()
 	End Method
 
 	Method InvalidateAll()
@@ -918,15 +1322,24 @@ Type TUIContext
 					pressedContact = event.data
 					pressedArmed = True
 					target._SetPressed(True)
+					Local slider:TUISlider = TUISlider(target)
+					If slider Then slider._TrackPointer(x)
 				End If
 			Case EVENT_TOUCHMOVE
 				If pressedWidget And pressedContact = event.data Then
-					pressedArmed = pressedWidget.Contains(x, y)
-					pressedWidget._SetPressed(pressedArmed)
+					Local slider:TUISlider = TUISlider(pressedWidget)
+					If slider Then
+						slider._TrackPointer(x)
+					Else
+						pressedArmed = pressedWidget.Contains(x, y)
+						pressedWidget._SetPressed(pressedArmed)
+					End If
 				End If
 			Case EVENT_TOUCHUP
 				If pressedWidget And pressedContact = event.data Then
 					Local target:TUIWidget = pressedWidget
+					Local slider:TUISlider = TUISlider(target)
+					If slider Then slider._TrackPointer(x)
 					Local activate:Int = pressedArmed And target.Contains(x, y) And target.Enabled()
 					target._SetPressed(False)
 					pressedWidget = Null
@@ -934,8 +1347,18 @@ Type TUIContext
 					pressedArmed = False
 					If activate Then
 						Local button:TUIButton = TUIButton(target)
-						If button Then button._Activate()
-						EmitEvent(CreateEvent(EVENT_UIACTION, target, 0, 0, x, y))
+						If button Then
+							button._Activate()
+							EmitEvent(CreateEvent(EVENT_UIACTION, target, 0, 0, x, y))
+						Else
+							Local checkBox:TUICheckBox = TUICheckBox(target)
+							If checkBox Then
+								checkBox._Activate()
+							Else
+								Local switchControl:TUISwitch = TUISwitch(target)
+								If switchControl Then switchControl._Activate()
+							End If
+						End If
 					End If
 				End If
 		End Select

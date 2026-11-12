@@ -21,6 +21,7 @@ Import Embedded.Drivers.Display
 
 Const TouchMaximumContacts:Int = 10
 Const TouchMaximumDevices:Int = 4
+Const TouchReleaseDebouncePolls:Int = 2
 
 Private
 
@@ -54,6 +55,11 @@ Type TTouchDevice Abstract
 	Field previousIds:Int[TouchMaximumContacts]
 	Field previousX:Int[TouchMaximumContacts]
 	Field previousY:Int[TouchMaximumContacts]
+	Field previousMissing:Int[TouchMaximumContacts]
+	Field nextIds:Int[TouchMaximumContacts]
+	Field nextX:Int[TouchMaximumContacts]
+	Field nextY:Int[TouchMaximumContacts]
+	Field nextMissing:Int[TouchMaximumContacts]
 	Field configuredOrientation:Int
 
 	Method _TransformContact(x:Int Var, y:Int Var)
@@ -91,6 +97,7 @@ Type TTouchDevice Abstract
 		Local count:Int = PollContacts()
 		If count < 0 Then Return
 		If count > TouchMaximumContacts Then count = TouchMaximumContacts
+		Local nextCount:Int
 
 		For Local index:Int = 0 Until count
 			Local id:Int = ContactId(index)
@@ -109,21 +116,38 @@ Type TTouchDevice Abstract
 					_NormalizedTouchCoordinate(x, LogicalWidth()), ..
 					_NormalizedTouchCoordinate(y, LogicalHeight())))
 			End If
+			If nextCount < TouchMaximumContacts Then
+				nextIds[nextCount] = id
+				nextX[nextCount] = x
+				nextY[nextCount] = y
+				nextMissing[nextCount] = 0
+				nextCount :+ 1
+			End If
 		Next
 
 		For Local previous:Int = 0 Until previousCount
 			If _FindCurrent(previousIds[previous], count) < 0 Then
-				EmitEvent(CreateEvent(EVENT_TOUCHUP, Self, previousIds[previous], 0, ..
-					_NormalizedTouchCoordinate(previousX[previous], LogicalWidth()), ..
-					_NormalizedTouchCoordinate(previousY[previous], LogicalHeight())))
+				Local missing:Int = previousMissing[previous] + 1
+				If missing >= TouchReleaseDebouncePolls Then
+					EmitEvent(CreateEvent(EVENT_TOUCHUP, Self, previousIds[previous], 0, ..
+						_NormalizedTouchCoordinate(previousX[previous], LogicalWidth()), ..
+						_NormalizedTouchCoordinate(previousY[previous], LogicalHeight())))
+				Else If nextCount < TouchMaximumContacts Then
+					nextIds[nextCount] = previousIds[previous]
+					nextX[nextCount] = previousX[previous]
+					nextY[nextCount] = previousY[previous]
+					nextMissing[nextCount] = missing
+					nextCount :+ 1
+				End If
 			End If
 		Next
 
-		previousCount = count
-		For Local index:Int = 0 Until count
-			previousIds[index] = ContactId(index)
-			previousX[index] = ContactX(index)
-			previousY[index] = ContactY(index)
+		previousCount = nextCount
+		For Local index:Int = 0 Until nextCount
+			previousIds[index] = nextIds[index]
+			previousX[index] = nextX[index]
+			previousY[index] = nextY[index]
+			previousMissing[index] = nextMissing[index]
 		Next
 	End Method
 
