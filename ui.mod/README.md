@@ -2,9 +2,9 @@
 
 `Embedded.UI` is a small retained user-interface layer for embedded displays.
 It provides rows, columns and stacks, styled controls, focus navigation, touch
-handling, semantic events, scrolling and selectable lists. Rendering uses
-`Embedded.Graphics2D`, so the same widget code can sit over mono or colour
-display drivers.
+handling, semantic events, scrolling, selectable lists, tabs and popup
+overlays. Rendering uses `Embedded.Graphics2D`, so the same widget code can sit
+over mono or colour display drivers.
 
 ## Basic structure
 
@@ -95,6 +95,53 @@ the selected index in `event.data`. `OnSelectionChanged()` installs a direct
 callback. Programmatic `SetSelectedIndex()` changes selection without pretending
 that the user activated it. `MoveSelection()` clamps at the first and last item,
 keeps the selected item focused, and scrolls it into view.
+
+## Tabs, menus and combo boxes
+
+`TUITabView` retains each page and only lays out and draws the selected one:
+
+```blitzmax
+Local tabs:TUITabView = page.TabView()
+tabs.SetGrow(1)
+
+Local general:TUITabPage = tabs.Page("General")
+general.Label("General settings")
+
+Local network:TUITabPage = tabs.Page("Network")
+network.Label("Network settings")
+```
+
+Touching or explicitly activating a tab emits `EVENT_UISELECTIONCHANGED` with
+the tab view as its source. `SetSelectedIndex()` switches pages
+programmatically without emitting a user action.
+
+A combo box owns a persistent popup and reports user selections through the
+same selection event:
+
+```blitzmax
+Local mode:TUIComboBox = page.ComboBox()
+mode.AddItem("Automatic")
+mode.AddItem("Station")
+mode.AddItem("Access point")
+mode.SetSelectedIndex(0)
+```
+
+Applications can also construct a reusable popup menu. It is attached to the
+context rather than the page layout:
+
+```blitzmax
+Local menu:TUIPopupMenu = ui.PopupMenu()
+menu.Item("Rename")
+menu.Item("Delete")
+ui.ShowOverlay(menu, x, y, width)
+```
+
+Only one overlay is active in a context. Focus traversal remains inside it;
+selection or `DismissOverlay()` restores the previous focus. A touch outside
+the overlay dismisses it by default and is consumed, so it cannot accidentally
+activate the control underneath. Use
+`ShowOverlay(menu, x, y, width, UILayoutAuto, False)` for a modal overlay which
+ignores outside touches.
 
 ## Themes and rendering cost
 

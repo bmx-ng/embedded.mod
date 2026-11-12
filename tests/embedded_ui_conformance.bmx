@@ -99,6 +99,108 @@ Function Check(condition:Int, message:String)
 	If Not condition Then RuntimeError message
 End Function
 
+Function RunTabTests(touch:TFakeTouch)
+	Local navigationFrame:TDisplayBuffer = TDisplayBuffer.Create(240, 180, DisplayPixelFormatMono1)
+	Local navigationUI:TUIContext = TUIContext.CreateWithBuffer(navigationFrame, Null, touch, ..
+		TUITheme.Dark(Spleen5x8Font()))
+	Check(navigationUI <> Null, "could not create tab UI")
+	navigationUI.Theme().screen.background = 0
+	Local navigationPage:TUIColumn = navigationUI.Root()
+	navigationPage.SetPadding(4)
+	navigationPage.SetGap(4)
+	Local tabs:TUITabView = navigationPage.TabView()
+	tabs.SetHeight(76)
+	Local generalPage:TUITabPage = tabs.Page("General")
+	generalPage.SetPadding(3)
+	generalPage.Label("General settings")
+	Local networkPage:TUITabPage = tabs.Page("Network")
+	networkPage.SetPadding(3)
+	networkPage.Label("Network settings")
+	Local navigationSelectionStart:Int = selectionChangeCount
+	Check(navigationUI.Render(), "tab UI did not render")
+	Check(tabs.SelectedIndex() = 0 And generalPage.Visible() And Not networkPage.Visible(), ..
+		"tab view did not begin on its first page")
+	Check(navigationUI.SetFocus(tabs.TabButtonAt(1)), "second tab could not receive focus")
+	Check(navigationUI.ActivateFocused(), "focused tab did not activate")
+	Check(tabs.SelectedIndex() = 1 And Not generalPage.Visible() And networkPage.Visible(), ..
+		"tab activation did not switch retained pages")
+	Check(selectionChangeCount = navigationSelectionStart + 1 And ..
+		selectionEventSource = tabs And selectionEventIndex = 1, ..
+		"tab selection did not emit its semantic event")
+	navigationUI.Close()
+End Function
+
+Function RunComboTests(touch:TFakeTouch)
+	' Combo boxes use a focus-trapping popup and outside dismissal must not leak
+	' the same touch sequence to a control underneath.
+	Local navigationFrame:TDisplayBuffer = TDisplayBuffer.Create(240, 180, DisplayPixelFormatMono1)
+	Local navigationUI:TUIContext = TUIContext.CreateWithBuffer(navigationFrame, Null, touch, ..
+		TUITheme.Dark(Spleen5x8Font()))
+	Check(navigationUI <> Null, "could not create combo UI")
+	Local navigationPage:TUIColumn = navigationUI.Root()
+	navigationPage.SetPadding(4)
+	navigationPage.SetGap(4)
+	Local underlying:TUIButton = navigationPage.Button("Underlying action")
+	Local combo:TUIComboBox = navigationPage.ComboBox()
+	combo.AddItem("Automatic")
+	combo.AddItem("Station")
+	combo.AddItem("Access point")
+	combo.SetSelectedIndex(1)
+	Local navigationSelectionStart:Int = selectionChangeCount
+	Check(navigationUI.Render(), "combo UI did not render")
+	Check(navigationUI.SetFocus(combo), "combo box could not receive focus")
+	Check(navigationUI.ActivateFocused() And navigationUI.OverlayVisible(), ..
+		"combo box did not open its popup")
+	Local comboPopup:TUIPopupMenu = combo.ActivePopup()
+	Check(comboPopup And navigationUI.ActiveOverlay() = comboPopup, ..
+		"combo popup was not installed as the active overlay")
+	Check(navigationUI.FocusedWidget() = comboPopup.ItemAt(1), ..
+		"combo popup did not focus its current selection")
+	Check(navigationUI.FocusNext() And navigationUI.FocusedWidget() = comboPopup.ItemAt(2), ..
+		"overlay focus did not remain inside the popup")
+	Check(navigationUI.ActivateFocused(), "focused combo item did not activate")
+	Check(Not navigationUI.OverlayVisible() And navigationUI.FocusedWidget() = combo And ..
+		combo.SelectedIndex() = 2, "combo selection did not close and restore focus")
+	Check(selectionChangeCount = navigationSelectionStart + 1 And ..
+		selectionEventSource = combo And selectionEventIndex = 2, ..
+		"combo selection did not emit its semantic event")
+
+	' An outside press dismisses the popup and is consumed.
+	Check(navigationUI.ActivateFocused() And navigationUI.OverlayVisible(), ..
+		"combo popup could not be reopened")
+	touch.x = underlying.X() + underlying.Width() / 2
+	touch.y = underlying.Y() + underlying.Height() / 2
+	touch.count = 1
+	PollSystem()
+	Check(Not navigationUI.OverlayVisible(), "outside touch did not dismiss popup")
+	touch.count = 0
+	PollSystem()
+	PollSystem()
+	Check(Not underlying.Pressed(), ..
+		"outside dismissal leaked input to the underlying UI")
+	navigationUI.Close()
+End Function
+
+Function RunPopupMenuTests(touch:TFakeTouch)
+	Local navigationFrame:TDisplayBuffer = TDisplayBuffer.Create(240, 180, DisplayPixelFormatMono1)
+	Local navigationUI:TUIContext = TUIContext.CreateWithBuffer(navigationFrame, Null, touch, ..
+		TUITheme.Dark(Spleen5x8Font()))
+	Check(navigationUI <> Null, "could not create popup menu UI")
+	Local menu:TUIPopupMenu = navigationUI.PopupMenu()
+	menu.Item("Copy")
+	menu.Item("Rename")
+	menu.Item("Delete")
+	menu.OnSelectionChanged(SelectionChanged)
+	Local menuCallbackStart:Int = selectionCallbackCount
+	Check(navigationUI.ShowOverlay(menu, 80, 30, 100), "popup menu could not be shown")
+	Check(navigationUI.FocusedWidget() = menu.ItemAt(0), "popup menu did not focus its first item")
+	Check(navigationUI.ActivateFocused(), "popup menu item did not activate")
+	Check(Not navigationUI.OverlayVisible() And menu.SelectedIndex() = 0 And ..
+		selectionCallbackCount = menuCallbackStart + 1, ..
+		"popup menu selection did not notify and dismiss")
+	navigationUI.Close()
+End Function
+
 AddHook EmitEventHook, CaptureAction
 Local frame:TDisplayBuffer = TDisplayBuffer.Create(240, 180, DisplayPixelFormatMono1)
 Local touch:TFakeTouch = New TFakeTouch
@@ -340,5 +442,8 @@ PollSystem()
 Check(list.SelectedIndex() = selectionBeforeDrag, "scroll gesture activated a list item")
 
 scrollUI.Close()
+RunTabTests(touch)
+RunComboTests(touch)
+RunPopupMenuTests(touch)
 touch.StopEvents()
 Print "embedded UI conformance: PASS"

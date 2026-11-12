@@ -400,6 +400,12 @@ Type TUIWidget
 	Method _Attach(context:TUIContext, parent:TUIContainer)
 		uiContext = context
 		uiParent = parent
+		Local container:TUIContainer = TUIContainer(Self)
+		If container Then
+			For Local child:TUIWidget = EachIn uiChildren
+				child._Attach(context, container)
+			Next
+		End If
 	End Method
 
 	Method _SetBounds(x:Int, y:Int, width:Int, height:Int)
@@ -521,6 +527,12 @@ Type TUIContainer Extends TUIWidget
 		Return widget
 	End Method
 
+	Method TabView:TUITabView() Final
+		Local widget:TUITabView = New TUITabView
+		Add(widget)
+		Return widget
+	End Method
+
 	Method Label:TUILabel(text:String = "") Final
 		Local widget:TUILabel = New TUILabel
 		widget.SetText(text)
@@ -531,6 +543,12 @@ Type TUIContainer Extends TUIWidget
 	Method Button:TUIButton(text:String = "") Final
 		Local widget:TUIButton = New TUIButton
 		widget.SetText(text)
+		Add(widget)
+		Return widget
+	End Method
+
+	Method ComboBox:TUIComboBox() Final
+		Local widget:TUIComboBox = New TUIComboBox
 		Add(widget)
 		Return widget
 	End Method
@@ -958,7 +976,7 @@ Type TUIScrollView Extends TUIContainer
 	End Method
 End Type
 
-Type TUIList Extends TUIScrollView Final
+Type TUIList Extends TUIScrollView
 	Public
 	Field selectedItem:TUIListItem
 	Field selectionHandler(list:TUIList)
@@ -1148,6 +1166,383 @@ Type TUIListItem Extends TUIWidget Final
 	Public
 	Method _Activate()
 		If listOwner Then listOwner._SelectItem(Self)
+	End Method
+End Type
+
+Type TUIPopupMenu Extends TUIList
+	Public
+	Field comboOwner:TUIComboBox
+
+	Public
+	Method New()
+		Super.New()
+		SetBackgroundVisible(True)
+	End Method
+
+	Method DefaultStyle:TUIStyle() Override
+		If Context() And Context().Theme() Then Return Context().Theme().control
+		Return Super.DefaultStyle()
+	End Method
+
+	Method _SelectItem(item:TUIListItem) Override
+		If comboOwner Then
+			_SetSelectedItem(item, False)
+			comboOwner._SelectFromPopup(SelectedIndex())
+		Else
+			Super._SelectItem(item)
+		End If
+		If Context() Then Context().DismissOverlay()
+	End Method
+End Type
+
+Type TUIComboBox Extends TUIWidget Final
+	Private
+	Field itemNames:String[] = New String[0]
+	Field selectedIndex:Int = -1
+	Field popup:TUIPopupMenu
+	Field changeHandler(combo:TUIComboBox)
+
+	Public
+	Method New()
+		clickable = True
+		focusable = True
+	End Method
+
+	Method AddItem:Int(text:String)
+		If Not text Then text = ""
+		itemNames = itemNames[..itemNames.Length + 1]
+		itemNames[itemNames.Length - 1] = text
+		If popup Then popup.Item(text)
+		If selectedIndex < 0 Then selectedIndex = 0
+		_RequestLayout()
+		Return itemNames.Length - 1
+	End Method
+
+	Method ItemCount:Int()
+		Return itemNames.Length
+	End Method
+
+	Method ItemText:String(index:Int)
+		If index < 0 Or index >= itemNames.Length Then Return ""
+		Return itemNames[index]
+	End Method
+
+	Method SelectedIndex:Int()
+		Return selectedIndex
+	End Method
+
+	Method SelectedText:String()
+		Return ItemText(selectedIndex)
+	End Method
+
+	Method ActivePopup:TUIPopupMenu()
+		If Context() And Context().ActiveOverlay() = popup Then Return popup
+		Return Null
+	End Method
+
+	Method SetSelectedIndex(value:Int)
+		_SetSelectedIndex(value, False)
+	End Method
+
+	Method OnChange(handler(combo:TUIComboBox))
+		changeHandler = handler
+	End Method
+
+	Method DefaultStyle:TUIStyle() Override
+		If Context() And Context().Theme() Then
+			If Not Enabled() Then Return Context().Theme().controlDisabled
+			If Pressed() Then Return Context().Theme().controlPressed
+			Return Context().Theme().control
+		End If
+		Return Super.DefaultStyle()
+	End Method
+
+	Method PreferredSize(availableWidth:Int, availableHeight:Int, width:Int Var, height:Int Var) Override
+		Local style:TUIStyle = DefaultStyle()
+		If uiStyle Then style = uiStyle
+		Local textWidth:Int
+		Local lineHeight:Int = 16
+		If style.font Then
+			lineHeight = style.font.LineHeight() * style.fontScale
+			For Local text:String = EachIn itemNames
+				Local candidate:Int = style.font.TextWidth(text, style.fontScale)
+				If candidate > textWidth Then textWidth = candidate
+			Next
+		End If
+		width = textWidth + lineHeight + style.paddingLeft + style.paddingRight
+		height = lineHeight + style.paddingTop + style.paddingBottom
+		If requestedWidth >= 0 Then width = requestedWidth
+		If requestedHeight >= 0 Then height = requestedHeight
+	End Method
+
+	Method Draw(graphics:TEmbedded2DContext) Override
+		Local style:TUIStyle = DefaultStyle()
+		If uiStyle Then style = uiStyle
+		graphics.SetColorValue(style.background)
+		If style.cornerRadius > 0 Then
+			graphics.FillRoundRect(X(), Y(), Width(), Height(), style.cornerRadius)
+		Else
+			graphics.FillRect(X(), Y(), Width(), Height())
+		End If
+		If style.borderWidth > 0 Then
+			graphics.SetColorValue(style.border)
+			graphics.DrawRoundRect(X(), Y(), Width(), Height(), style.cornerRadius)
+		End If
+		If style.font Then
+			graphics.SetFont(style.font)
+			graphics.SetColorValue(style.foreground)
+			Local textHeight:Int = style.font.LineHeight() * style.fontScale
+			graphics.DrawText(SelectedText(), X() + style.paddingLeft, ..
+				Y() + (Height() - textHeight) / 2, style.fontScale)
+		End If
+		Local arrowSize:Int = Max(Height() / 6, 3)
+		Local arrowX:Int = X() + Width() - style.paddingRight - arrowSize
+		Local arrowY:Int = Y() + Height() / 2
+		graphics.SetColorValue(style.foreground)
+		graphics.DrawLine(arrowX - arrowSize, arrowY - arrowSize / 2, arrowX, arrowY + arrowSize / 2)
+		graphics.DrawLine(arrowX, arrowY + arrowSize / 2, arrowX + arrowSize, arrowY - arrowSize / 2)
+	End Method
+
+	Public
+	Method _Activate()
+		If Not Context() Or itemNames.Length = 0 Then Return
+		If popup And Context().ActiveOverlay() = popup Then
+			Context().DismissOverlay()
+			Return
+		End If
+		If Not popup Then
+			popup = New TUIPopupMenu
+			popup.comboOwner = Self
+			For Local text:String = EachIn itemNames
+				popup.Item(text)
+			Next
+		End If
+		popup.SetSelectedIndex(selectedIndex)
+		If Context().ShowOverlay(popup, X(), Y() + Height(), Width()) Then
+			Local item:TUIListItem = popup.ItemAt(selectedIndex)
+			If item Then Context().SetFocus(item)
+		End If
+	End Method
+
+	Method _SelectFromPopup(index:Int)
+		_SetSelectedIndex(index, True)
+	End Method
+
+	Method _SetSelectedIndex(value:Int, notify:Int)
+		If itemNames.Length = 0 Then value = -1
+		If value < -1 Then value = -1
+		If value >= itemNames.Length Then value = itemNames.Length - 1
+		If selectedIndex = value Then Return
+		selectedIndex = value
+		_Invalidate()
+		If notify Then
+			If changeHandler Then changeHandler(Self)
+			EmitEvent(CreateEvent(EVENT_UISELECTIONCHANGED, Self, selectedIndex))
+		End If
+	End Method
+End Type
+
+Type TUITabPage Extends TUIContainer Final
+	Public
+	Method New()
+		layoutDirection = 2
+	End Method
+End Type
+
+Type TUITabButton Extends TUIWidget Final
+	Public
+	Field tabOwner:TUITabView
+	Field tabIndex:Int
+	Field tabText:String
+
+	Public
+	Method New()
+		clickable = True
+		focusable = True
+	End Method
+
+	Method DefaultStyle:TUIStyle() Override
+		If Context() And Context().Theme() Then
+			If Not Enabled() Then Return Context().Theme().buttonDisabled
+			If Pressed() Then Return Context().Theme().buttonPressed
+			If tabOwner And tabOwner.SelectedIndex() = tabIndex Then Return Context().Theme().controlActive
+			Return Context().Theme().button
+		End If
+		Return Super.DefaultStyle()
+	End Method
+
+	Method PreferredSize(availableWidth:Int, availableHeight:Int, width:Int Var, height:Int Var) Override
+		Local style:TUIStyle = DefaultStyle()
+		If uiStyle Then style = uiStyle
+		Local lineHeight:Int = 16
+		Local textWidth:Int
+		If style.font Then
+			lineHeight = style.font.LineHeight() * style.fontScale
+			textWidth = style.font.TextWidth(tabText, style.fontScale)
+		End If
+		width = textWidth + style.paddingLeft + style.paddingRight
+		height = lineHeight + style.paddingTop + style.paddingBottom
+	End Method
+
+	Method Draw(graphics:TEmbedded2DContext) Override
+		Local style:TUIStyle = DefaultStyle()
+		If uiStyle Then style = uiStyle
+		graphics.SetColorValue(style.background)
+		If style.cornerRadius > 0 Then
+			graphics.FillRoundRect(X(), Y(), Width(), Height(), style.cornerRadius)
+		Else
+			graphics.FillRect(X(), Y(), Width(), Height())
+		End If
+		If style.borderWidth > 0 Then
+			graphics.SetColorValue(style.border)
+			graphics.DrawRoundRect(X(), Y(), Width(), Height(), style.cornerRadius)
+		End If
+		If style.font Then
+			graphics.SetFont(style.font)
+			graphics.SetColorValue(style.foreground)
+			Local textWidth:Int = style.font.TextWidth(tabText, style.fontScale)
+			Local textHeight:Int = style.font.LineHeight() * style.fontScale
+			graphics.DrawText(tabText, X() + (Width() - textWidth) / 2, ..
+				Y() + (Height() - textHeight) / 2, style.fontScale)
+		End If
+	End Method
+
+	Method _Activate()
+		If tabOwner Then tabOwner._SelectIndex(tabIndex, True)
+	End Method
+End Type
+
+Type TUITabView Extends TUIContainer Final
+	Public
+	Field tabButtons:TUITabButton[] = New TUITabButton[0]
+	Field tabPages:TUITabPage[] = New TUITabPage[0]
+	Field selectedTab:Int = -1
+	Field selectionHandler(tabView:TUITabView)
+
+	Public
+	Method New()
+		gap = 3
+	End Method
+
+	Method Page:TUITabPage(title:String)
+		Local button:TUITabButton = New TUITabButton
+		button.tabOwner = Self
+		button.tabIndex = tabButtons.Length
+		button.tabText = title
+		Local page:TUITabPage = New TUITabPage
+		tabButtons = tabButtons[..tabButtons.Length + 1]
+		tabPages = tabPages[..tabPages.Length + 1]
+		tabButtons[tabButtons.Length - 1] = button
+		tabPages[tabPages.Length - 1] = page
+		Add(button)
+		Add(page)
+		If selectedTab < 0 Then
+			selectedTab = 0
+		Else
+			page.SetVisible(False)
+		End If
+		Return page
+	End Method
+
+	Method PageCount:Int()
+		Return tabPages.Length
+	End Method
+
+	Method PageAt:TUITabPage(index:Int)
+		If index < 0 Or index >= tabPages.Length Then Return Null
+		Return tabPages[index]
+	End Method
+
+	Method TabButtonAt:TUITabButton(index:Int)
+		If index < 0 Or index >= tabButtons.Length Then Return Null
+		Return tabButtons[index]
+	End Method
+
+	Method SelectedIndex:Int()
+		Return selectedTab
+	End Method
+
+	Method SelectedPage:TUITabPage()
+		Return PageAt(selectedTab)
+	End Method
+
+	Method SetSelectedIndex(value:Int)
+		_SelectIndex(value, False)
+	End Method
+
+	Method OnSelectionChanged(handler(tabView:TUITabView))
+		selectionHandler = handler
+	End Method
+
+	Method PreferredSize(availableWidth:Int, availableHeight:Int, width:Int Var, height:Int Var) Override
+		Local headerWidth:Int
+		Local headerHeight:Int
+		For Local button:TUITabButton = EachIn tabButtons
+			Local itemWidth:Int
+			Local itemHeight:Int
+			button.PreferredSize(availableWidth, availableHeight, itemWidth, itemHeight)
+			headerWidth :+ itemWidth
+			If itemHeight > headerHeight Then headerHeight = itemHeight
+		Next
+		If tabButtons.Length > 1 Then headerWidth :+ gap * (tabButtons.Length - 1)
+		Local pageWidth:Int
+		Local pageHeight:Int
+		For Local page:TUITabPage = EachIn tabPages
+			Local itemWidth:Int
+			Local itemHeight:Int
+			page.PreferredSize(availableWidth, availableHeight, itemWidth, itemHeight)
+			If itemWidth > pageWidth Then pageWidth = itemWidth
+			If itemHeight > pageHeight Then pageHeight = itemHeight
+		Next
+		width = Max(headerWidth, pageWidth) + paddingLeft + paddingRight
+		height = headerHeight + pageHeight + paddingTop + paddingBottom
+		If headerHeight > 0 And pageHeight > 0 Then height :+ gap
+		If requestedWidth >= 0 Then width = requestedWidth
+		If requestedHeight >= 0 Then height = requestedHeight
+	End Method
+
+	Public
+	Method _SelectIndex(value:Int, notify:Int)
+		If value < 0 Or value >= tabPages.Length Or selectedTab = value Then Return
+		Local previous:Int = selectedTab
+		selectedTab = value
+		If previous >= 0 Then tabPages[previous].SetVisible(False)
+		tabPages[selectedTab].SetVisible(True)
+		_Invalidate()
+		_RequestLayout()
+		If notify Then
+			If selectionHandler Then selectionHandler(Self)
+			EmitEvent(CreateEvent(EVENT_UISELECTIONCHANGED, Self, selectedTab))
+		End If
+	End Method
+
+	Method _LayoutChildren() Override
+		Local contentX:Int = X() + paddingLeft
+		Local contentY:Int = Y() + paddingTop
+		Local contentWidth:Int = Max(Width() - paddingLeft - paddingRight, 0)
+		Local contentHeight:Int = Max(Height() - paddingTop - paddingBottom, 0)
+		Local headerHeight:Int
+		For Local button:TUITabButton = EachIn tabButtons
+			Local itemWidth:Int
+			Local itemHeight:Int
+			button.PreferredSize(contentWidth, contentHeight, itemWidth, itemHeight)
+			If itemHeight > headerHeight Then headerHeight = itemHeight
+		Next
+		Local buttonCount:Int = tabButtons.Length
+		Local buttonWidth:Int
+		If buttonCount > 0 Then buttonWidth = Max((contentWidth - gap * (buttonCount - 1)) / buttonCount, 0)
+		Local cursorX:Int = contentX
+		For Local button:TUITabButton = EachIn tabButtons
+			button._SetBounds(cursorX, contentY, buttonWidth, headerHeight)
+			cursorX :+ buttonWidth + gap
+		Next
+		Local pageY:Int = contentY + headerHeight
+		If headerHeight > 0 Then pageY :+ gap
+		Local pageHeight:Int = Max(contentY + contentHeight - pageY, 0)
+		For Local page:TUITabPage = EachIn tabPages
+			page._SetBounds(contentX, pageY, contentWidth, pageHeight)
+			If page.Visible() Then page._LayoutChildren()
+		Next
 	End Method
 End Type
 
@@ -1646,6 +2041,9 @@ Type TUIContext
 	Field graphics:TEmbedded2DContext
 	Field touch:TTouchDevice
 	Field rootWidget:TUIColumn
+	Field overlayWidget:TUIContainer
+	Field overlayPreviousFocus:TUIWidget
+	Field overlayDismissOutside:Int = True
 	Field themeValue:TUITheme
 	Field layoutPending:Int = True
 	Field contextSlot:Int = -1
@@ -1703,6 +2101,8 @@ Type TUIContext
 		contextSlot = -1
 		pressedWidget = Null
 		focusedWidget = Null
+		overlayWidget = Null
+		overlayPreviousFocus = Null
 		touchScroll = Null
 		pressedContact = -1
 	End Method
@@ -1713,6 +2113,67 @@ Type TUIContext
 
 	Method Theme:TUITheme()
 		Return themeValue
+	End Method
+
+	Method ActiveOverlay:TUIContainer()
+		Return overlayWidget
+	End Method
+
+	Method OverlayVisible:Int()
+		Return overlayWidget <> Null
+	End Method
+
+	Method PopupMenu:TUIPopupMenu()
+		Local menu:TUIPopupMenu = New TUIPopupMenu
+		menu._Attach(Self, Null)
+		Return menu
+	End Method
+
+	Method ShowOverlay:Int(widget:TUIContainer, x:Int, y:Int, width:Int = UILayoutAuto, ..
+			height:Int = UILayoutAuto, dismissOnOutside:Int = True)
+		If Not widget Or widget.Parent() Then Return False
+		If overlayWidget And overlayWidget <> widget Then DismissOverlay()
+		If overlayWidget = widget Then Return True
+		widget._Attach(Self, Null)
+		Local preferredWidth:Int
+		Local preferredHeight:Int
+		widget.PreferredSize(frame.Width(), frame.Height(), preferredWidth, preferredHeight)
+		If width < 0 Then width = preferredWidth
+		If height < 0 Then height = preferredHeight
+		If width < 1 Then width = 1
+		If height < 1 Then height = 1
+		If width > frame.Width() Then width = frame.Width()
+		If height > frame.Height() Then height = frame.Height()
+		If x + width > frame.Width() Then x = frame.Width() - width
+		If y + height > frame.Height() Then y = frame.Height() - height
+		If x < 0 Then x = 0
+		If y < 0 Then y = 0
+		overlayPreviousFocus = focusedWidget
+		overlayWidget = widget
+		overlayDismissOutside = dismissOnOutside <> 0
+		widget._SetBounds(x, y, width, height)
+		widget._LayoutChildren()
+		InvalidateRect(x, y, width, height)
+		Local first:TUIWidget
+		Local list:TUIList = TUIList(widget)
+		If list Then first = list.SelectedItem()
+		If Not first Then
+			Local cursor:Int
+			first = _FocusableAt(widget, 0, cursor)
+		End If
+		If first Then SetFocus(first) Else ClearFocus()
+		Return True
+	End Method
+
+	Method DismissOverlay:Int()
+		If Not overlayWidget Then Return False
+		Local old:TUIContainer = overlayWidget
+		Local restore:TUIWidget = overlayPreviousFocus
+		overlayWidget = Null
+		overlayPreviousFocus = Null
+		InvalidateRect(old.X(), old.Y(), old.Width(), old.Height())
+		If restore And _CanFocus(restore) Then SetFocus(restore) Else ClearFocus()
+		Return True
 	End Method
 
 	Method FocusedWidget:TUIWidget()
@@ -1736,25 +2197,29 @@ Type TUIContext
 	End Method
 
 	Method FocusNext:Int()
-		Local count:Int = _CountFocusable(rootWidget)
+		Local focusRoot:TUIWidget = rootWidget
+		If overlayWidget Then focusRoot = overlayWidget
+		Local count:Int = _CountFocusable(focusRoot)
 		If count <= 0 Then Return False
 		Local cursor:Int
-		Local index:Int = _FocusableIndex(rootWidget, focusedWidget, cursor)
+		Local index:Int = _FocusableIndex(focusRoot, focusedWidget, cursor)
 		Local nextIndex:Int
 		If index < 0 Then nextIndex = 0 Else nextIndex = (index + 1) Mod count
 		cursor = 0
-		Return SetFocus(_FocusableAt(rootWidget, nextIndex, cursor))
+		Return SetFocus(_FocusableAt(focusRoot, nextIndex, cursor))
 	End Method
 
 	Method FocusPrevious:Int()
-		Local count:Int = _CountFocusable(rootWidget)
+		Local focusRoot:TUIWidget = rootWidget
+		If overlayWidget Then focusRoot = overlayWidget
+		Local count:Int = _CountFocusable(focusRoot)
 		If count <= 0 Then Return False
 		Local cursor:Int
-		Local index:Int = _FocusableIndex(rootWidget, focusedWidget, cursor)
+		Local index:Int = _FocusableIndex(focusRoot, focusedWidget, cursor)
 		Local previousIndex:Int
 		If index < 0 Then previousIndex = count - 1 Else previousIndex = (index + count - 1) Mod count
 		cursor = 0
-		Return SetFocus(_FocusableAt(rootWidget, previousIndex, cursor))
+		Return SetFocus(_FocusableAt(focusRoot, previousIndex, cursor))
 	End Method
 
 	Method ActivateFocused:Int()
@@ -1781,6 +2246,16 @@ Type TUIContext
 			listItem._Activate()
 			Return True
 		End If
+		Local combo:TUIComboBox = TUIComboBox(target)
+		If combo Then
+			combo._Activate()
+			Return True
+		End If
+		Local tabButton:TUITabButton = TUITabButton(target)
+		If tabButton Then
+			tabButton._Activate()
+			Return True
+		End If
 		Return False
 	End Method
 
@@ -1793,6 +2268,19 @@ Type TUIContext
 		End If
 		Local listItem:TUIListItem = TUIListItem(focusedWidget)
 		If listItem And listItem.listOwner Then Return listItem.listOwner.MoveSelection(delta)
+		Local combo:TUIComboBox = TUIComboBox(focusedWidget)
+		If combo And combo.ItemCount() > 0 Then
+			combo._SetSelectedIndex(combo.SelectedIndex() + delta, True)
+			Return True
+		End If
+		Local tabButton:TUITabButton = TUITabButton(focusedWidget)
+		If tabButton And tabButton.tabOwner Then
+			Local nextIndex:Int = tabButton.tabOwner.SelectedIndex() + delta
+			If nextIndex < 0 Then nextIndex = 0
+			If nextIndex >= tabButton.tabOwner.PageCount() Then nextIndex = tabButton.tabOwner.PageCount() - 1
+			tabButton.tabOwner._SelectIndex(nextIndex, True)
+			Return True
+		End If
 		Return False
 	End Method
 
@@ -1865,6 +2353,7 @@ Type TUIContext
 	Method Layout()
 		rootWidget._SetBounds(0, 0, graphics.Width(), graphics.Height())
 		rootWidget._LayoutChildren()
+		If overlayWidget Then overlayWidget._LayoutChildren()
 		layoutPending = False
 	End Method
 
@@ -1880,6 +2369,7 @@ Type TUIContext
 			graphics.PushState()
 			graphics.SetViewport(x, y, width, height)
 			_DrawWidget(rootWidget, x, y, width, height)
+			If overlayWidget Then _DrawWidget(overlayWidget, x, y, width, height)
 			graphics.PopState()
 		Next
 		invalidCount = 0
@@ -1888,6 +2378,7 @@ Type TUIContext
 
 	Method Present:Int()
 		_UpdateScrollMomentum(rootWidget, UInt(MilliSecs()))
+		If overlayWidget Then _UpdateScrollMomentum(overlayWidget, UInt(MilliSecs()))
 		Render()
 		If display Then Return graphics.PresentDirty(display)
 		Return True
@@ -1895,6 +2386,10 @@ Type TUIContext
 
 	Method HitTest:TUIWidget(x:Int, y:Int)
 		If layoutPending Then Layout()
+		If overlayWidget Then
+			If Not overlayWidget.Contains(x, y) Then Return Null
+			Return _HitTest(overlayWidget, x, y)
+		End If
 		Return _HitTest(rootWidget, x, y)
 	End Method
 
@@ -1907,9 +2402,20 @@ Type TUIContext
 		Select event.id
 			Case EVENT_TOUCHDOWN
 				If pressedContact >= 0 Or Not event.source Then Return
+				If overlayWidget And Not overlayWidget.Contains(x, y) Then
+					If overlayDismissOutside Then DismissOverlay()
+					pressedContact = event.data
+					Return
+				End If
 				Local target:TUIWidget = HitTest(x, y)
 				touchScroll = _ContainingScroll(target)
-				If Not touchScroll Then touchScroll = _ScrollAt(rootWidget, x, y)
+				If Not touchScroll Then
+					If overlayWidget Then
+						touchScroll = _ScrollAt(overlayWidget, x, y)
+					Else
+						touchScroll = _ScrollAt(rootWidget, x, y)
+					End If
+				End If
 				If Not target And Not touchScroll Then Return
 				pressedContact = event.data
 				touchStartY = y
@@ -1976,7 +2482,17 @@ Type TUIContext
 									switchControl._Activate()
 								Else
 									Local listItem:TUIListItem = TUIListItem(target)
-									If listItem Then listItem._Activate()
+									If listItem Then
+										listItem._Activate()
+									Else
+										Local combo:TUIComboBox = TUIComboBox(target)
+										If combo Then
+											combo._Activate()
+										Else
+											Local tabButton:TUITabButton = TUITabButton(target)
+											If tabButton Then tabButton._Activate()
+										End If
+									End If
 								End If
 							End If
 						End If
@@ -2066,12 +2582,22 @@ Type TUIContext
 
 	Method _CanFocus:Int(widget:TUIWidget)
 		If Not widget Or Not widget.Focusable() Or Not widget.Enabled() Or Not widget.Visible() Then Return False
+		If overlayWidget And Not _IsDescendant(widget, overlayWidget) Then Return False
 		Local parent:TUIContainer = widget.Parent()
 		While parent
 			If Not parent.Enabled() Or Not parent.Visible() Then Return False
 			parent = parent.Parent()
 		Wend
 		Return True
+	End Method
+
+	Method _IsDescendant:Int(widget:TUIWidget, ancestor:TUIWidget)
+		Local current:TUIWidget = widget
+		While current
+			If current = ancestor Then Return True
+			current = current.Parent()
+		Wend
+		Return False
 	End Method
 
 	Method _ReleaseFocus(widget:TUIWidget)
