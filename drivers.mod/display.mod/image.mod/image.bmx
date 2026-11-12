@@ -21,9 +21,9 @@ Import "native/embedded_display_image_raster.c"
 Extern "C"
 	Function _DisplayBlitRGB565:Int(targetPixels:Byte Ptr, targetStride:Int, ..
 		targetWidth:Int, targetHeight:Int, sourcePixels:Byte Ptr, sourceStride:Int, ..
-		sourceWidth:Int, sourceHeight:Int, destinationX:Int, destinationY:Int, ..
+		sourceWidth:Int, sourceHeight:Int, sourceFormat:Int, destinationX:Int, destinationY:Int, ..
 		destinationWidth:Int, destinationHeight:Int, clipX:Int, clipY:Int, ..
-		clipWidth:Int, clipHeight:Int, drawFlags:Int) = ..
+		clipWidth:Int, clipHeight:Int, tint:UInt, opacity:Int, drawFlags:Int) = ..
 		"bmx_embedded_display_blit_rgb565"
 End Extern
 
@@ -213,15 +213,19 @@ Type TEmbeddedImage Final
 		If x0 >= x1 Or y0 >= y1 Then Return
 
 		Local targetPixels:Byte Ptr = target.Pixels()
+		If targetPixels And target.Format() = DisplayPixelFormatRGB565 And Not HasMask() And ..
+				colorKey = EmbeddedImageColorKeyDisabled And ..
+				(imageFormat = DisplayPixelFormatRGB565 Or imageFormat = DisplayPixelFormatRGB888) Then
+			Local sourceBytesPerPixel:Int = DisplayPixelFormatBits(imageFormat) / 8
+			_DisplayBlitRGB565(targetPixels, target.Stride(), target.Width(), target.Height(), ..
+				data + pixelOffset + sourceY * pixelStride + sourceX * sourceBytesPerPixel, pixelStride, ..
+				width, height, imageFormat, x, y, width, height, x0, y0, x1 - x0, y1 - y0, ..
+				tint, opacity, drawFlags)
+			Return
+		End If
 		If targetPixels And tint = $ffffff And Not HasMask() And ..
 				opacity = 255 And colorKey = EmbeddedImageColorKeyDisabled And imageFormat = target.Format() And ..
 				imageFormat <> DisplayPixelFormatMono1 Then
-			If imageFormat = DisplayPixelFormatRGB565 Then
-				_DisplayBlitRGB565(targetPixels, target.Stride(), target.Width(), target.Height(), ..
-					data + pixelOffset + sourceY * pixelStride + sourceX * 2, pixelStride, ..
-					width, height, x, y, width, height, x0, y0, x1 - x0, y1 - y0, drawFlags)
-				Return
-			End If
 			If drawFlags = 0 Then
 				Local bytesPerPixel:Int = DisplayPixelFormatBits(imageFormat) / 8
 				For Local py:Int = y0 Until y1
@@ -278,13 +282,13 @@ Type TEmbeddedImage Final
 		If y1 > clipY1 Then y1 = clipY1
 		If x0 >= x1 Or y0 >= y1 Then Return
 		Local targetPixels:Byte Ptr = target.Pixels()
-		If targetPixels And imageFormat = DisplayPixelFormatRGB565 And ..
-				target.Format() = DisplayPixelFormatRGB565 And tint = $ffffff And ..
-				Not HasMask() And opacity = 255 And colorKey = EmbeddedImageColorKeyDisabled Then
+		If targetPixels And target.Format() = DisplayPixelFormatRGB565 And Not HasMask() And ..
+				colorKey = EmbeddedImageColorKeyDisabled And ..
+				(imageFormat = DisplayPixelFormatRGB565 Or imageFormat = DisplayPixelFormatRGB888) Then
 			_DisplayBlitRGB565(targetPixels, target.Stride(), target.Width(), target.Height(), ..
-				data + pixelOffset, pixelStride, imageWidth, imageHeight, ..
+				data + pixelOffset, pixelStride, imageWidth, imageHeight, imageFormat, ..
 				destinationX, destinationY, destinationWidth, destinationHeight, ..
-				x0, y0, x1 - x0, y1 - y0, drawFlags)
+				x0, y0, x1 - x0, y1 - y0, tint, opacity, drawFlags)
 			Return
 		End If
 		For Local py:Int = y0 Until y1

@@ -68,6 +68,15 @@ rgb565Scaled.Clear()
 rgb565Image.DrawRect(rgb565Scaled, 0, 0, 4, 4, $ffffff, EmbeddedImageDrawFlipX)
 passed :& rgb565Scaled.Pixel(0, 0) = $00ff00 And rgb565Scaled.Pixel(3, 0) = $ff0000
 
+' RGB565 targets use the native conversion, tint, and exact opacity path.
+Local rgb565Composited:TDisplayBuffer = TDisplayBuffer.Create(2, 1, DisplayPixelFormatRGB565)
+rgb565Composited.Clear($0000ff)
+image.DrawRegion(rgb565Composited, 0, 0, 0, 0, 2, 1, $ffffff, 0, 128)
+passed :& rgb565Composited.Pixel(0, 0) = $84007b And rgb565Composited.Pixel(1, 0) = $00827b
+rgb565Composited.Clear()
+image.DrawRegion(rgb565Composited, 0, 0, 0, 0, 2, 1, $80ffff)
+passed :& rgb565Composited.Pixel(0, 0) = $840000 And rgb565Composited.Pixel(1, 0) = $00ff00
+
 Local rgb565:TDisplayBuffer = TDisplayBuffer.Create(2, 2, DisplayPixelFormatRGB565)
 image.Draw(rgb565, 0, 0)
 passed :& rgb565.Pixel(0, 0) = $ff0000 And rgb565.Pixel(1, 0) = $00ff00

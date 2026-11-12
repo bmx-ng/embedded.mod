@@ -216,13 +216,14 @@ and vertical flips, 0..255 opacity, and source colour-key transparency. Existing
 one-bit masks and colour keys may be used together; either can suppress a pixel.
 Opacity uses straight source-over blending against the current framebuffer.
 
-Opaque RGB565 images drawn to RGB565 targets use a shared native raster path
-for copies, clipping, nearest-neighbour scaling, and mirroring. A display
-adapter may register a hardware implementation for compatible operations; all
-unsupported memory layouts, scale ratios, transforms, masks, tinting, opacity,
-and colour keys fall back automatically without changing drawing semantics.
-Applications can inspect `DisplayCapabilityAcceleratedBlit`, but use the same
-`DrawImage` and `DrawImageRect` calls on accelerated and software targets.
+RGB565 and RGB888 images drawn to RGB565 targets use a shared native raster
+path for copies, format conversion, clipping, nearest-neighbour scaling,
+mirroring, tinting, and exact 0..255 opacity blending. A display adapter may
+register a hardware implementation for compatible operations; unsupported
+memory layouts and scale ratios, masks, and colour keys fall back automatically
+without changing drawing semantics. Applications can inspect
+`DisplayCapabilityAcceleratedBlit`, but use the same `DrawImage` and
+`DrawImageRect` calls on accelerated and software targets.
 
 The desktop converter in `tools/image2embedded.bmx` uses the normal BlitzMax
 `image.mod` loaders. It accepts PNG, JPEG, BMP, GIF, TGA, PNM, QOI, WebP, TIFF,
