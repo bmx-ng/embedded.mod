@@ -7,6 +7,11 @@ Import Embedded.Graphics2D
 
 Type TTestDisplay Extends TDisplay
 	Field presentations:Int
+	Field result:Int = 1
+	Field lastX:Int
+	Field lastY:Int
+	Field lastWidth:Int
+	Field lastHeight:Int
 
 	Method Width:Int()
 		Return 16
@@ -23,8 +28,15 @@ Type TTestDisplay Extends TDisplay
 	Method PresentPixels:Int(pixels:Byte Ptr, stride:Int, format:Int, ..
 			x:Int, y:Int, width:Int, height:Int)
 		If pixels And stride = 2 And format = DisplayPixelFormatMono1 And ..
-				x = 0 And y = 0 And width = 16 And height = 16 Then presentations :+ 1
-		Return 1
+				x >= 0 And y >= 0 And width > 0 And height > 0 And ..
+				x + width <= 16 And y + height <= 16 Then
+			presentations :+ 1
+			lastX = x
+			lastY = y
+			lastWidth = width
+			lastHeight = height
+		End If
+		Return result
 	End Method
 
 	Method SetEnabled:Int(enabled:Int)
@@ -304,6 +316,63 @@ passed :& viewGraphics.BeginView(2, 1, 4, 3, 90)
 viewGraphics.FillCircle(1, 1, 1)
 passed :& viewFrame.Pixel(4, 2) = 1 And viewFrame.Pixel(5, 2) = 1
 passed :& viewGraphics.EndView()
+
+' Dirty tracking accumulates conservative physical framebuffer bounds while
+' respecting viewport clipping, root rotation, and nested view transforms.
+Local dirtyFrame:TDisplayBuffer = TDisplayBuffer.Create(16, 16, DisplayPixelFormatMono1)
+Local dirtyDisplay:TTestDisplay = New TTestDisplay
+Local dirtyGraphics:TEmbedded2DContext = TEmbedded2DContext.Create(dirtyFrame, dirtyDisplay)
+Local dirtyX:Int
+Local dirtyY:Int
+Local dirtyWidth:Int
+Local dirtyHeight:Int
+passed :& Not dirtyGraphics.DirtyTracking()
+dirtyGraphics.SetDirtyTracking(True)
+passed :& dirtyGraphics.DirtyTracking()
+passed :& Not dirtyGraphics.DirtyRect(dirtyX, dirtyY, dirtyWidth, dirtyHeight)
+dirtyGraphics.SetViewport(2, 3, 5, 4)
+dirtyGraphics.FillRect(-20, -20, 40, 40)
+passed :& dirtyGraphics.DirtyRect(dirtyX, dirtyY, dirtyWidth, dirtyHeight)
+passed :& dirtyX = 2 And dirtyY = 3 And dirtyWidth = 5 And dirtyHeight = 4
+passed :& dirtyGraphics.PresentDirty() = 1 And dirtyDisplay.presentations = 1
+passed :& dirtyDisplay.lastX = 2 And dirtyDisplay.lastY = 3
+passed :& dirtyDisplay.lastWidth = 5 And dirtyDisplay.lastHeight = 4
+passed :& Not dirtyGraphics.DirtyRect(dirtyX, dirtyY, dirtyWidth, dirtyHeight)
+passed :& dirtyGraphics.PresentDirty() = 1 And dirtyDisplay.presentations = 1
+
+dirtyGraphics.ResetViewport()
+dirtyGraphics.Plot(4, 5)
+dirtyGraphics.Plot(7, 9)
+passed :& dirtyGraphics.DirtyRect(dirtyX, dirtyY, dirtyWidth, dirtyHeight)
+passed :& dirtyX = 4 And dirtyY = 5 And dirtyWidth = 4 And dirtyHeight = 5
+dirtyGraphics.ResetDirty()
+dirtyGraphics.InvalidateRect(6, 7, 3, 2)
+passed :& dirtyGraphics.DirtyRect(dirtyX, dirtyY, dirtyWidth, dirtyHeight)
+passed :& dirtyX = 6 And dirtyY = 7 And dirtyWidth = 3 And dirtyHeight = 2
+dirtyDisplay.result = DisplayErrorGeneric
+passed :& dirtyGraphics.PresentDirty() = DisplayErrorGeneric
+passed :& dirtyGraphics.DirtyRect(dirtyX, dirtyY, dirtyWidth, dirtyHeight)
+passed :& dirtyX = 6 And dirtyY = 7 And dirtyWidth = 3 And dirtyHeight = 2
+dirtyDisplay.result = 1
+passed :& dirtyGraphics.Present() = 1 And dirtyDisplay.presentations = 3
+passed :& dirtyDisplay.lastX = 0 And dirtyDisplay.lastY = 0
+passed :& dirtyDisplay.lastWidth = 16 And dirtyDisplay.lastHeight = 16
+passed :& Not dirtyGraphics.DirtyRect(dirtyX, dirtyY, dirtyWidth, dirtyHeight)
+
+Local dirtyRotatedFrame:TDisplayBuffer = TDisplayBuffer.Create(10, 6, DisplayPixelFormatMono1)
+Local dirtyRotated:TEmbedded2DContext = TEmbedded2DContext.Create(dirtyRotatedFrame)
+dirtyRotated.SetDirtyTracking(True)
+passed :& dirtyRotated.SetRotation(90)
+dirtyRotated.FillRect(1, 2, 2, 3)
+passed :& dirtyRotated.DirtyRect(dirtyX, dirtyY, dirtyWidth, dirtyHeight)
+passed :& dirtyX = 5 And dirtyY = 1 And dirtyWidth = 3 And dirtyHeight = 2
+dirtyRotated.ResetDirty()
+passed :& dirtyRotated.SetRotation(0)
+passed :& dirtyRotated.BeginView(2, 1, 4, 3, 90)
+dirtyRotated.FillRect(0, 0, 2, 1)
+passed :& dirtyRotated.DirtyRect(dirtyX, dirtyY, dirtyWidth, dirtyHeight)
+passed :& dirtyX = 5 And dirtyY = 1 And dirtyWidth = 1 And dirtyHeight = 2
+passed :& dirtyRotated.EndView()
 
 If passed Then
 	Print "Embedded Graphics2D conformance test passed"

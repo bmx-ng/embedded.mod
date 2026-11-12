@@ -231,6 +231,12 @@ Type TEmbedded2DContext Final
 	Field savedStates:TEmbedded2DSavedState[EmbeddedGraphicsStateMaximum]
 	Field stateDepth:Int
 	Field viewDepth:Int
+	Field dirtyTracking:Int
+	Field dirtyValid:Int
+	Field dirtyX0:Int
+	Field dirtyY0:Int
+	Field dirtyX1:Int
+	Field dirtyY1:Int
 
 	Public
 	Method New()
@@ -253,6 +259,7 @@ Type TEmbedded2DContext Final
 		viewDepth = 0
 		originX = 0
 		originY = 0
+		ResetDirty()
 		ResetRootTransform()
 	End Method
 
@@ -459,8 +466,69 @@ Type TEmbedded2DContext Final
 		Return viewportHeight
 	End Method
 
+	Rem
+	bbdoc: Enables or disables automatic dirty-region tracking for this context.
+	about: Enabling starts with an empty region. Tracking records physical
+	framebuffer bounds so the result can be passed directly to PresentRegion.
+	End Rem
+	Method SetDirtyTracking(enabled:Int = True)
+		dirtyTracking = enabled <> 0
+		ResetDirty()
+	End Method
+
+	Method DirtyTracking:Int()
+		Return dirtyTracking
+	End Method
+
+	Rem
+	bbdoc: Clears the accumulated dirty region without changing framebuffer pixels.
+	End Rem
+	Method ResetDirty()
+		dirtyValid = False
+		dirtyX0 = 0
+		dirtyY0 = 0
+		dirtyX1 = 0
+		dirtyY1 = 0
+	End Method
+
+	Rem
+	bbdoc: Returns the accumulated physical framebuffer rectangle.
+	returns: False when no drawing has been recorded.
+	End Rem
+	Method DirtyRect:Int(x:Int Var, y:Int Var, width:Int Var, height:Int Var)
+		If Not dirtyValid Then
+			x = 0
+			y = 0
+			width = 0
+			height = 0
+			Return False
+		End If
+		x = dirtyX0
+		y = dirtyY0
+		width = dirtyX1 - dirtyX0
+		height = dirtyY1 - dirtyY0
+		Return True
+	End Method
+
+	Rem
+	bbdoc: Adds a rectangle in the current view to the dirty region.
+	about: The current origin, viewport, nested view, drawing rotation, and device
+	orientation are applied exactly as they are for drawing operations.
+	End Rem
+	Method InvalidateRect(x:Int, y:Int, width:Int, height:Int)
+		MarkDirtyLogical(x + originX, y + originY, width, height)
+	End Method
+
+	Rem
+	bbdoc: Marks the complete current logical canvas dirty.
+	End Rem
+	Method InvalidateAll()
+		MarkDirtyLogical(0, 0, logicalWidth, logicalHeight)
+	End Method
+
 	Method Cls()
 		If Not target Or viewportWidth <= 0 Or viewportHeight <= 0 Then Return
+		MarkDirtyLogical(viewportX, viewportY, viewportWidth, viewportHeight)
 		If viewDepth = 0 And viewportX = 0 And viewportY = 0 And viewportWidth = Width() And ..
 				viewportHeight = Height() Then
 			target.Clear(clearColor)
@@ -473,7 +541,10 @@ Type TEmbedded2DContext Final
 		If Not target Then Return
 		x :+ originX
 		y :+ originY
-		If PointVisible(x, y) Then DrawingTarget().SetPixel(x, y, drawColor)
+		If PointVisible(x, y) Then
+			MarkDirtyLogical(x, y, 1, 1)
+			DrawingTarget().SetPixel(x, y, drawColor)
+		End If
 	End Method
 
 	Method DrawLine(x0:Int, y0:Int, x1:Int, y1:Int)
@@ -483,6 +554,19 @@ Type TEmbedded2DContext Final
 		x1 :+ originX
 		y1 :+ originY
 		If Not ClipLine(x0, y0, x1, y1) Then Return
+		Local dirtyX:Int = x0
+		Local dirtyY:Int = y0
+		Local dirtyWidth:Int = x1 - x0
+		Local dirtyHeight:Int = y1 - y0
+		If dirtyWidth < 0 Then
+			dirtyX = x1
+			dirtyWidth = -dirtyWidth
+		End If
+		If dirtyHeight < 0 Then
+			dirtyY = y1
+			dirtyHeight = -dirtyHeight
+		End If
+		MarkDirtyLogical(dirtyX, dirtyY, dirtyWidth + 1, dirtyHeight + 1)
 		DrawingTarget().DrawLine(x0, y0, x1, y1, drawColor)
 	End Method
 
@@ -760,7 +844,10 @@ Type TEmbedded2DContext Final
 		If y < viewportY Then y = viewportY
 		If x1 > viewportX1 Then x1 = viewportX1
 		If y1 > viewportY1 Then y1 = viewportY1
-		If x < x1 And y < y1 Then DrawingTarget().FillRect(x, y, x1 - x, y1 - y, drawColor)
+		If x < x1 And y < y1 Then
+			MarkDirtyLogical(x, y, x1 - x, y1 - y)
+			DrawingTarget().FillRect(x, y, x1 - x, y1 - y, drawColor)
+		End If
 	End Method
 
 	Rem
@@ -940,6 +1027,10 @@ Type TEmbedded2DContext Final
 
 	Method DrawText:Int(text:String, x:Int, y:Int, scale:Int = 1)
 		If Not target Or Not currentFont Then Return x
+		If scale > 0 And text.length Then
+			MarkDirtyLogical(x + originX, y + originY, currentFont.TextWidth(text, scale), ..
+				TextLineCount(text) * currentFont.LineHeight() * scale)
+		End If
 		Return currentFont.DrawTextClipped(DrawingTarget(), text, x + originX, y + originY, ..
 			drawColor, scale, viewportX, viewportY, viewportWidth, viewportHeight) - originX
 	End Method
@@ -979,6 +1070,7 @@ Type TEmbedded2DContext Final
 			alignment:Int = TextAlignLeft, scale:Int = 1, ellipsis:Int = True)
 		If Not target Or Not currentFont Then Return 0
 		If alignment < TextAlignLeft Or alignment > TextAlignRight Then alignment = TextAlignLeft
+		If scale > 0 And text.length Then MarkDirtyLogical(x + originX, y + originY, width, height)
 		Return currentFont.DrawTextBoxClipped(DrawingTarget(), text, x + originX, y + originY, ..
 			width, height, drawColor, alignment, scale, ellipsis, ..
 			viewportX, viewportY, viewportWidth, viewportHeight)
@@ -991,7 +1083,8 @@ Type TEmbedded2DContext Final
 	End Rem
 	Method DrawImage(image:TEmbeddedImage, x:Int, y:Int, drawFlags:Int = 0, ..
 			opacity:Int = 255, colorKey:UInt = ImageColorKeyDisabled)
-		If Not target Or Not image Then Return
+		If Not target Or Not image Or opacity <= 0 Then Return
+		MarkDirtyLogical(x + originX, y + originY, image.Width(), image.Height())
 		image.DrawRegionClipped(DrawingTarget(), x + originX, y + originY, 0, 0, ..
 			image.Width(), image.Height(), drawColor, ..
 			viewportX, viewportY, viewportWidth, viewportHeight, drawFlags, opacity, colorKey)
@@ -1003,7 +1096,8 @@ Type TEmbedded2DContext Final
 	End Rem
 	Method DrawImageRect(image:TEmbeddedImage, x:Int, y:Int, width:Int, height:Int, ..
 			drawFlags:Int = 0, opacity:Int = 255, colorKey:UInt = ImageColorKeyDisabled)
-		If Not target Or Not image Then Return
+		If Not target Or Not image Or opacity <= 0 Then Return
+		MarkDirtyLogical(x + originX, y + originY, width, height)
 		image.DrawRectClipped(DrawingTarget(), x + originX, y + originY, width, height, drawColor, ..
 			viewportX, viewportY, viewportWidth, viewportHeight, drawFlags, opacity, colorKey)
 	End Method
@@ -1011,7 +1105,8 @@ Type TEmbedded2DContext Final
 	Method DrawImageRegion(image:TEmbeddedImage, x:Int, y:Int, sourceX:Int, sourceY:Int, ..
 			width:Int, height:Int, drawFlags:Int = 0, opacity:Int = 255, ..
 			colorKey:UInt = ImageColorKeyDisabled)
-		If Not target Or Not image Then Return
+		If Not target Or Not image Or opacity <= 0 Then Return
+		MarkDirtyLogical(x + originX, y + originY, width, height)
 		image.DrawRegionClipped(DrawingTarget(), x + originX, y + originY, ..
 			sourceX, sourceY, width, height, drawColor, ..
 			viewportX, viewportY, viewportWidth, viewportHeight, drawFlags, opacity, colorKey)
@@ -1021,10 +1116,99 @@ Type TEmbedded2DContext Final
 		If Not target Then Return DisplayErrorInvalidArgument
 		If Not display Then display = boundDisplay
 		If Not display Then Return DisplayErrorInvalidArgument
-		Return display.Present(target)
+		Local result:Int = display.Present(target)
+		If result > 0 Then ResetDirty()
+		Return result
+	End Method
+
+	Rem
+	bbdoc: Presents only the accumulated physical dirty rectangle.
+	about: When tracking is disabled this falls back to a complete presentation.
+	An empty enabled tracker succeeds without calling the display driver. A
+	successful transfer clears the region; failures retain it for retry.
+	End Rem
+	Method PresentDirty:Int(display:TDisplay = Null)
+		If Not target Then Return DisplayErrorInvalidArgument
+		If Not display Then display = boundDisplay
+		If Not display Then Return DisplayErrorInvalidArgument
+		If Not dirtyTracking Then Return Present(display)
+		If Not dirtyValid Then Return True
+		Local result:Int = display.PresentRegion(target, dirtyX0, dirtyY0, ..
+			dirtyX1 - dirtyX0, dirtyY1 - dirtyY0)
+		If result > 0 Then ResetDirty()
+		Return result
 	End Method
 
 	Private
+	Method TextLineCount:Int(text:String)
+		If Not text.length Then Return 0
+		Local lines:Int = 1
+		For Local index:Int = 0 Until text.length
+			If text[index] = 10 Then lines :+ 1
+		Next
+		Return lines
+	End Method
+
+	Method MarkDirtyLogical(x:Int, y:Int, width:Int, height:Int)
+		If Not dirtyTracking Or Not target Or width <= 0 Or height <= 0 Or ..
+				viewportWidth <= 0 Or viewportHeight <= 0 Then Return
+		Local x1:Int = x + width
+		Local y1:Int = y + height
+		Local viewportX1:Int = viewportX + viewportWidth
+		Local viewportY1:Int = viewportY + viewportHeight
+		If x < viewportX Then x = viewportX
+		If y < viewportY Then y = viewportY
+		If x1 > viewportX1 Then x1 = viewportX1
+		If y1 > viewportY1 Then y1 = viewportY1
+		If x >= x1 Or y >= y1 Then Return
+
+		Local px0:Int = transformXX * x + transformXY * y + transformTX
+		Local py0:Int = transformYX * x + transformYY * y + transformTY
+		Local px1:Int = transformXX * (x1 - 1) + transformXY * y + transformTX
+		Local py1:Int = transformYX * (x1 - 1) + transformYY * y + transformTY
+		Local px2:Int = transformXX * x + transformXY * (y1 - 1) + transformTX
+		Local py2:Int = transformYX * x + transformYY * (y1 - 1) + transformTY
+		Local px3:Int = transformXX * (x1 - 1) + transformXY * (y1 - 1) + transformTX
+		Local py3:Int = transformYX * (x1 - 1) + transformYY * (y1 - 1) + transformTY
+		Local minimumX:Int = px0
+		Local maximumX:Int = px0
+		Local minimumY:Int = py0
+		Local maximumY:Int = py0
+		If px1 < minimumX Then minimumX = px1
+		If px2 < minimumX Then minimumX = px2
+		If px3 < minimumX Then minimumX = px3
+		If px1 > maximumX Then maximumX = px1
+		If px2 > maximumX Then maximumX = px2
+		If px3 > maximumX Then maximumX = px3
+		If py1 < minimumY Then minimumY = py1
+		If py2 < minimumY Then minimumY = py2
+		If py3 < minimumY Then minimumY = py3
+		If py1 > maximumY Then maximumY = py1
+		If py2 > maximumY Then maximumY = py2
+		If py3 > maximumY Then maximumY = py3
+		IncludeDirtyPhysical(minimumX, minimumY, maximumX + 1, maximumY + 1)
+	End Method
+
+	Method IncludeDirtyPhysical(x0:Int, y0:Int, x1:Int, y1:Int)
+		If x0 < 0 Then x0 = 0
+		If y0 < 0 Then y0 = 0
+		If x1 > target.Width() Then x1 = target.Width()
+		If y1 > target.Height() Then y1 = target.Height()
+		If x0 >= x1 Or y0 >= y1 Then Return
+		If Not dirtyValid Then
+			dirtyX0 = x0
+			dirtyY0 = y0
+			dirtyX1 = x1
+			dirtyY1 = y1
+			dirtyValid = True
+			Return
+		End If
+		If x0 < dirtyX0 Then dirtyX0 = x0
+		If y0 < dirtyY0 Then dirtyY0 = y0
+		If x1 > dirtyX1 Then dirtyX1 = x1
+		If y1 > dirtyY1 Then dirtyY1 = y1
+	End Method
+
 	Method DrawingTarget:TDisplayBuffer()
 		If drawingTarget And (transformXX <> 1 Or transformXY Or transformYX Or transformYY <> 1 Or ..
 				transformTX Or transformTY Or logicalWidth <> target.Width() Or logicalHeight <> target.Height()) Then
@@ -1377,6 +1561,30 @@ Function ResetViewport()
 	Default2DContext().ResetViewport()
 End Function
 
+Function SetDirtyTracking(enabled:Int = True)
+	Default2DContext().SetDirtyTracking(enabled)
+End Function
+
+Function DirtyTracking:Int()
+	Return Default2DContext().DirtyTracking()
+End Function
+
+Function ResetDirty()
+	Default2DContext().ResetDirty()
+End Function
+
+Function DirtyRect:Int(x:Int Var, y:Int Var, width:Int Var, height:Int Var)
+	Return Default2DContext().DirtyRect(x, y, width, height)
+End Function
+
+Function InvalidateRect(x:Int, y:Int, width:Int, height:Int)
+	Default2DContext().InvalidateRect(x, y, width, height)
+End Function
+
+Function InvalidateAll()
+	Default2DContext().InvalidateAll()
+End Function
+
 Function Cls()
 	Default2DContext().Cls()
 End Function
@@ -1470,5 +1678,9 @@ End Function
 
 Function Present:Int(display:TDisplay = Null)
 	Return Default2DContext().Present(display)
+End Function
+
+Function PresentDirty:Int(display:TDisplay = Null)
+	Return Default2DContext().PresentDirty(display)
 End Function
 ?

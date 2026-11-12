@@ -47,6 +47,29 @@ DrawLine 0, 12, 71, 12
 Present
 ```
 
+For displays where transfer bandwidth matters, Graphics2D can accumulate one
+conservative dirty rectangle without allocating a tile list or inspecting the
+framebuffer. Tracking is opt-in, so applications that always present complete
+frames do no dirty-bound calculations:
+
+```blitzmax
+SetDirtyTracking True
+
+' Draw one update. Viewports, origins, nested views and rotations are reflected
+' in the physical framebuffer rectangle automatically.
+FillRect 20, 12, 40, 18
+DrawText "42", 24, 16
+PresentDirty
+```
+
+`PresentDirty` calls the display's existing `PresentRegion` boundary and clears
+the region only after a successful transfer. If nothing changed, it succeeds
+without calling the driver. A failed transfer retains the rectangle for retry.
+`DirtyRect` exposes the accumulated physical bounds for diagnostics,
+`ResetDirty` discards them, and `InvalidateRect` or `InvalidateAll` covers
+changes made outside Graphics2D. Drivers remain free to expand a request to
+page, row, DMA, or controller-specific transfer boundaries.
+
 `SetRotation` accepts clockwise `0`, `90`, `180`, or `270` degree orientation.
 All primitives, text, and images use the rotated logical canvas; `GraphicsWidth`
 and `GraphicsHeight` report its dimensions. Rotation remaps integer coordinates
