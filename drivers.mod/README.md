@@ -240,6 +240,7 @@ image2embedded icon.svg icon.ebi --format mono1 --mask auto
 image2embedded splash.png splash.ebi --format rgb565 --mask auto
 image2embedded sprites.png sprites.ebi --format auto --mask auto
 image2embedded ui-icons.png ui-icons.ebi --format indexed4 --mask auto
+image2embedded panel.png panel.ebi --format indexed4 --compression rle
 ```
 
 `--threshold` controls monochrome conversion, `--alpha-threshold` controls the
@@ -249,6 +250,14 @@ The `auto` pixel format chooses the smallest exact indexed representation for
 images containing no more than 256 colours, otherwise it falls back to RGB565.
 An explicit indexed format requires the source to fit its 2-, 4-, 16-, or
 256-colour capacity and reports an error rather than silently quantising it.
+`--compression auto|none|rle` controls indexed row compression. The default
+`auto` writes RLE only when its row table and runs are smaller than the packed
+pixels. Each compressed row has an independent validated offset, and every run
+stores a length from 1 through 256 plus one palette index. Clipping, scaling,
+and mirroring traverse those runs directly without an expanded row buffer.
+RLE is deliberately unavailable for Mono1, RGB565, and RGB888: their packed or
+native representation remains more predictable for arbitrary photographic
+data.
 RGB565 is little-endian and is generally the compact photographic choice;
 RGB888 avoids colour quantisation. No decoder or source image library is linked
 into the firmware.

@@ -19,6 +19,8 @@ Import Image.SVG
 
 Const EBIHeaderSize:Int = 32
 Const EBIFlagMask:Int = 1
+Const EBIEncodingRaw:Int = 0
+Const EBIEncodingRLE:Int = 1
 Const EBIFormatIndexed1:Int = $101
 Const EBIFormatIndexed2:Int = $102
 Const EBIFormatIndexed4:Int = $104
@@ -81,6 +83,12 @@ Function IndexedBits:Int(format:Int)
 	Return 0
 End Function
 
+Function PackedIndex:Int(pixels:Byte[], stride:Int, x:Int, y:Int, bits:Int)
+	Local bitOffset:Int = x * bits
+	Local shift:Int = 8 - bits - (bitOffset & 7)
+	Return (Int(pixels[y * stride + (bitOffset Shr 3)]) Shr shift) & ((1 Shl bits) - 1)
+End Function
+
 If AppArgs.length < 3 Then
 	Print "Usage: image2embedded <input-image> <output.ebi> [options]"
 	Print "Options:"
@@ -89,6 +97,7 @@ If AppArgs.length < 3 Then
 	Print "  --threshold <0-255>           Mono1 luminance threshold (default: 128)"
 	Print "  --mask auto|always|none       Transparency-mask policy (default: auto)"
 	Print "  --alpha-threshold <0-255>     Minimum visible alpha (default: 128)"
+	Print "  --compression auto|none|rle   Indexed row compression (default: auto)"
 	RuntimeError "Missing or invalid arguments"
 End If
 
@@ -100,6 +109,7 @@ Local automaticFormat:Int
 Local monoThreshold:Int = 128
 Local alphaThreshold:Int = 128
 Local maskPolicy:Int ' 0 auto, 1 always, 2 none
+Local compressionPolicy:Int ' 0 auto, 1 none, 2 rle
 
 Local argument:Int = 3
 While argument < AppArgs.length
@@ -144,6 +154,17 @@ While argument < AppArgs.length
 					maskPolicy = 2
 				Default
 					Fail("unknown mask policy '" + value + "'")
+			End Select
+		Case "--compression"
+			Select value.ToLower()
+				Case "auto"
+					compressionPolicy = 0
+				Case "none"
+					compressionPolicy = 1
+				Case "rle"
+					compressionPolicy = 2
+				Default
+					Fail("unknown compression policy '" + value + "'")
 			End Select
 		Default
 			Fail("unknown option '" + option + "'")
@@ -276,10 +297,43 @@ For Local y:Int = 0 Until pixmap.height
 	Next
 Next
 
+Local useRLE:Int
+Local rleOffsets:Int[]
+Local rleRuns:Byte[]
+Local rleRunBytes:Int
+Local outputIndexedBits:Int = IndexedBits(outputFormat)
+If outputIndexedBits Then
+	rleOffsets = New Int[pixmap.height + 1]
+	rleRuns = New Byte[pixmap.width * pixmap.height * 2]
+	For Local y:Int = 0 Until pixmap.height
+		rleOffsets[y] = rleRunBytes
+		Local x:Int
+		While x < pixmap.width
+			Local index:Int = PackedIndex(pixels, stride, x, y, outputIndexedBits)
+			Local runLength:Int = 1
+			While x + runLength < pixmap.width And runLength < 256 And ..
+					PackedIndex(pixels, stride, x + runLength, y, outputIndexedBits) = index
+				runLength :+ 1
+			Wend
+			rleRuns[rleRunBytes] = Byte(runLength - 1)
+			rleRuns[rleRunBytes + 1] = Byte(index)
+			rleRunBytes :+ 2
+			x :+ runLength
+		Wend
+	Next
+	rleOffsets[pixmap.height] = rleRunBytes
+	Local rleBytes:Int = (pixmap.height + 1) * 4 + rleRunBytes
+	useRLE = compressionPolicy = 2 Or (compressionPolicy = 0 And rleBytes < pixels.length)
+Else If compressionPolicy = 2 Then
+	Fail("RLE compression is available only for indexed formats")
+End If
+
 Local paletteBytes:Int = paletteCount * 3
 Local pixelOffset:Int = EBIHeaderSize + paletteBytes
+Local storedPixelBytes:Int = pixels.length
+If useRLE Then storedPixelBytes = (pixmap.height + 1) * 4 + rleRunBytes
 Local maskOffset:Int
-If includeMask Then maskOffset = pixelOffset + pixels.length
+If includeMask Then maskOffset = pixelOffset + storedPixelBytes
 Local output:TStream = WriteStream(outputPath)
 If Not output Then Fail("could not create '" + outputPath + "'")
 output.WriteString("EBI1")
@@ -288,8 +342,12 @@ WriteU16(output, includeMask * EBIFlagMask)
 WriteU16(output, pixmap.width)
 WriteU16(output, pixmap.height)
 WriteU16(output, outputFormat)
-WriteU16(output, 0)
-WriteU32(output, stride)
+WriteU16(output, useRLE * EBIEncodingRLE)
+If useRLE Then
+	WriteU32(output, 0)
+Else
+	WriteU32(output, stride)
+End If
 WriteU32(output, pixelOffset)
 WriteU32(output, maskStride)
 WriteU32(output, maskOffset)
@@ -299,9 +357,18 @@ For Local index:Int = 0 Until paletteCount
 	output.WriteByte(Int((color Shr 8) & $ff))
 	output.WriteByte(Int(color & $ff))
 Next
-For Local byteValue:Byte = EachIn pixels
-	output.WriteByte(Int(byteValue) & $ff)
-Next
+If useRLE Then
+	For Local offset:Int = EachIn rleOffsets
+		WriteU32(output, offset)
+	Next
+	For Local index:Int = 0 Until rleRunBytes
+		output.WriteByte(Int(rleRuns[index]) & $ff)
+	Next
+Else
+	For Local byteValue:Byte = EachIn pixels
+		output.WriteByte(Int(byteValue) & $ff)
+	Next
+End If
 If includeMask Then
 	For Local byteValue:Byte = EachIn mask
 		output.WriteByte(Int(byteValue) & $ff)
@@ -317,6 +384,11 @@ Print "  dimensions: " + pixmap.width + "x" + pixmap.height
 Print "  format: " + outputFormatName
 If paletteCount Then Print "  palette entries: " + paletteCount + " (" + paletteBytes + " bytes)"
 Print "  transparency mask: " + includeMask
-Print "  pixel bytes: " + pixels.length
+If useRLE Then
+	Print "  compression: rle (" + pixels.length + " -> " + storedPixelBytes + " bytes)"
+Else
+	Print "  compression: none"
+End If
+Print "  pixel bytes: " + storedPixelBytes
 If includeMask Then Print "  mask bytes: " + maskBytes
-Print "  total bytes: " + (EBIHeaderSize + paletteBytes + pixels.length + maskBytes)
+Print "  total bytes: " + (EBIHeaderSize + paletteBytes + storedPixelBytes + maskBytes)

@@ -18,7 +18,7 @@ Function PutU32(data:Byte[], offset:Int, value:Int)
 End Function
 
 Function Header(data:Byte[], flags:Int, width:Int, height:Int, format:Int, stride:Int, ..
-		pixelOffset:Int, maskStride:Int = 0, maskOffset:Int = 0)
+		pixelOffset:Int, maskStride:Int = 0, maskOffset:Int = 0, encoding:Int = 0)
 	data[0] = Asc("E")
 	data[1] = Asc("B")
 	data[2] = Asc("I")
@@ -28,7 +28,7 @@ Function Header(data:Byte[], flags:Int, width:Int, height:Int, format:Int, strid
 	PutU16(data, 8, width)
 	PutU16(data, 10, height)
 	PutU16(data, 12, format)
-	PutU16(data, 14, 0)
+	PutU16(data, 14, encoding)
 	PutU32(data, 16, stride)
 	PutU32(data, 20, pixelOffset)
 	PutU32(data, 24, maskStride)
@@ -95,6 +95,32 @@ indexed8Data[38] = 0; indexed8Data[39] = 1
 Local indexed8:TEmbeddedImage = TEmbeddedImage.Create(Varptr indexed8Data[0], indexed8Data.length)
 indexed8.Draw(indexedWidthsTarget, 0, 2)
 passed :& indexedWidthsTarget.Pixel(0, 2) = $ff0000 And indexedWidthsTarget.Pixel(1, 2) = $0000ff
+
+' RLE rows carry independent offsets followed by two-byte length/index runs.
+Local rleData:Byte[] = New Byte[58]
+Header(rleData, 0, 4, 2, EmbeddedImageFormatIndexed1, 0, 38, 0, 0, ..
+	EmbeddedImageEncodingRLE)
+rleData[35] = $ff; rleData[36] = $ff; rleData[37] = $ff
+PutU32(rleData, 38, 0); PutU32(rleData, 42, 4); PutU32(rleData, 46, 8)
+rleData[50] = 1; rleData[51] = 0; rleData[52] = 1; rleData[53] = 1
+rleData[54] = 1; rleData[55] = 1; rleData[56] = 1; rleData[57] = 0
+Local rleImage:TEmbeddedImage = TEmbeddedImage.Create(Varptr rleData[0], rleData.length)
+passed :& rleImage <> Null And rleImage.Encoding() = EmbeddedImageEncodingRLE
+Local rleTarget:TDisplayBuffer = TDisplayBuffer.Create(8, 4, DisplayPixelFormatRGB565)
+rleImage.DrawRect(rleTarget, 0, 0, 8, 4, $ffffff, EmbeddedImageDrawFlipX)
+passed :& rleTarget.Pixel(0, 0) = $ffffff And rleTarget.Pixel(7, 0) = 0
+passed :& rleTarget.Pixel(0, 3) = 0 And rleTarget.Pixel(7, 3) = $ffffff
+Local rleOptions:TDisplayBuffer = TDisplayBuffer.Create(4, 2, DisplayPixelFormatRGB888)
+rleOptions.Clear($0000ff)
+rleImage.DrawRegionClipped(rleOptions, 0, 0, 0, 0, 4, 2, $ff8080, ..
+	1, 0, 2, 1, 0, 128, 0)
+passed :& rleOptions.Pixel(0, 0) = $0000ff And rleOptions.Pixel(1, 0) = $0000ff
+passed :& rleOptions.Pixel(2, 0) = $8040bf And rleOptions.Pixel(3, 0) = $0000ff
+Local rleMono:TDisplayBuffer = TDisplayBuffer.Create(4, 2, DisplayPixelFormatMono1)
+rleImage.Draw(rleMono, 0, 0)
+passed :& Not rleMono.Pixel(0, 0) And Not rleMono.Pixel(1, 0)
+passed :& rleMono.Pixel(2, 0) And rleMono.Pixel(3, 0)
+passed :& rleMono.Pixel(0, 1) And Not rleMono.Pixel(3, 1)
 
 ' The native RGB565 path preserves clipping, nearest-neighbour scaling, and flips.
 Local rgb565Data:Byte[] = New Byte[40]
@@ -213,6 +239,15 @@ invalidIndexed[32] = $ff
 invalidIndexed[35] = $ff
 invalidIndexed[38] = $c0
 passed :& TEmbeddedImage.Create(Varptr invalidIndexed[0], invalidIndexed.length) = Null
+
+' RLE validation rejects rows that do not reconstruct the declared width.
+Local invalidRLE:Byte[] = New Byte[48]
+Header(invalidRLE, 0, 4, 1, EmbeddedImageFormatIndexed1, 0, 38, 0, 0, ..
+	EmbeddedImageEncodingRLE)
+invalidRLE[35] = $ff; invalidRLE[36] = $ff; invalidRLE[37] = $ff
+PutU32(invalidRLE, 38, 0); PutU32(invalidRLE, 42, 2)
+invalidRLE[46] = 2; invalidRLE[47] = 1
+passed :& TEmbeddedImage.Create(Varptr invalidRLE[0], invalidRLE.length) = Null
 
 If passed Then
 	Print "Embedded display image conformance test passed"

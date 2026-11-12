@@ -5,9 +5,9 @@ SuperStrict
 
 Rem
 bbdoc: Compact firmware-resident images and allocation-free raster drawing.
-about: EBI1 images contain raw Mono1, RGB565, RGB888, or indexed pixels and an
-optional one-bit transparency mask. Images are validated once when opened and
-can then be clipped, tinted, converted, or nearest-neighbour scaled while drawing.
+about: EBI1 images contain raw Mono1, RGB565, RGB888, or raw/RLE indexed pixels
+and an optional one-bit transparency mask. Images are validated once when opened
+and can then be clipped, tinted, converted, or nearest-neighbour scaled while drawing.
 End Rem
 Module Embedded.Drivers.Display.Image
 ?embedded
@@ -29,6 +29,7 @@ End Extern
 
 Const EmbeddedImageVersion:Int = 1
 Const EmbeddedImageEncodingRaw:Int = 0
+Const EmbeddedImageEncodingRLE:Int = 1
 Const EmbeddedImageFlagMask:Int = 1
 Const EmbeddedImageFormatIndexed1:Int = $101
 Const EmbeddedImageFormatIndexed2:Int = $102
@@ -91,6 +92,8 @@ Type TEmbeddedImage Final
 	Field maskOffset:Int
 	Field imageFlags:Int
 	Field paletteEntries:Int
+	Field imageEncoding:Int
+	Field rleDataOffset:Int
 
 	Public
 	Rem
@@ -124,11 +127,28 @@ Type TEmbeddedImage Final
 			minimumStride = DisplayMinimumStride(width, format)
 			If pixels < 32 Then Return Null
 		End If
-		If width <= 0 Or height <= 0 Or minimumStride <= 0 Or ..
-				encoding <> EmbeddedImageEncodingRaw Or stride < minimumStride Then Return Null
-		Local pixelEnd:Long = Long(pixels) + Long(stride) * Long(height)
-		If pixelEnd > length Then Return Null
-		If indexedBits Then
+		If width <= 0 Or height <= 0 Or minimumStride <= 0 Then Return Null
+		If encoding <> EmbeddedImageEncodingRaw And encoding <> EmbeddedImageEncodingRLE Then Return Null
+		If encoding = EmbeddedImageEncodingRLE And Not indexedBits Then Return Null
+		Local pixelEnd:Long
+		Local rleDataOffset:Int
+		Local rleLength:Int
+		If encoding = EmbeddedImageEncodingRaw Then
+			If stride < minimumStride Then Return Null
+			pixelEnd = Long(pixels) + Long(stride) * Long(height)
+			If pixelEnd > length Then Return Null
+		Else
+			If stride <> 0 Then Return Null
+			Local tableBytes:Long = Long(height + 1) * 4
+			If Long(pixels) + tableBytes > length Then Return Null
+			rleDataOffset = pixels + Int(tableBytes)
+			If ImageU32(data, pixels) <> 0 Then Return Null
+			Local finalOffset:Int = Int(ImageU32(data, pixels + height * 4))
+			If finalOffset < 0 Or Long(rleDataOffset) + finalOffset > length Then Return Null
+			rleLength = finalOffset
+			pixelEnd = Long(rleDataOffset) + finalOffset
+		End If
+		If indexedBits And encoding = EmbeddedImageEncodingRaw Then
 			For Local y:Int = 0 Until height
 				For Local x:Int = 0 Until width
 					Local packed:Int = Int(data[pixels + y * stride + ((x * indexedBits) Shr 3)]) & $ff
@@ -137,10 +157,26 @@ Type TEmbeddedImage Final
 					If index >= paletteEntries Then Return Null
 				Next
 			Next
+		Else If indexedBits Then
+			Local previousEnd:Int
+			For Local y:Int = 0 Until height
+				Local rowStart:Int = Int(ImageU32(data, pixels + y * 4))
+				Local rowEnd:Int = Int(ImageU32(data, pixels + (y + 1) * 4))
+				If rowStart <> previousEnd Or rowEnd < rowStart Or rowEnd > rleLength Or ..
+						(rowEnd - rowStart) Mod 2 Then Return Null
+				Local decodedWidth:Int
+				For Local runOffset:Int = rowStart Until rowEnd Step 2
+					decodedWidth :+ (Int(data[rleDataOffset + runOffset]) & $ff) + 1
+					If (Int(data[rleDataOffset + runOffset + 1]) & $ff) >= paletteEntries Or ..
+							decodedWidth > width Then Return Null
+				Next
+				If decodedWidth <> width Then Return Null
+				previousEnd = rowEnd
+			Next
 		End If
 		If flags & EmbeddedImageFlagMask Then
 			Local minimumMaskStride:Int = (width + 7) / 8
-			If alphaStride < minimumMaskStride Or alpha < 32 Then Return Null
+			If alphaStride < minimumMaskStride Or Long(alpha) < pixelEnd Then Return Null
 			Local maskEnd:Long = Long(alpha) + Long(alphaStride) * Long(height)
 			If maskEnd > length Then Return Null
 		Else If alphaStride <> 0 Or alpha <> 0 Then
@@ -158,6 +194,8 @@ Type TEmbeddedImage Final
 		image.maskOffset = alpha
 		image.imageFlags = flags
 		image.paletteEntries = paletteEntries
+		image.imageEncoding = encoding
+		image.rleDataOffset = rleDataOffset
 		Return image
 	End Function
 
@@ -183,6 +221,10 @@ Type TEmbeddedImage Final
 
 	Method PaletteSize:Int()
 		Return paletteEntries
+	End Method
+
+	Method Encoding:Int()
+		Return imageEncoding
 	End Method
 
 	Rem
@@ -260,6 +302,16 @@ Type TEmbeddedImage Final
 		If x1 > clipX1 Then x1 = clipX1
 		If y1 > clipY1 Then y1 = clipY1
 		If x0 >= x1 Or y0 >= y1 Then Return
+		If imageEncoding = EmbeddedImageEncodingRLE Then
+			For Local py:Int = y0 Until y1
+				Local sourceRow:Int = py - y
+				Local sy:Int = sourceY + sourceRow
+				If drawFlags & EmbeddedImageDrawFlipY Then sy = sourceY + height - 1 - sourceRow
+				DrawRLERow(target, py, x0, x1, sy, sourceX, width, x, width, ..
+					(drawFlags & EmbeddedImageDrawFlipX) <> 0, tint, opacity, colorKey)
+			Next
+			Return
+		End If
 
 		Local targetPixels:Byte Ptr = target.Pixels()
 		If targetPixels And target.Format() = DisplayPixelFormatRGB565 And Not HasMask() And ..
@@ -330,6 +382,16 @@ Type TEmbeddedImage Final
 		If x1 > clipX1 Then x1 = clipX1
 		If y1 > clipY1 Then y1 = clipY1
 		If x0 >= x1 Or y0 >= y1 Then Return
+		If imageEncoding = EmbeddedImageEncodingRLE Then
+			For Local py:Int = y0 Until y1
+				Local sy:Int = (py - destinationY) * imageHeight / destinationHeight
+				If drawFlags & EmbeddedImageDrawFlipY Then sy = imageHeight - 1 - sy
+				DrawRLERow(target, py, x0, x1, sy, 0, imageWidth, destinationX, ..
+					destinationWidth, (drawFlags & EmbeddedImageDrawFlipX) <> 0, ..
+					tint, opacity, colorKey)
+			Next
+			Return
+		End If
 		Local targetPixels:Byte Ptr = target.Pixels()
 		If targetPixels And target.Format() = DisplayPixelFormatRGB565 And Not HasMask() And ..
 				colorKey = EmbeddedImageColorKeyDisabled And ..
@@ -352,10 +414,55 @@ Type TEmbeddedImage Final
 	End Method
 
 	Private
+	Method DrawRLERow(target:TDisplayBuffer, targetY:Int, x0:Int, x1:Int, sourceY:Int, ..
+			sourceX:Int, sourceWidth:Int, destinationX:Int, destinationWidth:Int, ..
+			flipX:Int, tint:UInt, opacity:Int, colorKey:UInt)
+		Local rowStart:Int = Int(ImageU32(data, pixelOffset + sourceY * 4))
+		Local rowEnd:Int = Int(ImageU32(data, pixelOffset + (sourceY + 1) * 4))
+		Local firstSourceX:Int = sourceX + (x0 - destinationX) * sourceWidth / destinationWidth
+		If flipX Then firstSourceX = sourceX + sourceWidth - 1 - ..
+			((x0 - destinationX) * sourceWidth / destinationWidth)
+		Local runOffset:Int = rowStart
+		Local runStart:Int
+		Local runEnd:Int
+		While runOffset < rowEnd
+			runEnd = runStart + (Int(data[rleDataOffset + runOffset]) & $ff) + 1
+			If firstSourceX < runEnd Then Exit
+			runStart = runEnd
+			runOffset :+ 2
+		Wend
+		For Local px:Int = x0 Until x1
+			Local sx:Int = sourceX + (px - destinationX) * sourceWidth / destinationWidth
+			If flipX Then sx = sourceX + sourceWidth - 1 - ..
+				((px - destinationX) * sourceWidth / destinationWidth)
+			If flipX Then
+				While sx < runStart
+					runOffset :- 2
+					runEnd = runStart
+					runStart = runEnd - ((Int(data[rleDataOffset + runOffset]) & $ff) + 1)
+				Wend
+			Else
+				While sx >= runEnd
+					runStart = runEnd
+					runOffset :+ 2
+					runEnd = runStart + (Int(data[rleDataOffset + runOffset]) & $ff) + 1
+				Wend
+			End If
+			If PixelVisible(sx, sourceY) Then
+				Local index:Int = Int(data[rleDataOffset + runOffset + 1]) & $ff
+				DrawColor(target, px, targetY, PalettePixel(index), tint, opacity, colorKey)
+			End If
+		Next
+	End Method
+
 	Method DrawPixel(target:TDisplayBuffer, x:Int, y:Int, sourceX:Int, sourceY:Int, ..
 			tint:UInt, opacity:Int, colorKey:UInt)
 		If Not PixelVisible(sourceX, sourceY) Then Return
-		Local source:UInt = Pixel(sourceX, sourceY)
+		DrawColor(target, x, y, Pixel(sourceX, sourceY), tint, opacity, colorKey)
+	End Method
+
+	Method DrawColor(target:TDisplayBuffer, x:Int, y:Int, source:UInt, ..
+			tint:UInt, opacity:Int, colorKey:UInt)
 		If colorKey <> EmbeddedImageColorKeyDisabled And source = (colorKey & $ffffff) Then Return
 		source = TintPixel(source, tint)
 		If opacity >= 255 Then
@@ -384,16 +491,35 @@ Type TEmbeddedImage Final
 		Return (red Shl 16) | (green Shl 8) | blue
 	End Method
 
+	Method PalettePixel:UInt(index:Int)
+		Local offset:Int = 32 + index * 3
+		Return (UInt(Int(data[offset]) & $ff) Shl 16) | ..
+			(UInt(Int(data[offset + 1]) & $ff) Shl 8) | UInt(Int(data[offset + 2]) & $ff)
+	End Method
+
 	Method Pixel:UInt(x:Int, y:Int)
 		Local offset:Int
 		Local indexedBits:Int = IndexedFormatBits(imageFormat)
 		If indexedBits Then
-			Local packed:Int = Int(data[pixelOffset + y * pixelStride + ((x * indexedBits) Shr 3)]) & $ff
-			Local shift:Int = 8 - indexedBits - ((x * indexedBits) & 7)
-			Local index:Int = (packed Shr shift) & ((1 Shl indexedBits) - 1)
-			offset = 32 + index * 3
-			Return (UInt(Int(data[offset]) & $ff) Shl 16) | ..
-				(UInt(Int(data[offset + 1]) & $ff) Shl 8) | UInt(Int(data[offset + 2]) & $ff)
+			Local index:Int
+			If imageEncoding = EmbeddedImageEncodingRLE Then
+				Local runOffset:Int = Int(ImageU32(data, pixelOffset + y * 4))
+				Local rowEnd:Int = Int(ImageU32(data, pixelOffset + (y + 1) * 4))
+				Local decodedX:Int
+				While runOffset < rowEnd
+					decodedX :+ (Int(data[rleDataOffset + runOffset]) & $ff) + 1
+					If x < decodedX Then
+						index = Int(data[rleDataOffset + runOffset + 1]) & $ff
+						Exit
+					End If
+					runOffset :+ 2
+				Wend
+			Else
+				Local packed:Int = Int(data[pixelOffset + y * pixelStride + ((x * indexedBits) Shr 3)]) & $ff
+				Local shift:Int = 8 - indexedBits - ((x * indexedBits) & 7)
+				index = (packed Shr shift) & ((1 Shl indexedBits) - 1)
+			End If
+			Return PalettePixel(index)
 		End If
 		Select imageFormat
 			Case DisplayPixelFormatMono1
