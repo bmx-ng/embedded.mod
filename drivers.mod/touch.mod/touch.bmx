@@ -17,6 +17,7 @@ ModuleInfo "License: zlib/libpng"
 
 Import BRL.Event
 Import BRL.System
+Import Embedded.Drivers.Display
 
 Const TouchMaximumContacts:Int = 10
 Const TouchMaximumDevices:Int = 4
@@ -53,6 +54,23 @@ Type TTouchDevice Abstract
 	Field previousIds:Int[TouchMaximumContacts]
 	Field previousX:Int[TouchMaximumContacts]
 	Field previousY:Int[TouchMaximumContacts]
+	Field configuredOrientation:Int
+
+	Method _TransformContact(x:Int Var, y:Int Var)
+		Local nativeX:Int = x
+		Local nativeY:Int = y
+		Select configuredOrientation
+			Case DisplayOrientation90
+				x = nativeY
+				y = Width() - 1 - nativeX
+			Case DisplayOrientation180
+				x = Width() - 1 - nativeX
+				y = Height() - 1 - nativeY
+			Case DisplayOrientation270
+				x = Height() - 1 - nativeY
+				y = nativeX
+		End Select
+	End Method
 
 	Method _FindPrevious:Int(id:Int)
 		For Local index:Int = 0 Until previousCount
@@ -78,6 +96,7 @@ Type TTouchDevice Abstract
 			Local id:Int = ContactId(index)
 			Local x:Int = ContactX(index)
 			Local y:Int = ContactY(index)
+			_TransformContact(x, y)
 			Local previous:Int = _FindPrevious(id)
 			Local eventId:Int
 			If previous < 0 Then
@@ -87,16 +106,16 @@ Type TTouchDevice Abstract
 			End If
 			If eventId Then
 				EmitEvent(CreateEvent(eventId, Self, id, 0, ..
-					_NormalizedTouchCoordinate(x, Width()), ..
-					_NormalizedTouchCoordinate(y, Height())))
+					_NormalizedTouchCoordinate(x, LogicalWidth()), ..
+					_NormalizedTouchCoordinate(y, LogicalHeight())))
 			End If
 		Next
 
 		For Local previous:Int = 0 Until previousCount
 			If _FindCurrent(previousIds[previous], count) < 0 Then
 				EmitEvent(CreateEvent(EVENT_TOUCHUP, Self, previousIds[previous], 0, ..
-					_NormalizedTouchCoordinate(previousX[previous], Width()), ..
-					_NormalizedTouchCoordinate(previousY[previous], Height())))
+					_NormalizedTouchCoordinate(previousX[previous], LogicalWidth()), ..
+					_NormalizedTouchCoordinate(previousY[previous], LogicalHeight())))
 			End If
 		Next
 
@@ -114,6 +133,33 @@ Type TTouchDevice Abstract
 	Method ContactId:Int(index:Int) Abstract
 	Method ContactX:Int(index:Int) Abstract
 	Method ContactY:Int(index:Int) Abstract
+
+	Rem
+	bbdoc: Configures the clockwise orientation applied to emitted touch coordinates.
+	End Rem
+	Method SetOrientation:Int(degrees:Int)
+		Local normalized:Int = NormalizeDisplayOrientation(degrees)
+		If normalized < 0 Then Return False
+		configuredOrientation = normalized
+		previousCount = 0
+		Return True
+	End Method
+
+	Method Orientation:Int()
+		Return configuredOrientation
+	End Method
+
+	Method LogicalWidth:Int()
+		If configuredOrientation = DisplayOrientation90 Or ..
+				configuredOrientation = DisplayOrientation270 Then Return Height()
+		Return Width()
+	End Method
+
+	Method LogicalHeight:Int()
+		If configuredOrientation = DisplayOrientation90 Or ..
+				configuredOrientation = DisplayOrientation270 Then Return Width()
+		Return Height()
+	End Method
 
 	Rem
 	bbdoc: Starts standard touch-event generation during PollSystem.

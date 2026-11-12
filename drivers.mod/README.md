@@ -57,6 +57,14 @@ DrawText "Portrait", 4, 4
 Present
 ```
 
+Display orientation is device configuration rather than a drawing transform.
+Call `display.SetOrientation(90)` before `SetRenderTarget` to make portrait the
+default, so `SetRotation(0)` uses that orientation and the logical dimensions are
+swapped. `SetDisplayOrientation` changes it through the active Graphics2D context
+at runtime, retaining the current relative drawing rotation and resetting the
+viewport. This supports sensor-driven auto-rotation without rotating the complete
+framebuffer or allocating another one.
+
 Concrete display drivers live beneath `Embedded.Drivers.Displays.*`.
 `Embedded.Drivers.Displays.SSD1306` is the first controller implementation. It uses
 `Embedded.Hardware.I2C`, supports dirty page updates, and includes the 72x40
@@ -76,6 +84,10 @@ Touch events follow the same convention as desktop BlitzMax backends:
 - `event.data` is the stable contact/finger id; and
 - `event.x` and `event.y` are normalized to `0..10000` across the associated
   display rather than being controller-specific raw coordinates.
+
+`TTouchDevice.SetOrientation` applies the same quarter-turn convention as
+`TDisplay.SetOrientation`. A project using portrait, upside-down, or runtime
+auto-rotation should set both devices to the same orientation.
 
 The shared layer tracks contact transitions without per-poll allocation.
 Concrete controller modules only read the hardware and expose the current

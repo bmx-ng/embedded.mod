@@ -85,5 +85,19 @@ Check capturedId = EVENT_TOUCHUP, "missing touch up"
 Check capturedData = 7, "wrong released contact id"
 Check capturedCount = 3, "unexpected event count"
 
+' Touch events follow the same configured clockwise orientation as drawing.
+Check touch.SetOrientation(90), "could not set touch orientation"
+touch.count = 1
+touch.ids[0] = 8
+touch.xs[0] = 0
+touch.ys[0] = 0
+PollSystem
+Check capturedId = EVENT_TOUCHDOWN, "missing oriented touch down"
+Check capturedX = 0 And capturedY = 10000, "wrong oriented touch coordinates"
+Check touch.LogicalWidth() = 51 And touch.LogicalHeight() = 101, "wrong touch dimensions"
+touch.count = 0
+PollSystem
+Check capturedCount = 5, "unexpected oriented event count"
+
 touch.StopEvents()
 Print "embedded touch conformance: PASS"

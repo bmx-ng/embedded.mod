@@ -48,7 +48,7 @@ Type TSSD1306Display Extends TDisplay
 	up to 128 pixels and height up to 64 pixels.
 	End Rem
 	Function Create:TSSD1306Display(controller:Int, address:UInt, width:Int, ..
-		height:Int, columnOffset:Int = 0, pageOffset:Int = 0)
+		height:Int, columnOffset:Int = 0, pageOffset:Int = 0, orientation:Int = DisplayOrientation0)
 		If controller < 0 Or address > $7f Or width <= 0 Or width > 128 Or ..
 				height <= 0 Or height > 64 Or columnOffset < 0 Or ..
 				columnOffset + width > 128 Or pageOffset < 0 Or ..
@@ -63,6 +63,7 @@ Type TSSD1306Display Extends TDisplay
 		display.displayHeight = height
 		display.columnOffset = columnOffset
 		display.pageOffset = pageOffset
+		If Not display.SetOrientation(orientation) Then Return Null
 		display.contrast = $7f
 		display.precharge = $f1
 		display.vcomh = $40
@@ -82,8 +83,8 @@ Type TSSD1306Display Extends TDisplay
 	contrast, precharge, and VCOMH settings used by 0.42-inch modules.
 	End Rem
 	Function Create72x40:TSSD1306Display(controller:Int, ..
-		address:UInt = SSD1306DefaultAddress)
-		Local display:TSSD1306Display = Create(controller, address, 72, 40, 28, 0)
+		address:UInt = SSD1306DefaultAddress, orientation:Int = DisplayOrientation0)
+		Local display:TSSD1306Display = Create(controller, address, 72, 40, 28, 0, orientation)
 		If Not display Then
 			Return Null
 		End If

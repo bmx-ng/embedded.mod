@@ -35,6 +35,22 @@ Const DisplayErrorGeneric:Int = -1
 Const DisplayErrorUnsupportedFormat:Int = -2
 Const DisplayErrorInvalidArgument:Int = -5
 
+Const DisplayOrientation0:Int = 0
+Const DisplayOrientation90:Int = 90
+Const DisplayOrientation180:Int = 180
+Const DisplayOrientation270:Int = 270
+
+Rem
+bbdoc: Normalizes a supported clockwise display orientation, or returns -1.
+End Rem
+Function NormalizeDisplayOrientation:Int(degrees:Int)
+	degrees :Mod 360
+	If degrees < 0 Then degrees :+ 360
+	If degrees = DisplayOrientation0 Or degrees = DisplayOrientation90 Or ..
+			degrees = DisplayOrientation180 Or degrees = DisplayOrientation270 Then Return degrees
+	Return -1
+End Function
+
 Rem
 bbdoc: Returns the number of bits used by one pixel, or zero for an unknown format.
 End Rem
@@ -370,6 +386,10 @@ to controller page or transfer boundaries. The caller retains the memory and
 must keep it valid until the method returns.
 End Rem
 Type TDisplay Abstract
+	Private
+	Field configuredOrientation:Int
+
+	Public
 	Method Width:Int() Abstract
 
 	Method Height:Int() Abstract
@@ -380,6 +400,39 @@ Type TDisplay Abstract
 	x:Int, y:Int, width:Int, height:Int) Abstract
 
 	Method SetEnabled:Int(enabled:Int) Abstract
+
+	Rem
+	bbdoc: Configures the clockwise orientation used as rotation zero by drawing and input APIs.
+	returns: True for a supported quarter-turn orientation.
+	End Rem
+	Method SetOrientation:Int(degrees:Int)
+		Local normalized:Int = NormalizeDisplayOrientation(degrees)
+		If normalized < 0 Then Return False
+		configuredOrientation = normalized
+		Return True
+	End Method
+
+	Method Orientation:Int()
+		Return configuredOrientation
+	End Method
+
+	Rem
+	bbdoc: Returns the width visible to orientation-aware drawing APIs.
+	End Rem
+	Method LogicalWidth:Int()
+		If configuredOrientation = DisplayOrientation90 Or ..
+				configuredOrientation = DisplayOrientation270 Then Return Height()
+		Return Width()
+	End Method
+
+	Rem
+	bbdoc: Returns the height visible to orientation-aware drawing APIs.
+	End Rem
+	Method LogicalHeight:Int()
+		If configuredOrientation = DisplayOrientation90 Or ..
+				configuredOrientation = DisplayOrientation270 Then Return Width()
+		Return Height()
+	End Method
 
 	Method CreateBuffer:TDisplayBuffer()
 		Return TDisplayBuffer.Create(Width(), Height(), PreferredPixelFormat())

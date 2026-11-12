@@ -104,6 +104,18 @@ rotatedGraphics.Plot(5, 9)
 passed :& rotated.Pixel(0, 5) = 1 And rotated.Pixel(9, 0) = 1
 passed :& Not rotatedGraphics.SetRotation(45) And rotatedGraphics.Rotation() = 270
 
+' Device orientation establishes rotation zero; drawing rotation remains relative.
+passed :& display.SetOrientation(90)
+rotatedGraphics.SetRotation(0)
+rotatedGraphics.SetDisplay(display)
+passed :& rotatedGraphics.Orientation() = 90 And rotatedGraphics.EffectiveRotation() = 90
+passed :& rotatedGraphics.Width() = 6 And rotatedGraphics.Height() = 10
+passed :& rotatedGraphics.SetDisplayOrientation(180)
+passed :& display.Orientation() = 180 And rotatedGraphics.EffectiveRotation() = 180
+passed :& rotatedGraphics.Width() = 10 And rotatedGraphics.Height() = 6
+rotatedGraphics.SetRotation(90)
+passed :& rotatedGraphics.EffectiveRotation() = 270
+
 If passed Then
 	Print "Embedded Graphics2D conformance test passed"
 Else

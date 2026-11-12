@@ -29,10 +29,10 @@ End Function
 
 Public
 
-Const GraphicsRotation0:Int = 0
-Const GraphicsRotation90:Int = 90
-Const GraphicsRotation180:Int = 180
-Const GraphicsRotation270:Int = 270
+Const GraphicsRotation0:Int = DisplayOrientation0
+Const GraphicsRotation90:Int = DisplayOrientation90
+Const GraphicsRotation180:Int = DisplayOrientation180
+Const GraphicsRotation270:Int = DisplayOrientation270
 
 Private
 
@@ -203,9 +203,9 @@ Type TEmbedded2DContext Final
 
 	Method SetRenderTarget(target:TDisplayBuffer, display:TDisplay = Null)
 		Self.target = target
-		rotatedTarget = TRotatedDisplayBuffer.Create(target)
-		rotatedTarget.SetRotation(rotation)
 		boundDisplay = display
+		rotatedTarget = TRotatedDisplayBuffer.Create(target)
+		rotatedTarget.SetRotation(EffectiveRotation())
 		originX = 0
 		originY = 0
 		ResetViewport()
@@ -217,6 +217,8 @@ Type TEmbedded2DContext Final
 
 	Method SetDisplay(display:TDisplay)
 		boundDisplay = display
+		If rotatedTarget Then rotatedTarget.SetRotation(EffectiveRotation())
+		ResetViewport()
 	End Method
 
 	Method Display:TDisplay()
@@ -231,18 +233,44 @@ Type TEmbedded2DContext Final
 	returns: True when the requested angle is a supported quarter turn.
 	End Rem
 	Method SetRotation:Int(degrees:Int)
-		degrees :Mod 360
-		If degrees < 0 Then degrees :+ 360
-		If degrees <> GraphicsRotation0 And degrees <> GraphicsRotation90 And ..
-				degrees <> GraphicsRotation180 And degrees <> GraphicsRotation270 Then Return False
-		rotation = degrees
-		If rotatedTarget Then rotatedTarget.SetRotation(rotation)
+		Local normalized:Int = NormalizeDisplayOrientation(degrees)
+		If normalized < 0 Then Return False
+		rotation = normalized
+		If rotatedTarget Then rotatedTarget.SetRotation(EffectiveRotation())
 		ResetViewport()
 		Return True
 	End Method
 
 	Method Rotation:Int()
 		Return rotation
+	End Method
+
+	Rem
+	bbdoc: Returns the configured device orientation used as drawing rotation zero.
+	End Rem
+	Method Orientation:Int()
+		If boundDisplay Then Return boundDisplay.Orientation()
+		Return DisplayOrientation0
+	End Method
+
+	Rem
+	bbdoc: Changes the bound display's configured orientation at runtime.
+	about: The relative drawing rotation is retained and the viewport is reset to
+	the new logical dimensions. Configure an associated touch device with the same
+	orientation so its events remain aligned.
+	End Rem
+	Method SetDisplayOrientation:Int(degrees:Int)
+		If Not boundDisplay Or Not boundDisplay.SetOrientation(degrees) Then Return False
+		If rotatedTarget Then rotatedTarget.SetRotation(EffectiveRotation())
+		ResetViewport()
+		Return True
+	End Method
+
+	Rem
+	bbdoc: Returns the physical quarter-turn produced by orientation plus drawing rotation.
+	End Rem
+	Method EffectiveRotation:Int()
+		Return (Orientation() + rotation) Mod 360
 	End Method
 
 	Rem
@@ -465,7 +493,7 @@ Type TEmbedded2DContext Final
 
 	Private
 	Method DrawingTarget:TDisplayBuffer()
-		If rotation And rotatedTarget Then Return rotatedTarget
+		If EffectiveRotation() And rotatedTarget Then Return rotatedTarget
 		Return target
 	End Method
 
@@ -559,6 +587,18 @@ End Function
 
 Function Rotation:Int()
 	Return Default2DContext().Rotation()
+End Function
+
+Function DisplayOrientation:Int()
+	Return Default2DContext().Orientation()
+End Function
+
+Function SetDisplayOrientation:Int(degrees:Int)
+	Return Default2DContext().SetDisplayOrientation(degrees)
+End Function
+
+Function EffectiveRotation:Int()
+	Return Default2DContext().EffectiveRotation()
 End Function
 
 Function GraphicsWidth:Int()
