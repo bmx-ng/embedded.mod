@@ -1122,6 +1122,20 @@ Type TEmbedded2DContext Final
 	End Method
 
 	Rem
+	bbdoc: Presents a complete frame and permits its render-buffer contents to be discarded.
+	about: The application must redraw every pixel before its next presentation.
+	Drivers without an optimized discard path safely use ordinary presentation.
+	End Rem
+	Method PresentDiscard:Int(display:TDisplay = Null)
+		If Not target Then Return DisplayErrorInvalidArgument
+		If Not display Then display = boundDisplay
+		If Not display Then Return DisplayErrorInvalidArgument
+		Local result:Int = display.PresentDiscard(target)
+		If result > 0 Then ResetDirty()
+		Return result
+	End Method
+
+	Rem
 	bbdoc: Presents only the accumulated physical dirty rectangle.
 	about: When tracking is disabled this falls back to a complete presentation.
 	An empty enabled tracker succeeds without calling the display driver. A
@@ -1678,6 +1692,10 @@ End Function
 
 Function Present:Int(display:TDisplay = Null)
 	Return Default2DContext().Present(display)
+End Function
+
+Function PresentDiscard:Int(display:TDisplay = Null)
+	Return Default2DContext().PresentDiscard(display)
 End Function
 
 Function PresentDirty:Int(display:TDisplay = Null)

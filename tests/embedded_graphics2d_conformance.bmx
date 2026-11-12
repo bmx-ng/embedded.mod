@@ -7,6 +7,7 @@ Import Embedded.Graphics2D
 
 Type TTestDisplay Extends TDisplay
 	Field presentations:Int
+	Field discardPresentations:Int
 	Field result:Int = 1
 	Field lastX:Int
 	Field lastY:Int
@@ -37,6 +38,11 @@ Type TTestDisplay Extends TDisplay
 			lastHeight = height
 		End If
 		Return result
+	End Method
+
+	Method PresentPixelsDiscard:Int(pixels:Byte Ptr, stride:Int, format:Int)
+		discardPresentations :+ 1
+		Return PresentPixels(pixels, stride, format, 0, 0, Width(), Height())
 	End Method
 
 	Method SetEnabled:Int(enabled:Int)
@@ -357,6 +363,10 @@ dirtyDisplay.result = 1
 passed :& dirtyGraphics.Present() = 1 And dirtyDisplay.presentations = 3
 passed :& dirtyDisplay.lastX = 0 And dirtyDisplay.lastY = 0
 passed :& dirtyDisplay.lastWidth = 16 And dirtyDisplay.lastHeight = 16
+passed :& Not dirtyGraphics.DirtyRect(dirtyX, dirtyY, dirtyWidth, dirtyHeight)
+dirtyGraphics.Plot(1, 1)
+passed :& dirtyGraphics.PresentDiscard() = 1 And dirtyDisplay.presentations = 4
+passed :& dirtyDisplay.discardPresentations = 1
 passed :& Not dirtyGraphics.DirtyRect(dirtyX, dirtyY, dirtyWidth, dirtyHeight)
 
 Local dirtyRotatedFrame:TDisplayBuffer = TDisplayBuffer.Create(10, 6, DisplayPixelFormatMono1)

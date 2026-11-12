@@ -38,6 +38,7 @@ Local capabilityDisplay:TCapabilityDisplay = New TCapabilityDisplay
 passed :& capabilityDisplay.Capabilities() = DisplayCapabilityPartialPresent
 passed :& capabilityDisplay.HasCapability(DisplayCapabilityPartialPresent)
 passed :& Not capabilityDisplay.HasCapability(DisplayCapabilityVSync)
+passed :& Not capabilityDisplay.HasCapability(DisplayCapabilityDiscardPresent)
 
 Local mono:TDisplayBuffer = TDisplayBuffer.Create(10, 4, DisplayPixelFormatMono1)
 passed :& mono <> Null And mono.Size() = 8

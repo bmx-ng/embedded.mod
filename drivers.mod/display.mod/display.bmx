@@ -55,6 +55,11 @@ bbdoc: Presentation exchanges a render buffer with a separately scanned buffer.
 End Rem
 Const DisplayCapabilityBufferSwap:Int = 8
 
+Rem
+bbdoc: The display can discard render-buffer contents after complete presentation.
+End Rem
+Const DisplayCapabilityDiscardPresent:Int = 16
+
 Const DisplayOrientation0:Int = 0
 Const DisplayOrientation90:Int = 90
 Const DisplayOrientation180:Int = 180
@@ -444,6 +449,15 @@ Type TDisplay Abstract
 	Method PresentPixels:Int(pixels:Byte Ptr, stride:Int, format:Int, ..
 	x:Int, y:Int, width:Int, height:Int) Abstract
 
+	Rem
+	bbdoc: Presents a complete raster without requiring its contents to remain available for the next frame.
+	about: Drivers without a discard path safely retain the normal PresentPixels
+	behavior. Callers must completely redraw the buffer before presenting it again.
+	End Rem
+	Method PresentPixelsDiscard:Int(pixels:Byte Ptr, stride:Int, format:Int)
+		Return PresentPixels(pixels, stride, format, 0, 0, Width(), Height())
+	End Method
+
 	Method SetEnabled:Int(enabled:Int) Abstract
 
 	Rem
@@ -489,6 +503,13 @@ Type TDisplay Abstract
 		End If
 
 		Return PresentRegion(buffer, 0, 0, Width(), Height())
+	End Method
+
+	Method PresentDiscard:Int(buffer:TDisplayBuffer)
+		If Not buffer Or buffer.Width() < Width() Or buffer.Height() < Height() Then ..
+			Return DisplayErrorInvalidArgument
+
+		Return PresentPixelsDiscard(buffer.Pixels(), buffer.Stride(), buffer.Format())
 	End Method
 
 	Method PresentRegion:Int(buffer:TDisplayBuffer, x:Int, y:Int, width:Int, height:Int)
