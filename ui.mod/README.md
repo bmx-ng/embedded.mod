@@ -1,67 +1,107 @@
 # Embedded.UI
 
-`Embedded.UI` is a small retained user-interface toolkit built directly on
-`Embedded.Graphics2D`. It is intended for predictable device interfaces rather
-than as a complete replacement for a desktop GUI toolkit or LVGL.
+`Embedded.UI` is a small retained user-interface layer for embedded displays.
+It provides rows, columns and stacks, styled controls, focus navigation, touch
+handling, semantic events, scrolling and selectable lists. Rendering uses
+`Embedded.Graphics2D`, so the same widget code can sit over mono or colour
+display drivers.
 
-The initial vertical slice provides:
+## Basic structure
 
-- a parent-owned widget tree;
-- row, column, and overlapping stack containers;
-- fixed, automatic, fill, and weighted-grow sizing;
-- margins, padding, gaps, and cross-axis alignment;
-- a reusable dark theme with normal, active, pressed, and disabled states;
-- labels, buttons, checkboxes, switches, sliders, and progress bars;
-- touch hit-testing, capture, and continuous slider tracking;
-- `EVENT_UIACTION`, `EVENT_UIVALUECHANGED`, and optional typed callbacks;
-- explicit focus, traversal, activation, adjustment, and themed focus indication;
-- automatic layout and dirty-region presentation.
-
-Methods use the ordinary parenthesised BlitzMax form:
+Create a context from a display, then add widgets to its root column:
 
 ```blitzmax
-Local ui:TUIContext = TUIContext.Create(display, touch, TUITheme.Dark(font))
+SuperStrict
+
+Import BRL.Event
+Import Embedded.UI
+
+Local ui:TUIContext = TUIContext.Create(display, touch)
 Local page:TUIColumn = ui.Root()
-page.SetPadding(16)
-page.SetGap(10)
 
-Local title:TUILabel = page.Label("Network")
-Local connect:TUIButton = page.Button("Connect")
-connect.OnClick(ConnectToNetwork)
+page.SetPadding(12)
+page.SetGap(8)
+page.Label("Settings")
 
-Local alerts:TUICheckBox = page.CheckBox("Alerts", True)
-alerts.OnChange(AlertsChanged)
+Local enabled:TUICheckBox = page.CheckBox("Enabled")
+Local save:TUIButton = page.Button("Save")
 
-Local brightness:TUISlider = page.Slider(0, 100, 50)
-brightness.OnChange(BrightnessChanged)
-Local progress:TUIProgressBar = page.ProgressBar(0, 100, 50)
-
-ui.Present()
+While True
+    PollSystem()
+    ui.Present()
+Wend
 ```
 
-Raw touch events are consumed only to update widget interaction state. An
-activated button emits a semantic `EVENT_UIACTION` whose source is the button,
-allowing applications to use the standard `BRL.Event` loop instead of a
-callback when preferred. Checkboxes, switches, and sliders emit
-`EVENT_UIVALUECHANGED`; the event source identifies the widget and `data`
-contains its new integer value. Programmatic `SetValue()` and `SetChecked()`
-calls update the display without pretending that the user changed the value.
+The application retains its widget references and updates them directly.
+`Present()` lays out invalid widgets, draws their dirty regions, advances any
+active scroll momentum, and presents the changed display area.
 
-## Focus and device navigation
+## Layout and controls
 
-Interactive controls participate in focus traversal. Touching one gives it
-focus, but navigation is deliberately independent of any particular input
-hardware:
+Containers create their children with `Row()`, `Column()`, `Stack()`,
+`ScrollView()` and `List()`. Common controls include labels, buttons,
+checkboxes, switches, sliders and progress bars. Requested sizes, grow factors,
+alignment, margins, padding and gaps determine layout without allocating a new
+tree for every frame.
+
+Controls support touch and explicit focus navigation. A non-touch input adapter
+can use `FocusNext()`, `FocusPrevious()`, `ActivateFocused()` and
+`AdjustFocused()` on the context. An application can map those operations to
+GPIO buttons, an encoder, keypad or keyboard events. Focus changes emit
+`EVENT_UIFOCUSCHANGED`; disabling or hiding a focused control safely releases
+focus.
+
+Raw touch events are consumed only to update widget interaction state. Buttons
+emit `EVENT_UIACTION`; checkboxes, switches and sliders emit
+`EVENT_UIVALUECHANGED`. The event source identifies the widget and `event.data`
+contains the new integer value where applicable. Controls also offer typed
+callbacks. Programmatic value changes update the display without pretending
+that the user performed the change.
+
+## Scrolling and selection
+
+`TUIScrollView` clips a natural-height vertical child layout into its assigned
+viewport. It supports touch dragging, an optional position indicator,
+programmatic scrolling and automatic visibility of focused descendants:
 
 ```blitzmax
-ui.FocusNext()
-ui.FocusPrevious()
-ui.ActivateFocused()
-ui.AdjustFocused(1)
+Local scroll:TUIScrollView = page.ScrollView()
+scroll.SetGrow(1)
+scroll.SetScrollIndicatorVisible(True)
+
+scroll.Label("First row")
+scroll.Label("Second row")
 ```
 
-An application can map those operations to GPIO buttons, an encoder, keypad,
-or keyboard events. `AdjustFocused()` changes a focused slider using the
-application-selected step. Focus changes emit `EVENT_UIFOCUSCHANGED`, and
-`FocusedWidget()` exposes the current control. Disabling or hiding a focused
-control safely releases focus.
+Touch scrolling uses direct finger tracking by default. Applications running on
+a display with sufficient presentation throughput can opt into integer,
+time-based momentum with `SetMomentumEnabled(True)`. A released flick then
+continues moving and decelerates predictably, stopping at either boundary. Use
+`StopMomentum()` to stop a movement already in progress.
+
+`TUIList` adds selectable `TUIListItem` children:
+
+```blitzmax
+Local list:TUIList = page.List()
+list.SetGrow(1)
+list.Item("Wi-Fi")
+list.Item("Bluetooth")
+list.Item("Display")
+list.SetSelectedIndex(0)
+```
+
+User selection emits `EVENT_UISELECTIONCHANGED` with the list as its source and
+the selected index in `event.data`. `OnSelectionChanged()` installs a direct
+callback. Programmatic `SetSelectedIndex()` changes selection without pretending
+that the user activated it. `MoveSelection()` clamps at the first and last item,
+keeps the selected item focused, and scrolls it into view.
+
+## Themes and rendering cost
+
+`TUITheme.Dark()` supplies a complete default theme and can use any imported
+bitmap font. Individual widget styles may override font scale, colours, border,
+corner radius and padding.
+
+Scrolling invalidates the scroll viewport because its children move. Keep list
+viewports and item decoration proportionate to the display and update rate.
+Momentum itself uses only integer arithmetic and does not allocate per frame.

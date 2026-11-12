@@ -50,6 +50,10 @@ Global switchChangeCount:Int
 Global sliderChangeCount:Int
 Global focusChangeCount:Int
 Global focusEventSource:Object
+Global selectionChangeCount:Int
+Global selectionEventSource:Object
+Global selectionEventIndex:Int
+Global selectionCallbackCount:Int
 
 Function Clicked(button:TUIButton)
 	callbackCount :+ 1
@@ -67,6 +71,10 @@ Function SliderChanged(slider:TUISlider)
 	sliderChangeCount :+ 1
 End Function
 
+Function SelectionChanged(list:TUIList)
+	selectionCallbackCount :+ 1
+End Function
+
 Function CaptureAction:Object(hookId:Int, data:Object, context:Object)
 	Local event:TEvent = TEvent(data)
 	If event And event.id = EVENT_UIACTION Then
@@ -79,6 +87,10 @@ Function CaptureAction:Object(hookId:Int, data:Object, context:Object)
 	Else If event And event.id = EVENT_UIFOCUSCHANGED Then
 		focusChangeCount :+ 1
 		focusEventSource = event.source
+	Else If event And event.id = EVENT_UISELECTIONCHANGED Then
+		selectionChangeCount :+ 1
+		selectionEventSource = event.source
+		selectionEventIndex = event.data
 	End If
 	Return data
 End Function
@@ -117,8 +129,11 @@ switchControl.OnChange(SwitchChanged)
 Local slider:TUISlider = page.Slider(10, 50, 10)
 slider.OnChange(SliderChanged)
 Local progress:TUIProgressBar = page.ProgressBar(0, 200, 50)
+Local multiline:TUILabel = page.Label("First~nSecond")
 
 Check(ui.Render(), "initial UI did not render")
+Check(multiline.Height() = multiline.DefaultStyle().font.LineHeight() * ..
+	multiline.DefaultStyle().fontScale * 2, "multiline label did not reserve both lines")
 Check(title.X() = 6 And title.Y() = 6, "column padding was not applied")
 Check(row.X() = 6 And row.Width() = 228, "row did not stretch")
 Check(cancel.Width() > 0 And Abs(connect.Width() - cancel.Width() * 2) <= 1, "weighted row growth failed")
@@ -241,5 +256,89 @@ Check(progress.Value() = 80, "range change did not clamp the progress value")
 Check(ui.Render(), "value control changes were not invalidated")
 
 ui.Close()
+
+' Scrolling clips a natural-height child list into a fixed viewport. Selection
+' remains semantic and focus traversal keeps off-screen items visible.
+Local scrollFrame:TDisplayBuffer = TDisplayBuffer.Create(160, 100, DisplayPixelFormatMono1)
+Local scrollUI:TUIContext = TUIContext.CreateWithBuffer(scrollFrame, Null, touch, ..
+	TUITheme.Dark(Spleen5x8Font()))
+Check(scrollUI <> Null, "could not create scrolling UI")
+scrollUI.Theme().screen.background = 0
+Local scrollPage:TUIColumn = scrollUI.Root()
+Local list:TUIList = scrollPage.List()
+list.SetHeight(72)
+list.SetAlign(UIAlignStart)
+list.OnSelectionChanged(SelectionChanged)
+For Local itemIndex:Int = 0 Until 8
+	list.Item("Item " + itemIndex)
+Next
+list.SetSelectedIndex(1)
+Check(scrollUI.Render(), "scrolling UI did not render")
+Check(list.ContentHeight() > list.Height() And list.MaxScrollY() > 0, ..
+	"list content did not overflow its viewport")
+Check(list.SelectedIndex() = 1 And selectionChangeCount = 0, ..
+	"programmatic list selection emitted a user event")
+
+list.SetScrollY(10000)
+scrollUI.Render()
+Check(list.ScrollY() = list.MaxScrollY(), "list scroll position was not clamped")
+list.SetScrollY(0)
+scrollUI.Render()
+Local lastItem:TUIListItem = list.ItemAt(7)
+Check(scrollUI.SetFocus(lastItem), "off-screen list item could not receive focus")
+Check(list.ScrollY() > 0 And lastItem.Y() + lastItem.Height() <= list.Y() + list.Height(), ..
+	"focused list item was not scrolled into view")
+Check(scrollUI.ActivateFocused(), "focused list item did not activate")
+Check(list.SelectedIndex() = 7 And selectionCallbackCount = 1, ..
+	"focused list selection did not invoke its callback")
+Check(selectionChangeCount = 1 And selectionEventSource = list And selectionEventIndex = 7, ..
+	"list selection event was not emitted")
+Check(scrollUI.AdjustFocused(-1) And list.SelectedIndex() = 6 And ..
+	scrollUI.FocusedWidget() = list.ItemAt(6), "list selection did not adjust through focus")
+
+' Boundary navigation retains the list focus instead of leaving it on the
+' button or other control which initiated the move.
+list.SetSelectedIndex(0)
+Check(scrollUI.SetFocus(list.ItemAt(0)), "first list item could not receive focus")
+Check(Not list.MoveSelection(-1) And scrollUI.FocusedWidget() = list.ItemAt(0), ..
+	"list lost focus when moving before its first item")
+list.SetSelectedIndex(7)
+Check(scrollUI.SetFocus(list.ItemAt(7)), "last list item could not receive focus")
+Check(Not list.MoveSelection(1) And scrollUI.FocusedWidget() = list.ItemAt(7), ..
+	"list lost focus when moving after its last item")
+
+' Momentum is optional and advances from the measured drag velocity without
+' requiring floating-point arithmetic.
+list.SetScrollY(0)
+scrollUI.Render()
+Check(Not list.MomentumEnabled(), "list momentum was not disabled by default")
+list.SetMomentumEnabled(True)
+Check(list.MomentumEnabled(), "list momentum could not be enabled")
+list._BeginDrag(1000)
+list._DragBy(20, 1020)
+list._EndDrag(1020)
+Local scrollBeforeMomentum:Int = list.ScrollY()
+list._UpdateMomentum(1070)
+Check(list.ScrollY() > scrollBeforeMomentum, "list momentum did not continue a released drag")
+list.SetMomentumEnabled(False)
+Check(Not list.MomentumEnabled(), "list momentum could not be disabled")
+
+' A drag beginning on an item scrolls instead of selecting it on release.
+list.SetScrollY(0)
+scrollUI.Render()
+Local selectionBeforeDrag:Int = list.SelectedIndex()
+touch.x = list.X() + list.Width() / 2
+touch.y = list.ItemAt(2).Y() + list.ItemAt(2).Height() / 2
+touch.count = 1
+PollSystem()
+touch.y :- 28
+PollSystem()
+Check(list.ScrollY() > 0, "touch drag did not scroll the list")
+touch.count = 0
+PollSystem()
+PollSystem()
+Check(list.SelectedIndex() = selectionBeforeDrag, "scroll gesture activated a list item")
+
+scrollUI.Close()
 touch.StopEvents()
 Print "embedded UI conformance: PASS"

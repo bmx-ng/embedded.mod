@@ -16,6 +16,7 @@ ModuleInfo "Version: 0.1"
 ModuleInfo "License: zlib/libpng"
 
 Import BRL.Event
+Import BRL.System
 Import Embedded.Drivers.Display
 Import Embedded.Drivers.Display.Font
 Import Embedded.Drivers.Touch
@@ -29,10 +30,15 @@ Const UIAlignEnd:Int = 2
 Const UIAlignStretch:Int = 3
 Const UIContextMaximum:Int = 4
 Const UIInvalidRegionMaximum:Int = 8
+Const UIScrollDragThreshold:Int = 4
+Const UIScrollMinimumMomentum:Int = 60
+Const UIScrollMaximumMomentum:Int = 2400
+Const UIScrollMomentumDeceleration:Int = 1800
 
 Global EVENT_UIACTION:Int = AllocUserEventId("UIAction")
 Global EVENT_UIVALUECHANGED:Int = AllocUserEventId("UIValueChanged")
 Global EVENT_UIFOCUSCHANGED:Int = AllocUserEventId("UIFocusChanged")
+Global EVENT_UISELECTIONCHANGED:Int = AllocUserEventId("UISelectionChanged")
 
 Type TUIStyle
 	Field font:TBitmapFont
@@ -383,6 +389,13 @@ Type TUIWidget
 	Method Draw(graphics:TEmbedded2DContext)
 	End Method
 
+	Method DrawOverlay(graphics:TEmbedded2DContext)
+	End Method
+
+	Method ClipsChildren:Int()
+		Return False
+	End Method
+
 	Public
 	Method _Attach(context:TUIContext, parent:TUIContainer)
 		uiContext = context
@@ -400,8 +413,22 @@ Type TUIWidget
 	End Method
 
 	Method _Invalidate()
-		If uiContext And uiWidth > 0 And uiHeight > 0 Then ..
-			uiContext.InvalidateRect(uiX, uiY, uiWidth, uiHeight)
+		If Not uiContext Or uiWidth <= 0 Or uiHeight <= 0 Then Return
+		Local x0:Int = uiX
+		Local y0:Int = uiY
+		Local x1:Int = uiX + uiWidth
+		Local y1:Int = uiY + uiHeight
+		Local parent:TUIContainer = uiParent
+		While parent
+			If parent.ClipsChildren() Then
+				If parent.X() > x0 Then x0 = parent.X()
+				If parent.Y() > y0 Then y0 = parent.Y()
+				If parent.X() + parent.Width() < x1 Then x1 = parent.X() + parent.Width()
+				If parent.Y() + parent.Height() < y1 Then y1 = parent.Y() + parent.Height()
+			End If
+			parent = parent.Parent()
+		Wend
+		If x0 < x1 And y0 < y1 Then uiContext.InvalidateRect(x0, y0, x1 - x0, y1 - y0)
 	End Method
 
 	Method _RequestLayout()
@@ -478,6 +505,18 @@ Type TUIContainer Extends TUIWidget
 
 	Method Stack:TUIStack() Final
 		Local widget:TUIStack = New TUIStack
+		Add(widget)
+		Return widget
+	End Method
+
+	Method ScrollView:TUIScrollView() Final
+		Local widget:TUIScrollView = New TUIScrollView
+		Add(widget)
+		Return widget
+	End Method
+
+	Method List:TUIList() Final
+		Local widget:TUIList = New TUIList
 		Add(widget)
 		Return widget
 	End Method
@@ -696,6 +735,422 @@ Type TUIStack Extends TUIContainer Final
 	End Method
 End Type
 
+Type TUIScrollView Extends TUIContainer
+	Public
+	Field scrollPosition:Int
+	Field maximumScroll:Int
+	Field contentExtent:Int
+	Field showScrollIndicator:Int = True
+	Field momentumEnabled:Int
+	Field momentumVelocity:Int
+	Field momentumRemainder:Int
+	Field momentumLastTime:UInt
+	Field dragLastTime:UInt
+	Field dragActive:Int
+
+	Public
+	Method New()
+		layoutDirection = 2
+	End Method
+
+	Method ScrollY:Int()
+		Return scrollPosition
+	End Method
+
+	Method MaxScrollY:Int()
+		Return maximumScroll
+	End Method
+
+	Method ContentHeight:Int()
+		Return contentExtent
+	End Method
+
+	Method SetScrollY(value:Int)
+		_StopMomentum()
+		_SetScrollY(value)
+	End Method
+
+	Method _SetScrollY(value:Int)
+		If value < 0 Then value = 0
+		If value > maximumScroll Then value = maximumScroll
+		If scrollPosition = value Then Return
+		_Invalidate()
+		scrollPosition = value
+		_RequestLayout()
+	End Method
+
+	Method ScrollBy(delta:Int)
+		SetScrollY(scrollPosition + delta)
+	End Method
+
+	Method SetMomentumEnabled(value:Int)
+		momentumEnabled = value <> 0
+		If Not momentumEnabled Then _StopMomentum()
+	End Method
+
+	Method MomentumEnabled:Int()
+		Return momentumEnabled
+	End Method
+
+	Method StopMomentum()
+		_StopMomentum()
+	End Method
+
+	Method SetScrollIndicatorVisible(value:Int)
+		value = value <> 0
+		If showScrollIndicator = value Then Return
+		showScrollIndicator = value
+		_Invalidate()
+	End Method
+
+	Method ScrollIndicatorVisible:Int()
+		Return showScrollIndicator
+	End Method
+
+	Method EnsureVisible:Int(widget:TUIWidget)
+		If Not widget Then Return False
+		Local current:TUIWidget = widget
+		While current And current.Parent() <> Self
+			current = current.Parent()
+		Wend
+		If Not current Then Return False
+		Local viewportTop:Int = Y() + paddingTop
+		Local viewportBottom:Int = Y() + Height() - paddingBottom
+		Local nextPosition:Int = scrollPosition
+		If widget.Y() < viewportTop Then
+			nextPosition :- viewportTop - widget.Y()
+		Else If widget.Y() + widget.Height() > viewportBottom Then
+			nextPosition :+ widget.Y() + widget.Height() - viewportBottom
+		End If
+		If nextPosition < 0 Then nextPosition = 0
+		If nextPosition > maximumScroll Then nextPosition = maximumScroll
+		If nextPosition = scrollPosition Then Return False
+		_StopMomentum()
+		_SetScrollY(nextPosition)
+		Return True
+	End Method
+
+	Method ClipsChildren:Int() Override
+		Return True
+	End Method
+
+	Method DrawOverlay(graphics:TEmbedded2DContext) Override
+		If Not showScrollIndicator Or maximumScroll <= 0 Or Height() <= 0 Then Return
+		Local viewportHeight:Int = Height()
+		Local thumbHeight:Int = Int(Long(viewportHeight) * viewportHeight / Max(contentExtent, 1))
+		If thumbHeight < 8 Then thumbHeight = 8
+		If thumbHeight > viewportHeight Then thumbHeight = viewportHeight
+		Local travel:Int = viewportHeight - thumbHeight
+		Local thumbY:Int = Y()
+		If travel > 0 Then thumbY :+ Int(Long(scrollPosition) * travel / maximumScroll)
+		Local color:UInt = $71818e
+		If Context() And Context().Theme() Then color = Context().Theme().control.border
+		graphics.SetColorValue(color)
+		graphics.FillRoundRect(X() + Width() - 3, thumbY, 3, thumbHeight, 1)
+	End Method
+
+	Public
+	Method _BeginDrag(now:UInt)
+		_StopMomentum()
+		dragActive = True
+		dragLastTime = now
+	End Method
+
+	Method _DragBy(delta:Int, now:UInt)
+		If Not dragActive Then _BeginDrag(now)
+		Local previous:Int = scrollPosition
+		_SetScrollY(scrollPosition + delta)
+		Local moved:Int = scrollPosition - previous
+		Local elapsed:UInt = now - dragLastTime
+		dragLastTime = now
+		If moved = 0 Or elapsed = 0 Then Return
+		If elapsed > 100 Then elapsed = 100
+		Local sample:Int = Int(Long(moved) * 1000 / elapsed)
+		If sample > UIScrollMaximumMomentum Then sample = UIScrollMaximumMomentum
+		If sample < -UIScrollMaximumMomentum Then sample = -UIScrollMaximumMomentum
+		If momentumVelocity <> 0 And (momentumVelocity < 0) <> (sample < 0) Then
+			momentumVelocity = sample
+		Else
+			momentumVelocity = (momentumVelocity + sample * 2) / 3
+		End If
+	End Method
+
+	Method _EndDrag(now:UInt)
+		dragActive = False
+		momentumLastTime = now
+		momentumRemainder = 0
+		If Not momentumEnabled Or Abs(momentumVelocity) < UIScrollMinimumMomentum Then ..
+			momentumVelocity = 0
+	End Method
+
+	Method _UpdateMomentum(now:UInt)
+		If dragActive Or momentumVelocity = 0 Then Return
+		Local elapsed:UInt = now - momentumLastTime
+		If elapsed = 0 Then Return
+		If elapsed > 50 Then elapsed = 50
+		momentumLastTime = now
+		Local distance:Long = Long(momentumVelocity) * elapsed + momentumRemainder
+		Local delta:Int = Int(distance / 1000)
+		momentumRemainder = Int(distance Mod 1000)
+		If delta <> 0 Then
+			Local previous:Int = scrollPosition
+			_SetScrollY(scrollPosition + delta)
+			If scrollPosition = previous Or scrollPosition = 0 Or scrollPosition = maximumScroll Then
+				_StopMomentum()
+				Return
+			End If
+		End If
+		Local reduction:Int = Max(Int(Long(UIScrollMomentumDeceleration) * elapsed / 1000), 1)
+		If momentumVelocity > 0 Then
+			momentumVelocity :- reduction
+			If momentumVelocity < UIScrollMinimumMomentum Then momentumVelocity = 0
+		Else
+			momentumVelocity :+ reduction
+			If momentumVelocity > -UIScrollMinimumMomentum Then momentumVelocity = 0
+		End If
+	End Method
+
+	Method _StopMomentum()
+		momentumVelocity = 0
+		momentumRemainder = 0
+		dragActive = False
+	End Method
+
+	Method _LayoutChildren() Override
+		Local contentX:Int = X() + paddingLeft
+		Local contentWidth:Int = Width() - paddingLeft - paddingRight
+		If contentWidth < 0 Then contentWidth = 0
+		Local naturalHeight:Int = paddingTop + paddingBottom
+		Local visibleCount:Int
+		For Local child:TUIWidget = EachIn uiChildren
+			If Not child.Visible() Then Continue
+			Local preferredWidth:Int
+			Local preferredHeight:Int
+			child.PreferredSize(contentWidth, Height(), preferredWidth, preferredHeight)
+			naturalHeight :+ preferredHeight + child.marginTop + child.marginBottom
+			visibleCount :+ 1
+		Next
+		If visibleCount > 1 Then naturalHeight :+ gap * (visibleCount - 1)
+		contentExtent = naturalHeight
+		maximumScroll = Max(contentExtent - Height(), 0)
+		If scrollPosition > maximumScroll Then scrollPosition = maximumScroll
+		If scrollPosition < 0 Then scrollPosition = 0
+
+		Local cursor:Int = Y() + paddingTop - scrollPosition
+		For Local child:TUIWidget = EachIn uiChildren
+			If Not child.Visible() Then Continue
+			Local preferredWidth:Int
+			Local preferredHeight:Int
+			child.PreferredSize(contentWidth, Height(), preferredWidth, preferredHeight)
+			cursor :+ child.marginTop
+			Local childWidth:Int = preferredWidth
+			If child.alignSelf = UIAlignStretch Or child.requestedWidth = UILayoutFill Then ..
+				childWidth = contentWidth - child.marginLeft - child.marginRight
+			Local childX:Int = contentX + child.marginLeft
+			If child.alignSelf = UIAlignCenter Then childX = contentX + (contentWidth - childWidth) / 2
+			If child.alignSelf = UIAlignEnd Then ..
+				childX = contentX + contentWidth - childWidth - child.marginRight
+			child._SetBounds(childX, cursor, childWidth, preferredHeight)
+			Local childContainer:TUIContainer = TUIContainer(child)
+			If childContainer Then childContainer._LayoutChildren()
+			cursor :+ preferredHeight + child.marginBottom + gap
+		Next
+	End Method
+End Type
+
+Type TUIList Extends TUIScrollView Final
+	Public
+	Field selectedItem:TUIListItem
+	Field selectionHandler(list:TUIList)
+
+	Public
+	Method New()
+		gap = 2
+		SetPadding(2)
+	End Method
+
+	Method Item:TUIListItem(text:String = "")
+		Local item:TUIListItem = New TUIListItem
+		item.listOwner = Self
+		item.SetText(text)
+		Add(item)
+		Return item
+	End Method
+
+	Method ItemCount:Int()
+		Local count:Int
+		For Local child:TUIWidget = EachIn uiChildren
+			If TUIListItem(child) Then count :+ 1
+		Next
+		Return count
+	End Method
+
+	Method ItemAt:TUIListItem(index:Int)
+		If index < 0 Then Return Null
+		Local cursor:Int
+		For Local child:TUIWidget = EachIn uiChildren
+			Local item:TUIListItem = TUIListItem(child)
+			If Not item Then Continue
+			If cursor = index Then Return item
+			cursor :+ 1
+		Next
+		Return Null
+	End Method
+
+	Method SelectedItem:TUIListItem()
+		Return selectedItem
+	End Method
+
+	Method SelectedIndex:Int()
+		If Not selectedItem Then Return -1
+		Local cursor:Int
+		For Local child:TUIWidget = EachIn uiChildren
+			Local item:TUIListItem = TUIListItem(child)
+			If Not item Then Continue
+			If item = selectedItem Then Return cursor
+			cursor :+ 1
+		Next
+		Return -1
+	End Method
+
+	Method SetSelectedIndex(value:Int)
+		_SetSelectedItem(ItemAt(value), False)
+	End Method
+
+	Method ClearSelection()
+		_SetSelectedItem(Null, False)
+	End Method
+
+	Method MoveSelection:Int(delta:Int)
+		If delta = 0 Or ItemCount() = 0 Then Return False
+		Local index:Int = SelectedIndex()
+		If index < 0 Then
+			If delta < 0 Then index = ItemCount() - 1 Else index = 0
+		Else
+			index :+ delta
+			If index < 0 Then index = 0
+			If index >= ItemCount() Then index = ItemCount() - 1
+		End If
+		Local item:TUIListItem = ItemAt(index)
+		If Not item Then Return False
+		If item = selectedItem Then
+			EnsureVisible(item)
+			If Context() Then Context().SetFocus(item)
+			Return False
+		End If
+		_SetSelectedItem(item, True)
+		If Context() Then Context().SetFocus(item)
+		Return True
+	End Method
+
+	Method OnSelectionChanged(handler(list:TUIList))
+		selectionHandler = handler
+	End Method
+
+	Public
+	Method _SelectItem(item:TUIListItem)
+		_SetSelectedItem(item, True)
+	End Method
+
+	Method _SetSelectedItem(item:TUIListItem, notify:Int)
+		If item And item.listOwner <> Self Then Return
+		If selectedItem = item Then Return
+		Local previous:TUIListItem = selectedItem
+		selectedItem = item
+		If previous Then previous._Invalidate()
+		If selectedItem Then
+			selectedItem._Invalidate()
+			EnsureVisible(selectedItem)
+		End If
+		If notify Then
+			If selectionHandler Then selectionHandler(Self)
+			EmitEvent(CreateEvent(EVENT_UISELECTIONCHANGED, Self, SelectedIndex(), 0, 0, 0, selectedItem))
+		End If
+	End Method
+End Type
+
+Type TUIListItem Extends TUIWidget Final
+	Public
+	Field listOwner:TUIList
+	Field itemText:String
+
+	Public
+	Method New()
+		clickable = True
+		focusable = True
+	End Method
+
+	Method SetText(text:String)
+		If Not text Then text = ""
+		If itemText = text Then Return
+		_Invalidate()
+		itemText = text
+		_RequestLayout()
+	End Method
+
+	Method Text:String()
+		Return itemText
+	End Method
+
+	Method Selected:Int()
+		Return listOwner And listOwner.SelectedItem() = Self
+	End Method
+
+	Method DefaultStyle:TUIStyle() Override
+		If Context() And Context().Theme() Then
+			If Not Enabled() Then Return Context().Theme().controlDisabled
+			If Pressed() Then Return Context().Theme().controlPressed
+			If Selected() Then Return Context().Theme().controlActive
+			Return Context().Theme().control
+		End If
+		Return Super.DefaultStyle()
+	End Method
+
+	Method PreferredSize(availableWidth:Int, availableHeight:Int, width:Int Var, height:Int Var) Override
+		Local style:TUIStyle = DefaultStyle()
+		If uiStyle Then style = uiStyle
+		Local lineHeight:Int = 16
+		Local textWidth:Int
+		If style.font Then
+			lineHeight = style.font.LineHeight() * style.fontScale
+			textWidth = style.font.TextWidth(itemText, style.fontScale)
+		End If
+		width = textWidth + style.paddingLeft + style.paddingRight
+		height = lineHeight + style.paddingTop + style.paddingBottom
+		If requestedWidth >= 0 Then width = requestedWidth
+		If requestedHeight >= 0 Then height = requestedHeight
+	End Method
+
+	Method Draw(graphics:TEmbedded2DContext) Override
+		Local style:TUIStyle = DefaultStyle()
+		If uiStyle Then style = uiStyle
+		If style.backgroundVisible Then
+			graphics.SetColorValue(style.background)
+			If style.cornerRadius > 0 Then
+				graphics.FillRoundRect(X(), Y(), Width(), Height(), style.cornerRadius)
+			Else
+				graphics.FillRect(X(), Y(), Width(), Height())
+			End If
+		End If
+		If style.borderWidth > 0 Then
+			graphics.SetColorValue(style.border)
+			graphics.DrawRoundRect(X(), Y(), Width(), Height(), style.cornerRadius)
+		End If
+		If style.font And itemText.Length Then
+			graphics.SetFont(style.font)
+			graphics.SetColorValue(style.foreground)
+			Local textHeight:Int = style.font.LineHeight() * style.fontScale
+			graphics.DrawText(itemText, X() + style.paddingLeft, ..
+				Y() + (Height() - textHeight) / 2, style.fontScale)
+		End If
+	End Method
+
+	Public
+	Method _Activate()
+		If listOwner Then listOwner._SelectItem(Self)
+	End Method
+End Type
+
 Type TUILabel Extends TUIWidget Final
 	Public
 	Field labelText:String
@@ -725,7 +1180,11 @@ Type TUILabel Extends TUIWidget Final
 		height = 0
 		If style.font Then
 			width = style.font.TextWidth(labelText, style.fontScale)
-			height = style.font.LineHeight() * style.fontScale
+			Local lineCount:Int = 1
+			For Local index:Int = 0 Until labelText.length
+				If labelText[index] = 10 Then lineCount :+ 1
+			Next
+			height = style.font.LineHeight() * style.fontScale * lineCount
 		End If
 		width :+ style.paddingLeft + style.paddingRight
 		height :+ style.paddingTop + style.paddingBottom
@@ -1194,6 +1653,10 @@ Type TUIContext
 	Field focusedWidget:TUIWidget
 	Field pressedContact:Int = -1
 	Field pressedArmed:Int
+	Field touchScroll:TUIScrollView
+	Field touchStartY:Int
+	Field touchLastY:Int
+	Field touchScrolled:Int
 	Field invalidCount:Int
 	Field invalidX0:Int[UIInvalidRegionMaximum]
 	Field invalidY0:Int[UIInvalidRegionMaximum]
@@ -1240,6 +1703,8 @@ Type TUIContext
 		contextSlot = -1
 		pressedWidget = Null
 		focusedWidget = Null
+		touchScroll = Null
+		pressedContact = -1
 	End Method
 
 	Method Root:TUIColumn()
@@ -1261,6 +1726,7 @@ Type TUIContext
 		focusedWidget = widget
 		If previous Then previous._Invalidate()
 		If focusedWidget Then focusedWidget._Invalidate()
+		If focusedWidget Then _EnsureWidgetVisible(focusedWidget)
 		EmitEvent(CreateEvent(EVENT_UIFOCUSCHANGED, focusedWidget, 0, 0, 0, 0, previous))
 		Return True
 	End Method
@@ -1310,15 +1776,24 @@ Type TUIContext
 			switchControl._Activate()
 			Return True
 		End If
+		Local listItem:TUIListItem = TUIListItem(target)
+		If listItem Then
+			listItem._Activate()
+			Return True
+		End If
 		Return False
 	End Method
 
 	Method AdjustFocused:Int(delta:Int)
 		If delta = 0 Or Not _CanFocus(focusedWidget) Then Return False
 		Local slider:TUISlider = TUISlider(focusedWidget)
-		If Not slider Then Return False
-		slider._SetUserValue(slider.Value() + delta)
-		Return True
+		If slider Then
+			slider._SetUserValue(slider.Value() + delta)
+			Return True
+		End If
+		Local listItem:TUIListItem = TUIListItem(focusedWidget)
+		If listItem And listItem.listOwner Then Return listItem.listOwner.MoveSelection(delta)
+		Return False
 	End Method
 
 	Method SetTheme(theme:TUITheme)
@@ -1412,6 +1887,7 @@ Type TUIContext
 	End Method
 
 	Method Present:Int()
+		_UpdateScrollMomentum(rootWidget, UInt(MilliSecs()))
 		Render()
 		If display Then Return graphics.PresentDirty(display)
 		Return True
@@ -1430,37 +1906,61 @@ Type TUIContext
 		If frame.Height() > 1 Then y = Int((Long(event.y) * (frame.Height() - 1) + 5000) / 10000)
 		Select event.id
 			Case EVENT_TOUCHDOWN
-				If pressedWidget Or Not event.source Then Return
+				If pressedContact >= 0 Or Not event.source Then Return
 				Local target:TUIWidget = HitTest(x, y)
+				touchScroll = _ContainingScroll(target)
+				If Not touchScroll Then touchScroll = _ScrollAt(rootWidget, x, y)
+				If Not target And Not touchScroll Then Return
+				pressedContact = event.data
+				touchStartY = y
+				touchLastY = y
+				touchScrolled = False
+				If touchScroll Then touchScroll._BeginDrag(UInt(MilliSecs()))
 				If target And target.Enabled() Then
 					SetFocus(target)
 					pressedWidget = target
-					pressedContact = event.data
 					pressedArmed = True
 					target._SetPressed(True)
 					Local slider:TUISlider = TUISlider(target)
 					If slider Then slider._TrackPointer(x)
 				End If
 			Case EVENT_TOUCHMOVE
-				If pressedWidget And pressedContact = event.data Then
-					Local slider:TUISlider = TUISlider(pressedWidget)
-					If slider Then
-						slider._TrackPointer(x)
-					Else
-						pressedArmed = pressedWidget.Contains(x, y)
-						pressedWidget._SetPressed(pressedArmed)
+				If pressedContact = event.data Then
+					If touchScroll And (touchScrolled Or Abs(y - touchStartY) >= UIScrollDragThreshold) Then
+						If Not touchScrolled Then
+							touchScrolled = True
+							pressedArmed = False
+							If pressedWidget Then pressedWidget._SetPressed(False)
+						End If
+						Local now:UInt = UInt(MilliSecs())
+						touchScroll._DragBy(touchLastY - y, now)
+						touchLastY = y
+					Else If pressedWidget Then
+						Local slider:TUISlider = TUISlider(pressedWidget)
+						If slider Then
+							slider._TrackPointer(x)
+						Else
+							pressedArmed = pressedWidget.Contains(x, y)
+							pressedWidget._SetPressed(pressedArmed)
+						End If
 					End If
 				End If
 			Case EVENT_TOUCHUP
-				If pressedWidget And pressedContact = event.data Then
+				If pressedContact = event.data Then
+					If touchScroll Then touchScroll._EndDrag(UInt(MilliSecs()))
 					Local target:TUIWidget = pressedWidget
-					Local slider:TUISlider = TUISlider(target)
-					If slider Then slider._TrackPointer(x)
-					Local activate:Int = pressedArmed And target.Contains(x, y) And target.Enabled()
-					target._SetPressed(False)
+					Local activate:Int
+					If target Then
+						Local slider:TUISlider = TUISlider(target)
+						If slider And Not touchScrolled Then slider._TrackPointer(x)
+						activate = Not touchScrolled And pressedArmed And target.Contains(x, y) And target.Enabled()
+						target._SetPressed(False)
+					End If
 					pressedWidget = Null
 					pressedContact = -1
 					pressedArmed = False
+					touchScroll = Null
+					touchScrolled = False
 					If activate Then
 						Local button:TUIButton = TUIButton(target)
 						If button Then
@@ -1472,7 +1972,12 @@ Type TUIContext
 								checkBox._Activate()
 							Else
 								Local switchControl:TUISwitch = TUISwitch(target)
-								If switchControl Then switchControl._Activate()
+								If switchControl Then
+									switchControl._Activate()
+								Else
+									Local listItem:TUIListItem = TUIListItem(target)
+									If listItem Then listItem._Activate()
+								End If
 							End If
 						End If
 					End If
@@ -1484,10 +1989,65 @@ Type TUIContext
 	Method _DrawWidget(widget:TUIWidget, clipX:Int, clipY:Int, clipWidth:Int, clipHeight:Int)
 		If Not widget Or Not widget.Visible() Or Not _Intersects(widget, clipX, clipY, clipWidth, clipHeight) Then Return
 		widget.Draw(graphics)
-		For Local child:TUIWidget = EachIn widget.uiChildren
-			_DrawWidget(child, clipX, clipY, clipWidth, clipHeight)
-		Next
+		If widget.ClipsChildren() Then
+			Local childX:Int = Max(clipX, widget.X())
+			Local childY:Int = Max(clipY, widget.Y())
+			Local childX1:Int = Min(clipX + clipWidth, widget.X() + widget.Width())
+			Local childY1:Int = Min(clipY + clipHeight, widget.Y() + widget.Height())
+			If childX < childX1 And childY < childY1 Then
+				graphics.PushState()
+				graphics.SetViewport(childX, childY, childX1 - childX, childY1 - childY)
+				For Local child:TUIWidget = EachIn widget.uiChildren
+					_DrawWidget(child, childX, childY, childX1 - childX, childY1 - childY)
+				Next
+				graphics.PopState()
+			End If
+		Else
+			For Local child:TUIWidget = EachIn widget.uiChildren
+				_DrawWidget(child, clipX, clipY, clipWidth, clipHeight)
+			Next
+		End If
+		widget.DrawOverlay(graphics)
 		If widget = focusedWidget Then _DrawFocus(widget)
+	End Method
+
+	Method _EnsureWidgetVisible(widget:TUIWidget)
+		If Not widget Then Return
+		If layoutPending Then Layout()
+		Local parent:TUIContainer = widget.Parent()
+		While parent
+			Local scroll:TUIScrollView = TUIScrollView(parent)
+			If scroll And scroll.EnsureVisible(widget) Then Layout()
+			parent = parent.Parent()
+		Wend
+	End Method
+
+	Method _ContainingScroll:TUIScrollView(widget:TUIWidget)
+		Local current:TUIWidget = widget
+		While current
+			Local scroll:TUIScrollView = TUIScrollView(current)
+			If scroll Then Return scroll
+			current = current.Parent()
+		Wend
+		Return Null
+	End Method
+
+	Method _ScrollAt:TUIScrollView(widget:TUIWidget, x:Int, y:Int)
+		If Not widget Or Not widget.Visible() Or Not widget.Contains(x, y) Then Return Null
+		For Local index:Int = widget.uiChildren.Length - 1 To 0 Step -1
+			Local found:TUIScrollView = _ScrollAt(widget.uiChildren[index], x, y)
+			If found Then Return found
+		Next
+		Return TUIScrollView(widget)
+	End Method
+
+	Method _UpdateScrollMomentum(widget:TUIWidget, now:UInt)
+		If Not widget Or Not widget.Visible() Then Return
+		Local scroll:TUIScrollView = TUIScrollView(widget)
+		If scroll Then scroll._UpdateMomentum(now)
+		For Local child:TUIWidget = EachIn widget.uiChildren
+			_UpdateScrollMomentum(child, now)
+		Next
 	End Method
 
 	Method _DrawFocus(widget:TUIWidget)
