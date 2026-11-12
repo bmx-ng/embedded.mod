@@ -25,6 +25,12 @@ Extern "C"
 		destinationWidth:Int, destinationHeight:Int, clipX:Int, clipY:Int, ..
 		clipWidth:Int, clipHeight:Int, tint:UInt, opacity:Int, drawFlags:Int) = ..
 		"bmx_embedded_display_blit_rgb565"
+	Function _DisplayBlitMaskedRGB565:Int(targetPixels:Byte Ptr, targetStride:Int, ..
+		targetWidth:Int, targetHeight:Int, sourcePixels:Byte Ptr, sourceStride:Int, ..
+		sourceWidth:Int, sourceHeight:Int, maskPixels:Byte Ptr, maskStride:Int, maskX:Int, ..
+		destinationX:Int, destinationY:Int, clipX:Int, clipY:Int, clipWidth:Int, ..
+		clipHeight:Int, tint:UInt, opacity:Int, drawFlags:Int) = ..
+		"bmx_embedded_display_blit_masked_rgb565"
 End Extern
 
 Const EmbeddedImageVersion:Int = 1
@@ -314,6 +320,15 @@ Type TEmbeddedImage Final
 		End If
 
 		Local targetPixels:Byte Ptr = target.Pixels()
+		If targetPixels And target.Format() = DisplayPixelFormatRGB565 And ..
+				imageFormat = DisplayPixelFormatRGB565 And HasMask() And ..
+				colorKey = EmbeddedImageColorKeyDisabled Then
+			_DisplayBlitMaskedRGB565(targetPixels, target.Stride(), target.Width(), target.Height(), ..
+				data + pixelOffset + sourceY * pixelStride + sourceX * 2, pixelStride, width, ..
+				height, data + maskOffset + sourceY * maskStride, maskStride, sourceX, ..
+				x, y, x0, y0, x1 - x0, y1 - y0, tint, opacity, drawFlags)
+			Return
+		End If
 		If targetPixels And target.Format() = DisplayPixelFormatRGB565 And Not HasMask() And ..
 				colorKey = EmbeddedImageColorKeyDisabled And ..
 				(imageFormat = DisplayPixelFormatRGB565 Or imageFormat = DisplayPixelFormatRGB888) Then

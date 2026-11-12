@@ -140,6 +140,36 @@ rgb565Scaled.Clear()
 rgb565Image.DrawRect(rgb565Scaled, 0, 0, 4, 4, $ffffff, EmbeddedImageDrawFlipX)
 passed :& rgb565Scaled.Pixel(0, 0) = $00ff00 And rgb565Scaled.Pixel(3, 0) = $ff0000
 
+' Masked RGB565 regions retain non-byte-aligned mask origins, flips, tint, and opacity.
+Local maskedRGB565Data:Byte[] = New Byte[50]
+Header(maskedRGB565Data, EmbeddedImageFlagMask, 4, 2, DisplayPixelFormatRGB565, 8, 32, 1, 48)
+PutU16(maskedRGB565Data, 32, $f800); PutU16(maskedRGB565Data, 34, $07e0)
+PutU16(maskedRGB565Data, 36, $001f); PutU16(maskedRGB565Data, 38, $ffff)
+PutU16(maskedRGB565Data, 40, $ffe0); PutU16(maskedRGB565Data, 42, $07ff)
+PutU16(maskedRGB565Data, 44, $f81f); PutU16(maskedRGB565Data, 46, $0000)
+maskedRGB565Data[48] = $50 ' row 0: x=1 and x=3 visible
+maskedRGB565Data[49] = $a0 ' row 1: x=0 and x=2 visible
+Local maskedRGB565:TEmbeddedImage = TEmbeddedImage.Create(Varptr maskedRGB565Data[0], ..
+	maskedRGB565Data.length)
+Local maskedRGB565Target:TDisplayBuffer = TDisplayBuffer.Create(3, 2, DisplayPixelFormatRGB565)
+maskedRGB565Target.Clear($112233)
+maskedRGB565.DrawRegion(maskedRGB565Target, 0, 0, 1, 0, 3, 2)
+passed :& maskedRGB565Target.Pixel(0, 0) = $00ff00 And ..
+	maskedRGB565Target.Pixel(1, 0) = $102031 And maskedRGB565Target.Pixel(2, 0) = $ffffff
+passed :& maskedRGB565Target.Pixel(0, 1) = $102031 And ..
+	maskedRGB565Target.Pixel(1, 1) = $ff00ff And maskedRGB565Target.Pixel(2, 1) = $102031
+maskedRGB565Target.Clear()
+maskedRGB565.DrawRegion(maskedRGB565Target, 0, 0, 1, 0, 3, 2, $ffffff, ..
+	EmbeddedImageDrawFlipX)
+passed :& maskedRGB565Target.Pixel(0, 0) = $ffffff And ..
+	maskedRGB565Target.Pixel(1, 0) = 0 And maskedRGB565Target.Pixel(2, 0) = $00ff00
+maskedRGB565Target.Clear($0000ff)
+maskedRGB565.DrawRegion(maskedRGB565Target, 0, 0, 1, 0, 3, 2, $80ffff, 0, 128)
+passed :& maskedRGB565Target.Pixel(0, 0) = $00827b And ..
+	maskedRGB565Target.Pixel(1, 0) = $0000ff And maskedRGB565Target.Pixel(2, 0) = $4282ff
+passed :& maskedRGB565Target.Pixel(0, 1) = $0000ff And ..
+	maskedRGB565Target.Pixel(1, 1) = $4200ff And maskedRGB565Target.Pixel(2, 1) = $0000ff
+
 ' RGB565 targets use the native conversion, tint, and exact opacity path.
 Local rgb565Composited:TDisplayBuffer = TDisplayBuffer.Create(2, 1, DisplayPixelFormatRGB565)
 rgb565Composited.Clear($0000ff)
