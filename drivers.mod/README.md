@@ -10,7 +10,8 @@ wires those devices.
 
 `Embedded.Drivers.Display` defines the common raster and presentation boundary:
 
-- `TDisplayBuffer` owns a compact Mono1, RGB565, or RGB888 raster;
+- `TDisplayBuffer` owns a compact Mono1, RGB565, or RGB888 raster, or wraps a
+  driver-owned external framebuffer without copying it;
 - drawing is independent of the physical display controller;
 - a `TDisplay` advertises its preferred format and accepts full or dirty-region
   presentation; and
@@ -49,6 +50,26 @@ Concrete display drivers live beneath `Embedded.Drivers.Displays.*`.
 `Embedded.Drivers.Displays.SSD1306` is the first controller implementation. It uses
 `Embedded.Hardware.I2C`, supports dirty page updates, and includes the 72x40
 EastRising-compatible preset used by common 0.42-inch OLED boards.
+
+## Touch input
+
+`Embedded.Drivers.Touch` is the controller-neutral touch boundary. A
+`TTouchDevice` supplies a fixed snapshot of contact ids and display-pixel
+coordinates. Calling `StartEvents` makes the shared polling layer emit the
+standard `BRL.Event` values `EVENT_TOUCHDOWN`, `EVENT_TOUCHMOVE`, and
+`EVENT_TOUCHUP`.
+
+Touch events follow the same convention as desktop BlitzMax backends:
+
+- `event.source` is the `TTouchDevice`;
+- `event.data` is the stable contact/finger id; and
+- `event.x` and `event.y` are normalized to `0..10000` across the associated
+  display rather than being controller-specific raw coordinates.
+
+The shared layer tracks contact transitions without per-poll allocation.
+Concrete controller modules only read the hardware and expose the current
+contact snapshot, so future Pico and ESP32 adapters can share identical event
+semantics.
 
 ## Images and bitmaps
 

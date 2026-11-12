@@ -82,6 +82,7 @@ and other capabilities that do not share equivalent semantics.
 | [`Embedded.Drivers.Display.Font`](drivers.mod/README.md) | Allocation-free Unicode bitmap-font measurement and rendering |
 | [`Embedded.Drivers.Display.Fonts.Spleen5x8`](drivers.mod/README.md) | Complete 5x8 Spleen bitmap font stored in firmware |
 | [`Embedded.Drivers.Displays.SSD1306`](drivers.mod/README.md) | Portable I2C SSD1306 OLED driver, including the 72x40 0.42-inch panel preset |
+| [`Embedded.Drivers.Touch`](drivers.mod/README.md) | Controller-neutral multitouch polling translated to standard `BRL.Event` touch events |
 | [`Embedded.Graphics2D`](drivers.mod/README.md) | Optional Max2D-style stateful drawing facade over portable display buffers |
 | `Embedded.Hardware.UART` | Controller setup, pin routing, framing, flow control, synchronous I/O, deadlines, break, and error state |
 | `Embedded.IO.BufferedUART` | A managed receive buffer and `TStream`-compatible, line-oriented UART access |

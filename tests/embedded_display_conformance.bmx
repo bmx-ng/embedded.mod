@@ -38,6 +38,16 @@ Local rgb888:TDisplayBuffer = TDisplayBuffer.Create(1, 1, DisplayPixelFormatRGB8
 rgb888.SetPixel(0, 0, $123456)
 passed :& rgb888.Pixel(0, 0) = $123456
 
+Local externalBytes:Byte[] = New Byte[12]
+Local external:TDisplayBuffer = TDisplayBuffer.CreateExternal(3, 2, DisplayPixelFormatRGB565, ..
+	Varptr externalBytes[0], 6)
+passed :& external <> Null And external.Size() = 12 And external.Bytes() = Null
+external.SetPixel(1, 1, $ff0000)
+passed :& external.Pixel(1, 1) = $ff0000
+passed :& externalBytes[8] = 0 And (Int(externalBytes[9]) & $ff) = $f8
+passed :& TDisplayBuffer.CreateExternal(3, 2, DisplayPixelFormatRGB565, ..
+	Varptr externalBytes[0], 5) = Null
+
 If passed Then
 	Print "Embedded display conformance test passed"
 Else

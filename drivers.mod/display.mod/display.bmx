@@ -84,6 +84,8 @@ Type TDisplayBuffer
 	Field bufferStride:Int
 	Field bufferFormat:Int
 	Field storage:Byte[]
+	Field externalStorage:Byte Ptr
+	Field bufferSize:Int
 
 	Public
 	Function Create:TDisplayBuffer(width:Int, height:Int, format:Int)
@@ -97,7 +99,31 @@ Type TDisplayBuffer
 		result.bufferHeight = height
 		result.bufferStride = stride
 		result.bufferFormat = format
-		result.storage = New Byte[stride * height]
+		result.bufferSize = stride * height
+		result.storage = New Byte[result.bufferSize]
+		Return result
+	End Function
+
+	Rem
+	bbdoc: Wraps a caller-owned raster without allocating its pixel storage.
+	about: The memory must remain valid for the lifetime of the buffer. Bytes returns
+	Null for an external raster; use Pixels and Size for storage-independent access.
+	End Rem
+	Function CreateExternal:TDisplayBuffer(width:Int, height:Int, format:Int, pixels:Byte Ptr, stride:Int = 0)
+		Local minimumStride:Int = DisplayMinimumStride(width, format)
+		If minimumStride <= 0 Or height <= 0 Or pixels = Null Then Return Null
+		If stride = 0 Then stride = minimumStride
+		If stride < minimumStride Then Return Null
+		Local size:Long = Long(stride) * Long(height)
+		If size <= 0 Or size > $7fffffff Then Return Null
+
+		Local result:TDisplayBuffer = New TDisplayBuffer
+		result.bufferWidth = width
+		result.bufferHeight = height
+		result.bufferStride = stride
+		result.bufferFormat = format
+		result.externalStorage = pixels
+		result.bufferSize = Int(size)
 		Return result
 	End Function
 
@@ -118,7 +144,7 @@ Type TDisplayBuffer
 	End Method
 
 	Method Size:Int()
-		Return storage.length
+		Return bufferSize
 	End Method
 
 	Method Bytes:Byte[]()
@@ -126,6 +152,7 @@ Type TDisplayBuffer
 	End Method
 
 	Method Pixels:Byte Ptr()
+		If externalStorage Then Return externalStorage
 		If storage.length = 0 Then
 			Return Null
 		End If
@@ -134,14 +161,16 @@ Type TDisplayBuffer
 	End Method
 
 	Method Clear(color:UInt = 0)
+		Local pixels:Byte Ptr = Pixels()
+		If Not pixels Then Return
 		If bufferFormat = DisplayPixelFormatMono1 Then
 			Local value:Byte
 			If color Then
 				value = $ff
 			End If
 
-			For Local index:Int = 0 Until storage.length
-				storage[index] = value
+			For Local index:Int = 0 Until bufferSize
+				pixels[index] = value
 			Next
 
 			Return
@@ -155,15 +184,17 @@ Type TDisplayBuffer
 			Return
 		End If
 
+		Local pixels:Byte Ptr = Pixels()
+		If Not pixels Then Return
 		Local offset:Int
 		Select bufferFormat
 			Case DisplayPixelFormatMono1
 				offset = y * bufferStride + (x Shr 3)
 				Local mask:Byte = Byte($80 Shr (x & 7))
 				If color Then
-					storage[offset] :| mask
+					pixels[offset] :| mask
 				Else
-					storage[offset] :& ~mask
+					pixels[offset] :& ~mask
 				End If
 			Case DisplayPixelFormatRGB565
 				offset = y * bufferStride + x * 2
@@ -171,13 +202,13 @@ Type TDisplayBuffer
 				Local green:UInt = (color Shr 10) & $3f
 				Local blue:UInt = (color Shr 3) & $1f
 				Local rgb565:UInt = (red Shl 11) | (green Shl 5) | blue
-				storage[offset] = Byte(rgb565)
-				storage[offset + 1] = Byte(rgb565 Shr 8)
+				pixels[offset] = Byte(rgb565)
+				pixels[offset + 1] = Byte(rgb565 Shr 8)
 			Case DisplayPixelFormatRGB888
 				offset = y * bufferStride + x * 3
-				storage[offset] = Byte(color Shr 16)
-				storage[offset + 1] = Byte(color Shr 8)
-				storage[offset + 2] = Byte(color)
+				pixels[offset] = Byte(color Shr 16)
+				pixels[offset + 1] = Byte(color Shr 8)
+				pixels[offset + 2] = Byte(color)
 		End Select
 	End Method
 
@@ -186,14 +217,16 @@ Type TDisplayBuffer
 			Return 0
 		End If
 
+		Local pixels:Byte Ptr = Pixels()
+		If Not pixels Then Return 0
 		Local offset:Int
 		Select bufferFormat
 			Case DisplayPixelFormatMono1
 				offset = y * bufferStride + (x Shr 3)
-				Return (storage[offset] & ($80 Shr (x & 7))) <> 0
+				Return (pixels[offset] & ($80 Shr (x & 7))) <> 0
 			Case DisplayPixelFormatRGB565
 				offset = y * bufferStride + x * 2
-				Local rgb565:UInt = UInt(storage[offset]) | (UInt(storage[offset + 1]) Shl 8)
+				Local rgb565:UInt = UInt(pixels[offset]) | (UInt(pixels[offset + 1]) Shl 8)
 				Local red:UInt = (rgb565 Shr 11) & $1f
 				Local green:UInt = (rgb565 Shr 5) & $3f
 				Local blue:UInt = rgb565 & $1f
@@ -202,8 +235,8 @@ Type TDisplayBuffer
 				((blue Shl 3) | (blue Shr 2))
 			Case DisplayPixelFormatRGB888
 				offset = y * bufferStride + x * 3
-				Return (UInt(storage[offset]) Shl 16) | ..
-				(UInt(storage[offset + 1]) Shl 8) | UInt(storage[offset + 2])
+				Return (UInt(pixels[offset]) Shl 16) | ..
+					(UInt(pixels[offset + 1]) Shl 8) | UInt(pixels[offset + 2])
 		End Select
 
 		Return 0
@@ -233,6 +266,40 @@ Type TDisplayBuffer
 		If y1 > bufferHeight Then
 			y1 = bufferHeight
 		End If
+		If x0 >= x1 Or y0 >= y1 Then Return
+
+		Local pixels:Byte Ptr = Pixels()
+		If Not pixels Then Return
+		Select bufferFormat
+			Case DisplayPixelFormatRGB565
+				Local red:UInt = (color Shr 19) & $1f
+				Local green:UInt = (color Shr 10) & $3f
+				Local blue:UInt = (color Shr 3) & $1f
+				Local rgb565:UInt = (red Shl 11) | (green Shl 5) | blue
+				For Local py:Int = y0 Until y1
+					Local offset:Int = py * bufferStride + x0 * 2
+					For Local px:Int = x0 Until x1
+						pixels[offset] = Byte(rgb565)
+						pixels[offset + 1] = Byte(rgb565 Shr 8)
+						offset :+ 2
+					Next
+				Next
+				Return
+			Case DisplayPixelFormatRGB888
+				Local red:Byte = Byte(color Shr 16)
+				Local green:Byte = Byte(color Shr 8)
+				Local blue:Byte = Byte(color)
+				For Local py:Int = y0 Until y1
+					Local offset:Int = py * bufferStride + x0 * 3
+					For Local px:Int = x0 Until x1
+						pixels[offset] = red
+						pixels[offset + 1] = green
+						pixels[offset + 2] = blue
+						offset :+ 3
+					Next
+				Next
+				Return
+		End Select
 
 		For Local py:Int = y0 Until y1
 			For Local px:Int = x0 Until x1
