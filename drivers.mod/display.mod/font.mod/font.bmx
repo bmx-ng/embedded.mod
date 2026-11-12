@@ -161,7 +161,27 @@ Type TBitmapFont
 	End Rem
 	Method DrawText:Int(target:TDisplayBuffer, text:String, x:Int, y:Int, ..
 			color:UInt = $ffffff, scale:Int = 1)
+		If Not target Then Return x
+		Return DrawTextClipped(target, text, x, y, color, scale, ..
+			0, 0, target.Width(), target.Height())
+	End Method
+
+	Rem
+	bbdoc: Draws text while restricting changed pixels to the supplied rectangle.
+	about: The clipping rectangle is expressed in target-buffer coordinates and
+	does not affect text measurement or the returned final pen position.
+	End Rem
+	Method DrawTextClipped:Int(target:TDisplayBuffer, text:String, x:Int, y:Int, ..
+			color:UInt, scale:Int, clipX:Int, clipY:Int, clipWidth:Int, clipHeight:Int)
 		If Not target Or scale <= 0 Then Return x
+		If clipWidth <= 0 Or clipHeight <= 0 Then Return x
+		Local clipX1:Int = clipX + clipWidth
+		Local clipY1:Int = clipY + clipHeight
+		If clipX < 0 Then clipX = 0
+		If clipY < 0 Then clipY = 0
+		If clipX1 > target.Width() Then clipX1 = target.Width()
+		If clipY1 > target.Height() Then clipY1 = target.Height()
+		If clipX >= clipX1 Or clipY >= clipY1 Then Return x
 		Local index:Int
 		Local penX:Int = x
 		Local penY:Int = y
@@ -175,7 +195,8 @@ Type TBitmapFont
 			End If
 			Local glyph:Int = FindGlyph(codePoint, True)
 			If glyph < 0 Then Continue
-			DrawGlyph(target, glyph, penX, penY, color, scale)
+			DrawGlyph(target, glyph, penX, penY, color, scale, ..
+				clipX, clipY, clipX1, clipY1)
 			penX :+ GlyphByte(glyph, 12) * scale
 		Wend
 		Return penX
@@ -208,7 +229,7 @@ Type TBitmapFont
 	End Method
 
 	Method DrawGlyph(target:TDisplayBuffer, index:Int, penX:Int, lineTop:Int, ..
-			color:UInt, scale:Int)
+			color:UInt, scale:Int, clipX0:Int, clipY0:Int, clipX1:Int, clipY1:Int)
 		Local record:Int = GlyphRecordOffset(index)
 		Local bitmap:Int = bitmapsOffset + Int(FontU32(data, record + 4))
 		Local width:Int = Int(data[record + 8]) & $ff
@@ -225,11 +246,22 @@ Type TBitmapFont
 			For Local column:Int = 0 Until width
 				Local packed:Int = Int(data[bitmap + row * stride + (column Shr 3)]) & $ff
 				If Not (packed & ($80 Shr (column & 7))) Then Continue
+				Local pixelX:Int = originX + column * scale
+				Local pixelY:Int = originY + row * scale
 				If scale = 1 Then
-					target.SetPixel(originX + column, originY + row, color)
+					If pixelX >= clipX0 And pixelX < clipX1 And ..
+							pixelY >= clipY0 And pixelY < clipY1 Then target.SetPixel(pixelX, pixelY, color)
 				Else
-					target.FillRect(originX + column * scale, originY + row * scale, ..
-						scale, scale, color)
+					Local fillX0:Int = pixelX
+					Local fillY0:Int = pixelY
+					Local fillX1:Int = pixelX + scale
+					Local fillY1:Int = pixelY + scale
+					If fillX0 < clipX0 Then fillX0 = clipX0
+					If fillY0 < clipY0 Then fillY0 = clipY0
+					If fillX1 > clipX1 Then fillX1 = clipX1
+					If fillY1 > clipY1 Then fillY1 = clipY1
+					If fillX0 < fillX1 And fillY0 < fillY1 Then ..
+						target.FillRect(fillX0, fillY0, fillX1 - fillX0, fillY1 - fillY0, color)
 				End If
 			Next
 		Next

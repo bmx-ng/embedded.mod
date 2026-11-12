@@ -26,6 +26,24 @@ The base layer deliberately remains useful without a full UI library. Small
 status applications can allocate one buffer, draw pixels, lines and rectangles,
 then present it without additional frame-time allocation.
 
+`Embedded.Graphics2D` is an optional familiar drawing facade over this layer.
+It provides `Cls`, `SetColor`, `SetFont`, `DrawText`, `Plot`, `DrawLine`,
+`DrawRect`, `FillRect`, origins, viewports, text metrics, and `Present`. The
+global functions use one default context for compact applications;
+`TEmbedded2DContext` exposes the same operations without global state for
+libraries or applications using multiple displays. It owns no second buffer and
+does not allocate while drawing.
+
+```blitzmax
+SetRenderTarget frame, display
+SetFont Spleen5x8Font()
+SetColor 255, 255, 255
+Cls
+DrawText "Hello", 2, 2
+DrawLine 0, 12, 71, 12
+Present
+```
+
 Concrete display drivers live beneath `Embedded.Drivers.Displays.*`.
 `Embedded.Drivers.Displays.SSD1306` is the first controller implementation. It uses
 `Embedded.Hardware.I2C`, supports dirty page updates, and includes the 72x40
