@@ -89,6 +89,9 @@ Function PackedIndex:Int(pixels:Byte[], stride:Int, x:Int, y:Int, bits:Int)
 	Return (Int(pixels[y * stride + (bitOffset Shr 3)]) Shr shift) & ((1 Shl bits) - 1)
 End Function
 
+' Resolve relative source and output paths from the directory in which the tool was invoked.
+If Not ChangeDir(LaunchDir) Then Fail("could not use launch directory '" + LaunchDir + "'")
+
 If AppArgs.length < 3 Then
 	Print "Usage: image2embedded <input-image> <output.ebi> [options]"
 	Print "Options:"

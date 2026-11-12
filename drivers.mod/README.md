@@ -329,6 +329,46 @@ RLE, transparency masks, colour keys, tinting, opacity, clipping and mirroring.
 Rectangle packing belongs in the desktop conversion tool rather than firmware;
 the embedded runtime only consumes the resulting frame rectangles.
 
+The desktop `tools/spriteatlas.bmx` utility uses `BRL.RectPacker` to build one
+deterministic atlas page from separately named source images. For example:
+
+```sh
+spriteatlas assets/runner --symbol Runner --page-size 256 --padding 1 \
+    --animation run=run0:80,run1:80,run2:80 \
+    idle=art/idle.png run0=art/run0.png run1=art/run1.png run2=art/run2.png
+
+image2embedded assets/runner.png assets/runner.ebi \
+    --format auto --mask auto --alpha-threshold 1
+```
+
+The first command writes `runner.png` and `runner.bmx`. The PNG is an
+inspectable intermediate; the ordinary image converter remains the only EBI1
+writer and therefore retains its exact palette, mask, and compression rules.
+Use the alpha-threshold printed by `spriteatlas` in the second command so
+trimming and the final one-bit visibility mask agree.
+
+The generated metadata is included by the application. Its dependencies and
+embedded data are declared explicitly so `bmk` can discover them before the
+embedded compiler pass:
+
+```blitzmax
+Import Embedded.Graphics2D.Sprite
+Incbin "assets/runner.ebi"
+Include "assets/runner.bmx"
+
+Local sheet:TEmbeddedSpriteSheet = RunnerSpriteSheet()
+Local run:TEmbeddedSpriteAnimation = RunnerRunAnimation()
+Local player:TEmbeddedSpritePlayer = TEmbeddedSpritePlayer.Create(run)
+```
+
+Frame constants such as `RunnerFrameIdle` are emitted in command-line order.
+The packer never rotates frames. Transparent borders are trimmed by default,
+but their offsets and original canvas dimensions are retained, preventing
+visible animation jitter. Fully transparent frames use a masked 1x1 placeholder.
+`--trim false` preserves every source pixel. An atlas that cannot fit the one
+configured page fails rather than silently dropping a frame; increase
+`--page-size` or divide unrelated assets into separate atlases.
+
 ## Bitmap fonts and text
 
 `Embedded.Drivers.Display.Font` renders compact, Unicode-addressed bitmap fonts
