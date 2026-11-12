@@ -290,6 +290,45 @@ zero returns without touching the framebuffer.
 Image pixels live in flash through `Incbin`; only the display framebuffer uses
 RAM. Applications only pay for assets and the image module when they import it.
 
+## Sprite sheets and animation
+
+`Embedded.Graphics2D.Sprite` treats frames as lightweight views into one
+`TEmbeddedImage`. A regular grid is enough for conventional sprite strips:
+
+```blitzmax
+Import Embedded.Graphics2D.Sprite
+
+Incbin "runner.ebi"
+
+Local pixels:TEmbeddedImage = TEmbeddedImage.Create(IncbinPtr("runner.ebi"), ..
+    IncbinLen("runner.ebi"))
+Local sheet:TEmbeddedSpriteSheet = TEmbeddedSpriteSheet.CreateGrid(pixels, 16, 16)
+Local run:TEmbeddedSpriteAnimation = TEmbeddedSpriteAnimation.CreateRange(sheet, 0, 6, 80)
+Local player:TEmbeddedSpritePlayer = TEmbeddedSpritePlayer.Create(run)
+
+' Supply elapsed milliseconds from the application clock each update.
+player.Advance(deltaMilliseconds)
+player.Draw(Null, 64, 32)
+```
+
+Passing `Null` uses the module-level `Embedded.Graphics2D` context; libraries
+with their own context can pass it explicitly. Coordinates identify a frame's
+handle, matching the familiar image convention. Grid sheets support a first
+cell, cell count, outer margin, inter-cell spacing, and a common handle.
+
+Arbitrary sheets use `TEmbeddedSpriteFrame` rectangles. Each rectangle may
+retain an offset within a larger logical canvas, so an offline atlas builder can
+remove transparent borders without making an animation jump. Animation
+definitions contain immutable frame order and positive per-frame durations.
+Players contain only their independent clock, loop/one-shot state, and playback
+flags; many actors can therefore share the same sheet and animation. Advancing
+and drawing an existing player allocate no memory.
+
+Sprite pixels retain every EBI1 facility: exact indexed palettes, optional row
+RLE, transparency masks, colour keys, tinting, opacity, clipping and mirroring.
+Rectangle packing belongs in the desktop conversion tool rather than firmware;
+the embedded runtime only consumes the resulting frame rectangles.
+
 ## Bitmap fonts and text
 
 `Embedded.Drivers.Display.Font` renders compact, Unicode-addressed bitmap fonts
