@@ -327,6 +327,28 @@ Type TEmbedded2DContext Final
 		Return logicalHeight
 	End Method
 
+	Rem
+	bbdoc: Returns the root screen width before any relative drawing rotation.
+	End Rem
+	Method ScreenWidth:Int()
+		If boundDisplay Then Return boundDisplay.LogicalWidth()
+		If Not target Then Return 0
+		If Orientation() = DisplayOrientation90 Or Orientation() = DisplayOrientation270 Then ..
+			Return target.Height()
+		Return target.Width()
+	End Method
+
+	Rem
+	bbdoc: Returns the root screen height before any relative drawing rotation.
+	End Rem
+	Method ScreenHeight:Int()
+		If boundDisplay Then Return boundDisplay.LogicalHeight()
+		If Not target Then Return 0
+		If Orientation() = DisplayOrientation90 Or Orientation() = DisplayOrientation270 Then ..
+			Return target.Width()
+		Return target.Height()
+	End Method
+
 	Method SetFont(font:TBitmapFont)
 		currentFont = font
 	End Method
@@ -617,6 +639,45 @@ Type TEmbedded2DContext Final
 		Return viewDepth
 	End Method
 
+	Rem
+	bbdoc: Converts a point in the current view to root logical screen coordinates.
+	about: The current origin is applied, matching drawing operations. Screen
+	coordinates follow the configured display orientation and are therefore the
+	same pixel coordinate system obtained by scaling standard touch events.
+	End Rem
+	Method ViewToScreen(x:Int, y:Int, screenX:Int Var, screenY:Int Var)
+		Local physicalX:Int = transformXX * (x + originX) + transformXY * (y + originY) + transformTX
+		Local physicalY:Int = transformYX * (x + originX) + transformYY * (y + originY) + transformTY
+		PhysicalToScreen(physicalX, physicalY, screenX, screenY)
+	End Method
+
+	Rem
+	bbdoc: Converts a root logical screen point to coordinates in the current view.
+	about: The current origin is removed, making the result directly usable with
+	the drawing API. Points outside the view are still converted; use PointInView
+	when bounds or viewport clipping matter.
+	End Rem
+	Method ScreenToView(screenX:Int, screenY:Int, x:Int Var, y:Int Var)
+		Local physicalX:Int
+		Local physicalY:Int
+		ScreenToPhysical(screenX, screenY, physicalX, physicalY)
+		Local deltaX:Int = physicalX - transformTX
+		Local deltaY:Int = physicalY - transformTY
+		x = transformXX * deltaX + transformYX * deltaY - originX
+		y = transformXY * deltaX + transformYY * deltaY - originY
+	End Method
+
+	Rem
+	bbdoc: Tests whether a root logical screen point is inside the current viewport.
+	about: This uses the same origin, nested-view transform, and clipping as drawing.
+	End Rem
+	Method PointInView:Int(screenX:Int, screenY:Int)
+		Local x:Int
+		Local y:Int
+		ScreenToView(screenX, screenY, x, y)
+		Return PointVisible(x + originX, y + originY)
+	End Method
+
 	Method DrawText:Int(text:String, x:Int, y:Int, scale:Int = 1)
 		If Not target Or Not currentFont Then Return x
 		Return currentFont.DrawTextClipped(DrawingTarget(), text, x + originX, y + originY, ..
@@ -677,6 +738,50 @@ Type TEmbedded2DContext Final
 	Method ApplyTransform()
 		If drawingTarget Then drawingTarget.SetTransform(logicalWidth, logicalHeight, ..
 			transformXX, transformXY, transformYX, transformYY, transformTX, transformTY)
+	End Method
+
+	Method ScreenToPhysical(screenX:Int, screenY:Int, physicalX:Int Var, physicalY:Int Var)
+		If Not target Then
+			physicalX = screenX
+			physicalY = screenY
+			Return
+		End If
+		Select Orientation()
+			Case DisplayOrientation90
+				physicalX = target.Width() - 1 - screenY
+				physicalY = screenX
+			Case DisplayOrientation180
+				physicalX = target.Width() - 1 - screenX
+				physicalY = target.Height() - 1 - screenY
+			Case DisplayOrientation270
+				physicalX = screenY
+				physicalY = target.Height() - 1 - screenX
+			Default
+				physicalX = screenX
+				physicalY = screenY
+		End Select
+	End Method
+
+	Method PhysicalToScreen(physicalX:Int, physicalY:Int, screenX:Int Var, screenY:Int Var)
+		If Not target Then
+			screenX = physicalX
+			screenY = physicalY
+			Return
+		End If
+		Select Orientation()
+			Case DisplayOrientation90
+				screenX = physicalY
+				screenY = target.Width() - 1 - physicalX
+			Case DisplayOrientation180
+				screenX = target.Width() - 1 - physicalX
+				screenY = target.Height() - 1 - physicalY
+			Case DisplayOrientation270
+				screenX = target.Height() - 1 - physicalY
+				screenY = physicalX
+			Default
+				screenX = physicalX
+				screenY = physicalY
+		End Select
 	End Method
 
 	Method ResetRootTransform()
@@ -898,6 +1003,14 @@ Function GraphicsHeight:Int()
 	Return Default2DContext().Height()
 End Function
 
+Function GraphicsScreenWidth:Int()
+	Return Default2DContext().ScreenWidth()
+End Function
+
+Function GraphicsScreenHeight:Int()
+	Return Default2DContext().ScreenHeight()
+End Function
+
 Function SetFont(font:TBitmapFont)
 	Default2DContext().SetFont(font)
 End Function
@@ -944,6 +1057,18 @@ End Function
 
 Function GraphicsViewDepth:Int()
 	Return Default2DContext().ViewDepth()
+End Function
+
+Function ViewToScreen(x:Int, y:Int, screenX:Int Var, screenY:Int Var)
+	Default2DContext().ViewToScreen(x, y, screenX, screenY)
+End Function
+
+Function ScreenToView(screenX:Int, screenY:Int, x:Int Var, y:Int Var)
+	Default2DContext().ScreenToView(screenX, screenY, x, y)
+End Function
+
+Function PointInView:Int(screenX:Int, screenY:Int)
+	Return Default2DContext().PointInView(screenX, screenY)
 End Function
 
 Function SetViewport(x:Int, y:Int, width:Int, height:Int)

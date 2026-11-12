@@ -91,6 +91,27 @@ popping, and drawing do not allocate. Overflow and underflow return `False`.
 Device orientation is hardware configuration and deliberately is not part of
 the saved drawing state.
 
+`ViewToScreen` and `ScreenToView` convert between the current local view and
+the root orientation-aware screen. They include the current origin, relative
+drawing rotation, and every nested quarter-turn, while remaining independent
+of the framebuffer's physical orientation. `PointInView` additionally tests
+the current viewport, making it suitable for touch hit-testing while traversing
+nested UI views. `GraphicsScreenWidth` and `GraphicsScreenHeight` provide the
+correct root extents even when a relative drawing rotation is active:
+
+```blitzmax
+Local screenX:Int = event.x * (GraphicsScreenWidth() - 1) / 10000
+Local screenY:Int = event.y * (GraphicsScreenHeight() - 1) / 10000
+
+BeginView 20, 12, 120, 64, 90
+If PointInView(screenX, screenY) Then
+	Local x:Int, y:Int
+	ScreenToView screenX, screenY, x, y
+	' x and y are now local drawing coordinates for this view.
+End If
+EndView
+```
+
 Concrete display drivers live beneath `Embedded.Drivers.Displays.*`.
 `Embedded.Drivers.Displays.SSD1306` is the first controller implementation. It uses
 `Embedded.Hardware.I2C`, supports dirty page updates, and includes the 72x40

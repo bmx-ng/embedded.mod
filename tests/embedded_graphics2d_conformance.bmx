@@ -200,6 +200,44 @@ passed :& viewFrame.Pixel(1, 1) = 0 And viewFrame.Pixel(2, 2) = 1
 passed :& viewFrame.Pixel(5, 4) = 0
 passed :& viewGraphics.EndView() And viewGraphics.EndView()
 
+' Input conversion follows the exact drawing transform, including origin,
+' viewport clipping, nested quarter turns, and root display rotation.
+Local screenX:Int
+Local screenY:Int
+Local localX:Int
+Local localY:Int
+viewGraphics.SetOrigin(1, 1)
+viewGraphics.ViewToScreen(2, 1, screenX, screenY)
+passed :& screenX = 3 And screenY = 2
+viewGraphics.ScreenToView(screenX, screenY, localX, localY)
+passed :& localX = 2 And localY = 1
+viewGraphics.SetOrigin(0, 0)
+
+passed :& viewGraphics.BeginView(2, 1, 4, 3, 90)
+viewGraphics.ViewToScreen(0, 0, screenX, screenY)
+passed :& screenX = 5 And screenY = 1
+viewGraphics.ScreenToView(2, 3, localX, localY)
+passed :& localX = 2 And localY = 3
+passed :& viewGraphics.PointInView(2, 3)
+passed :& Not viewGraphics.PointInView(1, 3)
+viewGraphics.SetViewport(1, 1, 1, 2)
+passed :& viewGraphics.PointInView(4, 2)
+passed :& Not viewGraphics.PointInView(5, 1)
+passed :& viewGraphics.EndView()
+
+passed :& viewGraphics.SetRotation(90)
+viewGraphics.ViewToScreen(2, 3, screenX, screenY)
+passed :& screenX = 6 And screenY = 2
+viewGraphics.ScreenToView(screenX, screenY, localX, localY)
+passed :& localX = 2 And localY = 3
+passed :& viewGraphics.BeginView(1, 2, 3, 2, 270)
+viewGraphics.ViewToScreen(0, 0, screenX, screenY)
+passed :& screenX = 6 And screenY = 1
+viewGraphics.ScreenToView(screenX, screenY, localX, localY)
+passed :& localX = 0 And localY = 0
+passed :& viewGraphics.EndView()
+passed :& viewGraphics.SetRotation(0)
+
 If passed Then
 	Print "Embedded Graphics2D conformance test passed"
 Else
