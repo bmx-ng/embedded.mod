@@ -180,6 +180,29 @@ shapeGraphics.DrawRoundRect(2, 2, 12, 8, 3)
 passed :& shapeFrame.Pixel(5, 2) = 1 And shapeFrame.Pixel(2, 5) = 1
 passed :& shapeFrame.Pixel(7, 5) = 0
 
+' Wrapped text measurement, alignment, and ellipsis share the font's native
+' glyph advances without constructing substrings while drawing.
+Local textFrame:TDisplayBuffer = TDisplayBuffer.Create(40, 32, DisplayPixelFormatMono1)
+Local textGraphics:TEmbedded2DContext = TEmbedded2DContext.Create(textFrame)
+textGraphics.SetFont(Spleen5x8Font())
+textGraphics.SetColor(255, 255, 255)
+Local measuredWidth:Int
+Local measuredHeight:Int
+passed :& textGraphics.TextBoxSize("ONE TWO THREE", 25, measuredWidth, measuredHeight) = 3
+passed :& measuredWidth = 25 And measuredHeight = 24
+passed :& textGraphics.DrawTextBox("A A A", 0, 0, 5, 24) = 3
+passed :& textFrame.Pixel(1, 1) = 1 And textFrame.Pixel(1, 9) = 1
+passed :& textFrame.Pixel(1, 17) = 1
+textFrame.Clear()
+passed :& textGraphics.DrawTextBox("A", 0, 0, 15, 8, TextAlignCenter) = 1
+passed :& textFrame.Pixel(6, 1) = 1 And textFrame.Pixel(1, 1) = 0
+textFrame.Clear()
+passed :& textGraphics.DrawTextBox("A", 0, 0, 15, 8, TextAlignRight) = 1
+passed :& textFrame.Pixel(11, 1) = 1 And textFrame.Pixel(6, 1) = 0
+textFrame.Clear()
+passed :& textGraphics.DrawTextBox("AAAA", 0, 0, 15, 8, TextAlignLeft, 1, True) = 1
+passed :& textFrame.Pixel(1, 1) = 0
+
 ' Local views translate and rotate into their parent without owning another buffer.
 Local viewFrame:TDisplayBuffer = TDisplayBuffer.Create(10, 6, DisplayPixelFormatMono1)
 Local viewGraphics:TEmbedded2DContext = TEmbedded2DContext.Create(viewFrame)

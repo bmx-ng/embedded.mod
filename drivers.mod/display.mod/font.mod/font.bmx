@@ -18,6 +18,9 @@ ModuleInfo "License: zlib/libpng"
 Import Embedded.Drivers.Display
 
 Const EmbeddedBitmapFontVersion:Int = 1
+Const EmbeddedTextAlignLeft:Int = 0
+Const EmbeddedTextAlignCenter:Int = 1
+Const EmbeddedTextAlignRight:Int = 2
 
 Private
 
@@ -202,7 +205,179 @@ Type TBitmapFont
 		Return penX
 	End Method
 
+	Rem
+	bbdoc: Measures word-wrapped text without allocating temporary strings.
+	returns: The number of resulting lines.
+	End Rem
+	Method TextBoxSize:Int(text:String, width:Int, measuredWidth:Int Var, ..
+			measuredHeight:Int Var, scale:Int = 1)
+		measuredWidth = 0
+		measuredHeight = 0
+		If scale <= 0 Or width <= 0 Or text.length = 0 Then Return 0
+		Local index:Int
+		Local lines:Int
+		While index < text.length
+			Local lineStart:Int
+			Local lineEnd:Int
+			Local lineWidth:Int
+			If Not NextWrappedLine(text, index, width, scale, lineStart, lineEnd, lineWidth) Then Exit
+			If lineWidth > measuredWidth Then measuredWidth = lineWidth
+			lines :+ 1
+		Wend
+		measuredHeight = lines * fontLineHeight * scale
+		Return lines
+	End Method
+
+	Rem
+	bbdoc: Draws aligned, word-wrapped text inside a fixed rectangle.
+	about: When ellipsis is true and more text remains after the last visible
+	line, that line is shortened as required and three dots are appended. The
+	operation scans the original string directly and does not allocate substrings.
+	returns: The number of lines drawn.
+	End Rem
+	Method DrawTextBoxClipped:Int(target:TDisplayBuffer, text:String, x:Int, y:Int, ..
+			width:Int, height:Int, color:UInt, alignment:Int, scale:Int, ellipsis:Int, ..
+			clipX:Int, clipY:Int, clipWidth:Int, clipHeight:Int)
+		If Not target Or scale <= 0 Or width <= 0 Or height <= 0 Then Return 0
+		Local lineHeight:Int = fontLineHeight * scale
+		Local maximumLines:Int = height / lineHeight
+		If maximumLines <= 0 Then Return 0
+		Local index:Int
+		Local lines:Int
+		While index < text.length And lines < maximumLines
+			Local lineStart:Int
+			Local lineEnd:Int
+			Local lineWidth:Int
+			If Not NextWrappedLine(text, index, width, scale, lineStart, lineEnd, lineWidth) Then Exit
+
+			Local addEllipsis:Int = ellipsis And lines = maximumLines - 1 And index < text.length
+			If addEllipsis Then
+				Local dotsWidth:Int = TextWidth("...", scale)
+				Local available:Int = width - dotsWidth
+				If available < 0 Then available = 0
+				Local fittedEnd:Int
+				Local fittedWidth:Int
+				FitRange(text, lineStart, lineEnd, available, scale, fittedEnd, fittedWidth)
+				lineEnd = fittedEnd
+				lineWidth = fittedWidth + dotsWidth
+			End If
+
+			Local penX:Int = x
+			Select alignment
+				Case EmbeddedTextAlignCenter
+					penX :+ (width - lineWidth) / 2
+				Case EmbeddedTextAlignRight
+					penX :+ width - lineWidth
+			End Select
+			Local penY:Int = y + lines * lineHeight
+			penX = DrawRangeClipped(target, text, lineStart, lineEnd, penX, penY, color, scale, ..
+				clipX, clipY, clipWidth, clipHeight)
+			If addEllipsis Then DrawTextClipped(target, "...", penX, penY, color, scale, ..
+				clipX, clipY, clipWidth, clipHeight)
+			lines :+ 1
+		Wend
+		Return lines
+	End Method
+
 	Private
+	Method GlyphAdvance:Int(codePoint:UInt, scale:Int)
+		Local glyph:Int = FindGlyph(codePoint, True)
+		If glyph < 0 Then Return 0
+		Return GlyphByte(glyph, 12) * scale
+	End Method
+
+	Method NextWrappedLine:Int(text:String, index:Int Var, maximumWidth:Int, scale:Int, ..
+			lineStart:Int Var, lineEnd:Int Var, lineWidth:Int Var)
+		While index < text.length And (text[index] = 32 Or text[index] = 9 Or text[index] = 13)
+			index :+ 1
+		Wend
+		If index >= text.length Then Return False
+		If text[index] = 10 Then
+			lineStart = index
+			lineEnd = index
+			lineWidth = 0
+			index :+ 1
+			Return True
+		End If
+		lineStart = index
+		Local scan:Int = index
+		Local lastBreak:Int = -1
+		Local lastBreakEnd:Int
+		Local lastBreakWidth:Int
+		While scan < text.length
+			Local codeStart:Int = scan
+			Local codePoint:UInt = FontNextCodePoint(text, scan)
+			If codePoint = 13 Then Continue
+			If codePoint = 10 Then
+				lineEnd = codeStart
+				index = scan
+				Return True
+			End If
+			Local advance:Int = GlyphAdvance(codePoint, scale)
+			If lineWidth + advance > maximumWidth Then
+				If codeStart = lineStart Then
+					lineWidth :+ advance
+					lineEnd = scan
+					index = scan
+				Else If lastBreak >= 0 Then
+					lineEnd = lastBreakEnd
+					lineWidth = lastBreakWidth
+					index = lastBreak
+				Else
+					lineEnd = codeStart
+					index = codeStart
+				End If
+				Return True
+			End If
+			If codePoint = 32 Or codePoint = 9 Then
+				lastBreak = scan
+				lastBreakEnd = codeStart
+				lastBreakWidth = lineWidth
+			End If
+			lineWidth :+ advance
+		Wend
+		lineEnd = scan
+		index = scan
+		Return True
+	End Method
+
+	Method FitRange(text:String, startIndex:Int, endIndex:Int, maximumWidth:Int, scale:Int, ..
+			fittedEnd:Int Var, fittedWidth:Int Var)
+		Local scan:Int = startIndex
+		fittedEnd = startIndex
+		fittedWidth = 0
+		While scan < endIndex
+			Local codePoint:UInt = FontNextCodePoint(text, scan)
+			If codePoint = 13 Then Continue
+			Local advance:Int = GlyphAdvance(codePoint, scale)
+			If fittedWidth + advance > maximumWidth Then Exit
+			fittedWidth :+ advance
+			fittedEnd = scan
+		Wend
+	End Method
+
+	Method DrawRangeClipped:Int(target:TDisplayBuffer, text:String, startIndex:Int, endIndex:Int, ..
+			x:Int, y:Int, color:UInt, scale:Int, clipX:Int, clipY:Int, clipWidth:Int, clipHeight:Int)
+		Local clipX1:Int = clipX + clipWidth
+		Local clipY1:Int = clipY + clipHeight
+		If clipX < 0 Then clipX = 0
+		If clipY < 0 Then clipY = 0
+		If clipX1 > target.Width() Then clipX1 = target.Width()
+		If clipY1 > target.Height() Then clipY1 = target.Height()
+		If clipX >= clipX1 Or clipY >= clipY1 Then Return x
+		Local index:Int = startIndex
+		Local penX:Int = x
+		While index < endIndex
+			Local codePoint:UInt = FontNextCodePoint(text, index)
+			If codePoint = 13 Or codePoint = 10 Then Continue
+			Local glyph:Int = FindGlyph(codePoint, True)
+			If glyph < 0 Then Continue
+			DrawGlyph(target, glyph, penX, y, color, scale, clipX, clipY, clipX1, clipY1)
+			penX :+ GlyphByte(glyph, 12) * scale
+		Wend
+		Return penX
+	End Method
+
 	Method GlyphRecordOffset:Int(index:Int)
 		Return recordsOffset + index * recordSize
 	End Method

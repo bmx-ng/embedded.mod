@@ -34,6 +34,9 @@ Const GraphicsRotation90:Int = DisplayOrientation90
 Const GraphicsRotation180:Int = DisplayOrientation180
 Const GraphicsRotation270:Int = DisplayOrientation270
 Const EmbeddedGraphicsStateMaximum:Int = 16
+Const TextAlignLeft:Int = EmbeddedTextAlignLeft
+Const TextAlignCenter:Int = EmbeddedTextAlignCenter
+Const TextAlignRight:Int = EmbeddedTextAlignRight
 
 Private
 
@@ -948,6 +951,36 @@ Type TEmbedded2DContext Final
 		Return currentFont.LineHeight() * scale
 	End Method
 
+	Rem
+	bbdoc: Measures text wrapped to a fixed width.
+	returns: The number of resulting lines.
+	End Rem
+	Method TextBoxSize:Int(text:String, width:Int, measuredWidth:Int Var, ..
+			measuredHeight:Int Var, scale:Int = 1)
+		If Not currentFont Then
+			measuredWidth = 0
+			measuredHeight = 0
+			Return 0
+		End If
+		Return currentFont.TextBoxSize(text, width, measuredWidth, measuredHeight, scale)
+	End Method
+
+	Rem
+	bbdoc: Draws aligned, word-wrapped text inside a fixed rectangle.
+	about: The rectangle and result use the current local view. When ellipsis is
+	true, overflowing text is shortened on the final visible line and ends in
+	three dots. Drawing does not allocate temporary strings.
+	returns: The number of lines drawn.
+	End Rem
+	Method DrawTextBox:Int(text:String, x:Int, y:Int, width:Int, height:Int, ..
+			alignment:Int = TextAlignLeft, scale:Int = 1, ellipsis:Int = True)
+		If Not target Or Not currentFont Then Return 0
+		If alignment < TextAlignLeft Or alignment > TextAlignRight Then alignment = TextAlignLeft
+		Return currentFont.DrawTextBoxClipped(DrawingTarget(), text, x + originX, y + originY, ..
+			width, height, drawColor, alignment, scale, ellipsis, ..
+			viewportX, viewportY, viewportWidth, viewportHeight)
+	End Method
+
 	Method DrawImage(image:TEmbeddedImage, x:Int, y:Int)
 		If Not target Or Not image Then Return
 		image.DrawRegionClipped(DrawingTarget(), x + originX, y + originY, 0, 0, ..
@@ -1395,6 +1428,16 @@ End Function
 
 Function FontHeight:Int(scale:Int = 1)
 	Return Default2DContext().FontHeight(scale)
+End Function
+
+Function TextBoxSize:Int(text:String, width:Int, measuredWidth:Int Var, ..
+		measuredHeight:Int Var, scale:Int = 1)
+	Return Default2DContext().TextBoxSize(text, width, measuredWidth, measuredHeight, scale)
+End Function
+
+Function DrawTextBox:Int(text:String, x:Int, y:Int, width:Int, height:Int, ..
+		alignment:Int = TextAlignLeft, scale:Int = 1, ellipsis:Int = True)
+	Return Default2DContext().DrawTextBox(text, x, y, width, height, alignment, scale, ellipsis)
 End Function
 
 Function DrawImage(image:TEmbeddedImage, x:Int, y:Int)

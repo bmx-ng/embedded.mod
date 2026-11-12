@@ -124,6 +124,20 @@ DrawCircle 172, 36, 22
 FillTriangle 220, 58, 252, 12, 284, 58
 ```
 
+Text can be measured and laid out without creating temporary strings.
+`TextBoxSize` reports the wrapped dimensions, while `DrawTextBox` supports left,
+centre, and right alignment, explicit newlines, word wrapping, clipping, integer
+font scaling, and optional final-line ellipsis:
+
+```blitzmax
+Local textWidth:Int
+Local textHeight:Int
+Local lines:Int = TextBoxSize(message, 180, textWidth, textHeight)
+
+SetColor 235, 240, 255
+DrawTextBox message, 12, 12, 180, 72, TextAlignCenter, 1, True
+```
+
 Concrete display drivers live beneath `Embedded.Drivers.Displays.*`.
 `Embedded.Drivers.Displays.SSD1306` is the first controller implementation. It uses
 `Embedded.Hardware.I2C`, supports dirty page updates, and includes the 72x40
