@@ -71,8 +71,8 @@ changes made outside Graphics2D. Drivers remain free to expand a request to
 page, row, DMA, or controller-specific transfer boundaries.
 
 `TDisplay.Capabilities` distinguishes partial presentation, a live scanout
-framebuffer, vertical synchronization, true buffer swapping, and optimized
-discard presentation. Existing
+framebuffer, vertical synchronization, true buffer swapping, optimized discard
+presentation, accelerated solid fills, and accelerated image blits. Existing
 drivers retain the original synchronous partial-presentation behavior without
 needing an override. A driver which exchanges its own framebuffers can use
 `TDisplayBuffer.RetargetExternal` to keep the buffer object—and therefore the
@@ -215,6 +215,14 @@ unscaled source regions, deterministic nearest-neighbour scaling, horizontal
 and vertical flips, 0..255 opacity, and source colour-key transparency. Existing
 one-bit masks and colour keys may be used together; either can suppress a pixel.
 Opacity uses straight source-over blending against the current framebuffer.
+
+Opaque RGB565 images drawn to RGB565 targets use a shared native raster path
+for copies, clipping, nearest-neighbour scaling, and mirroring. A display
+adapter may register a hardware implementation for compatible operations; all
+unsupported memory layouts, scale ratios, transforms, masks, tinting, opacity,
+and colour keys fall back automatically without changing drawing semantics.
+Applications can inspect `DisplayCapabilityAcceleratedBlit`, but use the same
+`DrawImage` and `DrawImageRect` calls on accelerated and software targets.
 
 The desktop converter in `tools/image2embedded.bmx` uses the normal BlitzMax
 `image.mod` loaders. It accepts PNG, JPEG, BMP, GIF, TGA, PNM, QOI, WebP, TIFF,

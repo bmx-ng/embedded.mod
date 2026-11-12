@@ -16,6 +16,16 @@ ModuleInfo "Version: 0.1"
 ModuleInfo "License: zlib/libpng"
 
 Import Embedded.Drivers.Display
+Import "native/embedded_display_image_raster.c"
+
+Extern "C"
+	Function _DisplayBlitRGB565:Int(targetPixels:Byte Ptr, targetStride:Int, ..
+		targetWidth:Int, targetHeight:Int, sourcePixels:Byte Ptr, sourceStride:Int, ..
+		sourceWidth:Int, sourceHeight:Int, destinationX:Int, destinationY:Int, ..
+		destinationWidth:Int, destinationHeight:Int, clipX:Int, clipY:Int, ..
+		clipWidth:Int, clipHeight:Int, drawFlags:Int) = ..
+		"bmx_embedded_display_blit_rgb565"
+End Extern
 
 Const EmbeddedImageVersion:Int = 1
 Const EmbeddedImageEncodingRaw:Int = 0
@@ -203,18 +213,26 @@ Type TEmbeddedImage Final
 		If x0 >= x1 Or y0 >= y1 Then Return
 
 		Local targetPixels:Byte Ptr = target.Pixels()
-		If targetPixels And tint = $ffffff And Not HasMask() And drawFlags = 0 And ..
+		If targetPixels And tint = $ffffff And Not HasMask() And ..
 				opacity = 255 And colorKey = EmbeddedImageColorKeyDisabled And imageFormat = target.Format() And ..
 				imageFormat <> DisplayPixelFormatMono1 Then
-			Local bytesPerPixel:Int = DisplayPixelFormatBits(imageFormat) / 8
-			For Local py:Int = y0 Until y1
-				Local sx:Int = sourceX + x0 - x
-				Local sy:Int = sourceY + py - y
-				MemCopy(targetPixels + py * target.Stride() + x0 * bytesPerPixel, ..
-					data + pixelOffset + sy * pixelStride + sx * bytesPerPixel, ..
-					Size_T((x1 - x0) * bytesPerPixel))
-			Next
-			Return
+			If imageFormat = DisplayPixelFormatRGB565 Then
+				_DisplayBlitRGB565(targetPixels, target.Stride(), target.Width(), target.Height(), ..
+					data + pixelOffset + sourceY * pixelStride + sourceX * 2, pixelStride, ..
+					width, height, x, y, width, height, x0, y0, x1 - x0, y1 - y0, drawFlags)
+				Return
+			End If
+			If drawFlags = 0 Then
+				Local bytesPerPixel:Int = DisplayPixelFormatBits(imageFormat) / 8
+				For Local py:Int = y0 Until y1
+					Local sx:Int = sourceX + x0 - x
+					Local sy:Int = sourceY + py - y
+					MemCopy(targetPixels + py * target.Stride() + x0 * bytesPerPixel, ..
+						data + pixelOffset + sy * pixelStride + sx * bytesPerPixel, ..
+						Size_T((x1 - x0) * bytesPerPixel))
+				Next
+				Return
+			End If
 		End If
 
 		For Local py:Int = y0 Until y1
@@ -259,6 +277,16 @@ Type TEmbeddedImage Final
 		If x1 > clipX1 Then x1 = clipX1
 		If y1 > clipY1 Then y1 = clipY1
 		If x0 >= x1 Or y0 >= y1 Then Return
+		Local targetPixels:Byte Ptr = target.Pixels()
+		If targetPixels And imageFormat = DisplayPixelFormatRGB565 And ..
+				target.Format() = DisplayPixelFormatRGB565 And tint = $ffffff And ..
+				Not HasMask() And opacity = 255 And colorKey = EmbeddedImageColorKeyDisabled Then
+			_DisplayBlitRGB565(targetPixels, target.Stride(), target.Width(), target.Height(), ..
+				data + pixelOffset, pixelStride, imageWidth, imageHeight, ..
+				destinationX, destinationY, destinationWidth, destinationHeight, ..
+				x0, y0, x1 - x0, y1 - y0, drawFlags)
+			Return
+		End If
 		For Local py:Int = y0 Until y1
 			Local sy:Int = (py - destinationY) * imageHeight / destinationHeight
 			If drawFlags & EmbeddedImageDrawFlipY Then sy = imageHeight - 1 - sy

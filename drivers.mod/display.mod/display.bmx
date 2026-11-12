@@ -73,6 +73,11 @@ bbdoc: Large solid fills may be handled by a target-specific hardware engine.
 End Rem
 Const DisplayCapabilityAcceleratedFill:Int = 32
 
+Rem
+bbdoc: Compatible image copies and scaling may use a target-specific hardware engine.
+End Rem
+Const DisplayCapabilityAcceleratedBlit:Int = 64
+
 Const DisplayOrientation0:Int = 0
 Const DisplayOrientation90:Int = 90
 Const DisplayOrientation180:Int = 180

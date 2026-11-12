@@ -50,6 +50,24 @@ Local image:TEmbeddedImage = TEmbeddedImage.Create(Varptr rgbData[0], rgbData.le
 passed :& image <> Null And image.Width() = 2 And image.Height() = 2
 passed :& image.Format() = DisplayPixelFormatRGB888 And Not image.HasMask()
 
+' The native RGB565 path preserves clipping, nearest-neighbour scaling, and flips.
+Local rgb565Data:Byte[] = New Byte[40]
+Header(rgb565Data, 0, 2, 2, DisplayPixelFormatRGB565, 4, 32)
+rgb565Data[32] = $00; rgb565Data[33] = $f8
+rgb565Data[34] = $e0; rgb565Data[35] = $07
+rgb565Data[36] = $1f; rgb565Data[37] = $00
+rgb565Data[38] = $ff; rgb565Data[39] = $ff
+Local rgb565Image:TEmbeddedImage = TEmbeddedImage.Create(Varptr rgb565Data[0], rgb565Data.length)
+Local rgb565Scaled:TDisplayBuffer = TDisplayBuffer.Create(5, 4, DisplayPixelFormatRGB565)
+rgb565Scaled.Clear($112233)
+rgb565Image.DrawRectClipped(rgb565Scaled, 0, 0, 4, 4, $ffffff, 1, 0, 3, 4)
+passed :& rgb565Scaled.Pixel(0, 0) = $102031 And rgb565Scaled.Pixel(4, 3) = $102031
+passed :& rgb565Scaled.Pixel(1, 0) = $ff0000 And rgb565Scaled.Pixel(2, 0) = $00ff00
+passed :& rgb565Scaled.Pixel(1, 3) = $0000ff And rgb565Scaled.Pixel(3, 3) = $ffffff
+rgb565Scaled.Clear()
+rgb565Image.DrawRect(rgb565Scaled, 0, 0, 4, 4, $ffffff, EmbeddedImageDrawFlipX)
+passed :& rgb565Scaled.Pixel(0, 0) = $00ff00 And rgb565Scaled.Pixel(3, 0) = $ff0000
+
 Local rgb565:TDisplayBuffer = TDisplayBuffer.Create(2, 2, DisplayPixelFormatRGB565)
 image.Draw(rgb565, 0, 0)
 passed :& rgb565.Pixel(0, 0) = $ff0000 And rgb565.Pixel(1, 0) = $00ff00
