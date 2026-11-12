@@ -48,6 +48,8 @@ Global valueEventData:Int
 Global checkChangeCount:Int
 Global switchChangeCount:Int
 Global sliderChangeCount:Int
+Global focusChangeCount:Int
+Global focusEventSource:Object
 
 Function Clicked(button:TUIButton)
 	callbackCount :+ 1
@@ -74,6 +76,9 @@ Function CaptureAction:Object(hookId:Int, data:Object, context:Object)
 		valueEventCount :+ 1
 		valueEventSource = event.source
 		valueEventData = event.data
+	Else If event And event.id = EVENT_UIFOCUSCHANGED Then
+		focusChangeCount :+ 1
+		focusEventSource = event.source
 	End If
 	Return data
 End Function
@@ -89,6 +94,7 @@ Check(touch.StartEvents(), "could not start fake touch")
 Local ui:TUIContext = TUIContext.CreateWithBuffer(frame, Null, touch, ..
 	TUITheme.Dark(Spleen5x8Font()))
 Check(ui <> Null, "could not create UI")
+ui.Theme().screen.background = 0
 
 Local page:TUIColumn = ui.Root()
 page.SetPadding(6)
@@ -101,9 +107,12 @@ Local connect:TUIButton = row.Button("Connect")
 cancel.SetGrow(1)
 connect.SetGrow(2)
 connect.OnClick(Clicked)
-Local checkBox:TUICheckBox = page.CheckBox("Remember", False)
+Local controlRow:TUIRow = page.Row()
+controlRow.SetGap(10)
+controlRow.SetHeight(40)
+Local checkBox:TUICheckBox = controlRow.CheckBox("Remember", False)
 checkBox.OnChange(CheckChanged)
-Local switchControl:TUISwitch = page.Switch(False)
+Local switchControl:TUISwitch = controlRow.Switch(False)
 switchControl.OnChange(SwitchChanged)
 Local slider:TUISlider = page.Slider(10, 50, 10)
 slider.OnChange(SliderChanged)
@@ -113,8 +122,37 @@ Check(ui.Render(), "initial UI did not render")
 Check(title.X() = 6 And title.Y() = 6, "column padding was not applied")
 Check(row.X() = 6 And row.Width() = 228, "row did not stretch")
 Check(cancel.Width() > 0 And Abs(connect.Width() - cancel.Width() * 2) <= 1, "weighted row growth failed")
+Local checkStyle:TUIStyle = checkBox.DefaultStyle()
+Local checkGap:Int = Max(checkStyle.fontScale * 4, 6)
+Local checkContentRight:Int = checkBox.X() + checkStyle.paddingLeft + ..
+	16 * checkStyle.fontScale + checkGap + ..
+	checkStyle.font.TextWidth(checkBox.Text(), checkStyle.fontScale)
+Local checkFocusRight:Int = checkBox.X() + checkBox.Width() - ui.Theme().focusInset - ..
+	ui.Theme().focusWidth
+Check(checkFocusRight >= checkContentRight + checkStyle.fontScale * 2, ..
+	"checkbox focus outline does not clear its label")
+Local checkOverflow:Int
+For Local overflowY:Int = checkBox.Y() Until checkBox.Y() + checkBox.Height()
+	For Local overflowX:Int = checkBox.X() + checkBox.Width() Until switchControl.X()
+		If frame.Pixel(overflowX, overflowY) Then checkOverflow = True
+	Next
+Next
+Check(Not checkOverflow, "vertically stretched checkbox label escaped its bounds")
 Check(ui.HitTest(connect.X() + 1, connect.Y() + 1) = connect, "button hit test failed")
 Check(ui.HitTest(0, 0) = Null, "container should not be clickable")
+
+Check(ui.FocusedWidget() = Null, "UI unexpectedly began with focus")
+Check(ui.FocusNext() And ui.FocusedWidget() = cancel, "next focus did not select first control")
+Check(ui.FocusNext() And ui.FocusedWidget() = connect, "next focus did not advance")
+Check(ui.FocusPrevious() And ui.FocusedWidget() = cancel, "previous focus did not move backwards")
+Check(ui.SetFocus(connect) And focusEventSource = connect And focusChangeCount = 4, ..
+	"explicit focus did not emit semantic focus events")
+Check(ui.ActivateFocused(), "focused button did not activate")
+Check(callbackCount = 1 And actionCount = 1, "focused activation did not use button semantics")
+callbackCount = 0
+actionCount = 0
+actionSource = Null
+Check(ui.Render(), "focus changes were not invalidated")
 
 touch.count = 1
 touch.x = connect.X() + connect.Width() / 2
@@ -142,6 +180,7 @@ Check(ui.Render(), "released state was not invalidated")
 
 connect.SetEnabled(False)
 ui.Render()
+Check(ui.FocusedWidget() = Null, "disabling the focused control did not release focus")
 touch.count = 1
 PollSystem()
 touch.count = 0
@@ -186,6 +225,14 @@ PollSystem()
 Check(slider.Value() > 30 And slider.Value() < 50, "slider did not track touch position")
 Check(sliderChangeCount > sliderChangesBeforeMove, "slider callback did not track movement")
 Check(valueEventSource = slider And valueEventData = slider.Value(), "slider value event was not emitted")
+Local sliderValueBeforeAdjust:Int = slider.Value()
+Check(ui.SetFocus(slider), "slider could not receive focus")
+Check(ui.AdjustFocused(2) And slider.Value() = sliderValueBeforeAdjust + 2, ..
+	"focused slider did not respond to adjustment")
+Check(ui.FocusPrevious() And ui.FocusedWidget() = switchControl, ..
+	"focus traversal did not skip the disabled button")
+Check(ui.ActivateFocused() And Not switchControl.Value(), ..
+	"focused switch did not activate")
 
 progress.SetValue(250)
 Check(progress.Value() = 200, "progress value was not clamped to its range")

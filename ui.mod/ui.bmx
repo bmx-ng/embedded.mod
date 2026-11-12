@@ -32,6 +32,7 @@ Const UIInvalidRegionMaximum:Int = 8
 
 Global EVENT_UIACTION:Int = AllocUserEventId("UIAction")
 Global EVENT_UIVALUECHANGED:Int = AllocUserEventId("UIValueChanged")
+Global EVENT_UIFOCUSCHANGED:Int = AllocUserEventId("UIFocusChanged")
 
 Type TUIStyle
 	Field font:TBitmapFont
@@ -98,6 +99,9 @@ Type TUITheme
 	Field controlDisabled:TUIStyle
 	Field progress:TUIStyle
 	Field progressFill:TUIStyle
+	Field focusColor:UInt = $ffd84a
+	Field focusWidth:Int = 2
+	Field focusInset:Int = 2
 
 	Function Dark:TUITheme(font:TBitmapFont = Null)
 		Local theme:TUITheme = New TUITheme
@@ -209,6 +213,7 @@ Type TUIWidget
 	Field enabled:Int = True
 	Field pressed:Int
 	Field clickable:Int
+	Field focusable:Int
 
 	Public
 	Method Context:TUIContext() Final
@@ -298,6 +303,7 @@ Type TUIWidget
 		If visible = value Then Return
 		_Invalidate()
 		visible = value
+		If Not visible And uiContext Then uiContext._ReleaseFocus(Self)
 		_RequestLayout()
 	End Method
 
@@ -310,6 +316,7 @@ Type TUIWidget
 		If enabled = value Then Return
 		enabled = value
 		If Not enabled Then pressed = False
+		If Not enabled And uiContext Then uiContext._ReleaseFocus(Self)
 		_Invalidate()
 	End Method
 
@@ -319,6 +326,27 @@ Type TUIWidget
 
 	Method Pressed:Int()
 		Return pressed
+	End Method
+
+	Method SetFocusable(value:Int)
+		value = value <> 0
+		If focusable = value Then Return
+		focusable = value
+		If Not focusable And uiContext Then uiContext._ReleaseFocus(Self)
+		_Invalidate()
+	End Method
+
+	Method Focusable:Int()
+		Return focusable
+	End Method
+
+	Method Focused:Int()
+		Return uiContext And uiContext.FocusedWidget() = Self
+	End Method
+
+	Method RequestFocus:Int()
+		If Not uiContext Then Return False
+		Return uiContext.SetFocus(Self)
 	End Method
 
 	Method Style:TUIStyle()
@@ -723,6 +751,7 @@ Type TUIButton Extends TUIWidget Final
 	Public
 	Method New()
 		clickable = True
+		focusable = True
 	End Method
 
 	Method SetText(text:String)
@@ -812,6 +841,7 @@ Type TUICheckBox Extends TUIWidget Final
 	Public
 	Method New()
 		clickable = True
+		focusable = True
 	End Method
 
 	Method SetText(text:String)
@@ -860,9 +890,12 @@ Type TUICheckBox Extends TUIWidget Final
 			lineHeight = style.font.LineHeight() * style.fontScale
 			textWidth = style.font.TextWidth(checkText, style.fontScale)
 		End If
-		Local boxSize:Int = lineHeight
-		width = boxSize + style.paddingLeft + style.paddingRight
-		If checkText.Length Then width :+ textWidth + Max(style.fontScale * 4, 6)
+		Local boxSize:Int = 16 * style.fontScale
+		Local labelGap:Int = Max(style.fontScale * 4, 6)
+		Local trailingPadding:Int = style.paddingRight
+		If checkText.Length Then trailingPadding = Max(trailingPadding, labelGap)
+		width = boxSize + style.paddingLeft + trailingPadding
+		If checkText.Length Then width :+ textWidth + labelGap
 		height = Max(lineHeight, boxSize) + style.paddingTop + style.paddingBottom
 		If requestedWidth >= 0 Then width = requestedWidth
 		If requestedHeight >= 0 Then height = requestedHeight
@@ -872,7 +905,8 @@ Type TUICheckBox Extends TUIWidget Final
 		Local style:TUIStyle = DefaultStyle()
 		If uiStyle Then style = uiStyle
 		Local contentHeight:Int = Height() - style.paddingTop - style.paddingBottom
-		Local boxSize:Int = Max(Min(contentHeight, 24 * style.fontScale), 8)
+		Local naturalBoxSize:Int = 16 * style.fontScale
+		Local boxSize:Int = Max(Min(contentHeight, naturalBoxSize), 8)
 		Local boxX:Int = X() + style.paddingLeft
 		Local boxY:Int = Y() + (Height() - boxSize) / 2
 		graphics.SetColorValue(style.background)
@@ -916,6 +950,7 @@ Type TUISwitch Extends TUIWidget Final
 	Public
 	Method New()
 		clickable = True
+		focusable = True
 	End Method
 
 	Method SetValue(value:Int)
@@ -1032,6 +1067,7 @@ Type TUISlider Extends TUIRangeWidget Final
 	Public
 	Method New()
 		clickable = True
+		focusable = True
 	End Method
 
 	Method OnChange(handler(slider:TUISlider))
@@ -1092,6 +1128,12 @@ Type TUISlider Extends TUIRangeWidget Final
 			value = minimumValue + Int((Long(x - startX) * Long(maximumValue - minimumValue) + ..
 				Long(endX - startX) / 2) / Long(endX - startX))
 		End If
+		_SetUserValue(value)
+	End Method
+
+	Method _SetUserValue(value:Int)
+		If value < minimumValue Then value = minimumValue
+		If value > maximumValue Then value = maximumValue
 		If value = currentValue Then Return
 		SetValue(value)
 		If changeHandler Then changeHandler(Self)
@@ -1149,6 +1191,7 @@ Type TUIContext
 	Field layoutPending:Int = True
 	Field contextSlot:Int = -1
 	Field pressedWidget:TUIWidget
+	Field focusedWidget:TUIWidget
 	Field pressedContact:Int = -1
 	Field pressedArmed:Int
 	Field invalidCount:Int
@@ -1196,6 +1239,7 @@ Type TUIContext
 			_uiContexts[contextSlot] = Null
 		contextSlot = -1
 		pressedWidget = Null
+		focusedWidget = Null
 	End Method
 
 	Method Root:TUIColumn()
@@ -1204,6 +1248,77 @@ Type TUIContext
 
 	Method Theme:TUITheme()
 		Return themeValue
+	End Method
+
+	Method FocusedWidget:TUIWidget()
+		Return focusedWidget
+	End Method
+
+	Method SetFocus:Int(widget:TUIWidget)
+		If widget And (widget.Context() <> Self Or Not _CanFocus(widget)) Then Return False
+		If focusedWidget = widget Then Return True
+		Local previous:TUIWidget = focusedWidget
+		focusedWidget = widget
+		If previous Then previous._Invalidate()
+		If focusedWidget Then focusedWidget._Invalidate()
+		EmitEvent(CreateEvent(EVENT_UIFOCUSCHANGED, focusedWidget, 0, 0, 0, 0, previous))
+		Return True
+	End Method
+
+	Method ClearFocus()
+		SetFocus(Null)
+	End Method
+
+	Method FocusNext:Int()
+		Local count:Int = _CountFocusable(rootWidget)
+		If count <= 0 Then Return False
+		Local cursor:Int
+		Local index:Int = _FocusableIndex(rootWidget, focusedWidget, cursor)
+		Local nextIndex:Int
+		If index < 0 Then nextIndex = 0 Else nextIndex = (index + 1) Mod count
+		cursor = 0
+		Return SetFocus(_FocusableAt(rootWidget, nextIndex, cursor))
+	End Method
+
+	Method FocusPrevious:Int()
+		Local count:Int = _CountFocusable(rootWidget)
+		If count <= 0 Then Return False
+		Local cursor:Int
+		Local index:Int = _FocusableIndex(rootWidget, focusedWidget, cursor)
+		Local previousIndex:Int
+		If index < 0 Then previousIndex = count - 1 Else previousIndex = (index + count - 1) Mod count
+		cursor = 0
+		Return SetFocus(_FocusableAt(rootWidget, previousIndex, cursor))
+	End Method
+
+	Method ActivateFocused:Int()
+		Local target:TUIWidget = focusedWidget
+		If Not _CanFocus(target) Then Return False
+		Local button:TUIButton = TUIButton(target)
+		If button Then
+			button._Activate()
+			EmitEvent(CreateEvent(EVENT_UIACTION, target))
+			Return True
+		End If
+		Local checkBox:TUICheckBox = TUICheckBox(target)
+		If checkBox Then
+			checkBox._Activate()
+			Return True
+		End If
+		Local switchControl:TUISwitch = TUISwitch(target)
+		If switchControl Then
+			switchControl._Activate()
+			Return True
+		End If
+		Return False
+	End Method
+
+	Method AdjustFocused:Int(delta:Int)
+		If delta = 0 Or Not _CanFocus(focusedWidget) Then Return False
+		Local slider:TUISlider = TUISlider(focusedWidget)
+		If Not slider Then Return False
+		slider._SetUserValue(slider.Value() + delta)
+		Return True
 	End Method
 
 	Method SetTheme(theme:TUITheme)
@@ -1318,6 +1433,7 @@ Type TUIContext
 				If pressedWidget Or Not event.source Then Return
 				Local target:TUIWidget = HitTest(x, y)
 				If target And target.Enabled() Then
+					SetFocus(target)
 					pressedWidget = target
 					pressedContact = event.data
 					pressedArmed = True
@@ -1371,6 +1487,79 @@ Type TUIContext
 		For Local child:TUIWidget = EachIn widget.uiChildren
 			_DrawWidget(child, clipX, clipY, clipWidth, clipHeight)
 		Next
+		If widget = focusedWidget Then _DrawFocus(widget)
+	End Method
+
+	Method _DrawFocus(widget:TUIWidget)
+		If Not themeValue Or themeValue.focusWidth <= 0 Then Return
+		Local inset:Int = Max(themeValue.focusInset, 0)
+		Local width:Int = widget.Width() - inset * 2
+		Local height:Int = widget.Height() - inset * 2
+		If width <= 0 Or height <= 0 Then Return
+		graphics.SetColorValue(themeValue.focusColor)
+		For Local edge:Int = 0 Until themeValue.focusWidth
+			If width - edge * 2 <= 0 Or height - edge * 2 <= 0 Then Exit
+			graphics.DrawRoundRect(widget.X() + inset + edge, widget.Y() + inset + edge, ..
+				width - edge * 2, height - edge * 2, Max(4 - edge, 0))
+		Next
+	End Method
+
+	Method _CanFocus:Int(widget:TUIWidget)
+		If Not widget Or Not widget.Focusable() Or Not widget.Enabled() Or Not widget.Visible() Then Return False
+		Local parent:TUIContainer = widget.Parent()
+		While parent
+			If Not parent.Enabled() Or Not parent.Visible() Then Return False
+			parent = parent.Parent()
+		Wend
+		Return True
+	End Method
+
+	Method _ReleaseFocus(widget:TUIWidget)
+		If Not focusedWidget Or Not widget Then Return
+		Local current:TUIWidget = focusedWidget
+		While current
+			If current = widget Then
+				ClearFocus()
+				Return
+			End If
+			current = current.Parent()
+		Wend
+	End Method
+
+	Method _CountFocusable:Int(widget:TUIWidget)
+		If Not widget Or Not widget.Visible() Or Not widget.Enabled() Then Return 0
+		Local count:Int
+		If widget.Focusable() Then count = 1
+		For Local child:TUIWidget = EachIn widget.uiChildren
+			count :+ _CountFocusable(child)
+		Next
+		Return count
+	End Method
+
+	Method _FocusableAt:TUIWidget(widget:TUIWidget, targetIndex:Int, cursor:Int Var)
+		If Not widget Or Not widget.Visible() Or Not widget.Enabled() Then Return Null
+		If widget.Focusable() Then
+			If cursor = targetIndex Then Return widget
+			cursor :+ 1
+		End If
+		For Local child:TUIWidget = EachIn widget.uiChildren
+			Local found:TUIWidget = _FocusableAt(child, targetIndex, cursor)
+			If found Then Return found
+		Next
+		Return Null
+	End Method
+
+	Method _FocusableIndex:Int(widget:TUIWidget, target:TUIWidget, cursor:Int Var)
+		If Not widget Or Not widget.Visible() Or Not widget.Enabled() Then Return -1
+		If widget.Focusable() Then
+			If widget = target Then Return cursor
+			cursor :+ 1
+		End If
+		For Local child:TUIWidget = EachIn widget.uiChildren
+			Local found:Int = _FocusableIndex(child, target, cursor)
+			If found >= 0 Then Return found
+		Next
+		Return -1
 	End Method
 
 	Method _HitTest:TUIWidget(widget:TUIWidget, x:Int, y:Int)

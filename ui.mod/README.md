@@ -14,6 +14,7 @@ The initial vertical slice provides:
 - labels, buttons, checkboxes, switches, sliders, and progress bars;
 - touch hit-testing, capture, and continuous slider tracking;
 - `EVENT_UIACTION`, `EVENT_UIVALUECHANGED`, and optional typed callbacks;
+- explicit focus, traversal, activation, adjustment, and themed focus indication;
 - automatic layout and dirty-region presentation.
 
 Methods use the ordinary parenthesised BlitzMax form:
@@ -45,3 +46,22 @@ callback when preferred. Checkboxes, switches, and sliders emit
 `EVENT_UIVALUECHANGED`; the event source identifies the widget and `data`
 contains its new integer value. Programmatic `SetValue()` and `SetChecked()`
 calls update the display without pretending that the user changed the value.
+
+## Focus and device navigation
+
+Interactive controls participate in focus traversal. Touching one gives it
+focus, but navigation is deliberately independent of any particular input
+hardware:
+
+```blitzmax
+ui.FocusNext()
+ui.FocusPrevious()
+ui.ActivateFocused()
+ui.AdjustFocused(1)
+```
+
+An application can map those operations to GPIO buttons, an encoder, keypad,
+or keyboard events. `AdjustFocused()` changes a focused slider using the
+application-selected step. Focus changes emit `EVENT_UIFOCUSCHANGED`, and
+`FocusedWidget()` exposes the current control. Disabling or hiding a focused
+control safely releases focus.
