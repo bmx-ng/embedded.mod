@@ -70,6 +70,13 @@ without calling the driver. A failed transfer retains the rectangle for retry.
 changes made outside Graphics2D. Drivers remain free to expand a request to
 page, row, DMA, or controller-specific transfer boundaries.
 
+`TDisplay.Capabilities` distinguishes partial presentation, a live scanout
+framebuffer, vertical synchronization, and true buffer swapping. Existing
+drivers retain the original synchronous partial-presentation behavior without
+needing an override. A driver which exchanges its own framebuffers can use
+`TDisplayBuffer.RetargetExternal` to keep the buffer object—and therefore the
+renderer bound to it—stable while changing the underlying pixel storage.
+
 `SetRotation` accepts clockwise `0`, `90`, `180`, or `270` degree orientation.
 All primitives, text, and images use the rotated logical canvas; `GraphicsWidth`
 and `GraphicsHeight` report its dimensions. Rotation remaps integer coordinates

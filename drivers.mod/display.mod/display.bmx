@@ -35,6 +35,26 @@ Const DisplayErrorGeneric:Int = -1
 Const DisplayErrorUnsupportedFormat:Int = -2
 Const DisplayErrorInvalidArgument:Int = -5
 
+Rem
+bbdoc: The display accepts presentation rectangles smaller than the complete frame.
+End Rem
+Const DisplayCapabilityPartialPresent:Int = 1
+
+Rem
+bbdoc: Drawing storage is scanned directly by the display and may require synchronization.
+End Rem
+Const DisplayCapabilityLiveFramebuffer:Int = 2
+
+Rem
+bbdoc: The display exposes a vertical synchronization boundary.
+End Rem
+Const DisplayCapabilityVSync:Int = 4
+
+Rem
+bbdoc: Presentation exchanges a render buffer with a separately scanned buffer.
+End Rem
+Const DisplayCapabilityBufferSwap:Int = 8
+
 Const DisplayOrientation0:Int = 0
 Const DisplayOrientation90:Int = 90
 Const DisplayOrientation180:Int = 180
@@ -174,6 +194,18 @@ Type TDisplayBuffer
 		End If
 
 		Return Varptr storage[0]
+	End Method
+
+	Rem
+	bbdoc: Retargets a buffer created by CreateExternal to equally sized storage.
+	about: This supports driver-owned buffer exchange while keeping the
+	TDisplayBuffer identity stable for renderers. Managed buffers cannot be
+	retargeted.
+	End Rem
+	Method RetargetExternal:Int(pixels:Byte Ptr)
+		If storage.length Or Not externalStorage Or Not pixels Then Return False
+		externalStorage = pixels
+		Return True
 	End Method
 
 	Method Clear(color:UInt = 0)
@@ -395,6 +427,19 @@ Type TDisplay Abstract
 	Method Height:Int() Abstract
 
 	Method PreferredPixelFormat:Int() Abstract
+
+	Rem
+	bbdoc: Reports optional presentation behavior supported by this display.
+	about: Drivers which do not override this retain the original synchronous
+	partial-presentation contract.
+	End Rem
+	Method Capabilities:Int()
+		Return DisplayCapabilityPartialPresent
+	End Method
+
+	Method HasCapability:Int(capability:Int)
+		Return (Capabilities() & capability) = capability
+	End Method
 
 	Method PresentPixels:Int(pixels:Byte Ptr, stride:Int, format:Int, ..
 	x:Int, y:Int, width:Int, height:Int) Abstract

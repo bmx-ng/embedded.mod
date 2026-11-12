@@ -3,6 +3,29 @@ SuperStrict
 Import BRL.StandardIO
 Import Embedded.Drivers.Display
 
+Type TCapabilityDisplay Extends TDisplay
+	Method Width:Int()
+		Return 1
+	End Method
+
+	Method Height:Int()
+		Return 1
+	End Method
+
+	Method PreferredPixelFormat:Int()
+		Return DisplayPixelFormatMono1
+	End Method
+
+	Method PresentPixels:Int(pixels:Byte Ptr, stride:Int, format:Int, ..
+			x:Int, y:Int, width:Int, height:Int)
+		Return True
+	End Method
+
+	Method SetEnabled:Int(enabled:Int)
+		Return True
+	End Method
+End Type
+
 Local passed:Int = True
 
 passed :& DisplayPixelFormatBits(DisplayPixelFormatMono1) = 1
@@ -11,6 +34,10 @@ passed :& DisplayPixelFormatBits(DisplayPixelFormatRGB888) = 24
 passed :& DisplayMinimumStride(9, DisplayPixelFormatMono1) = 2
 passed :& DisplayMinimumStride(3, DisplayPixelFormatRGB565) = 6
 passed :& DisplayMinimumStride(3, DisplayPixelFormatRGB888) = 9
+Local capabilityDisplay:TCapabilityDisplay = New TCapabilityDisplay
+passed :& capabilityDisplay.Capabilities() = DisplayCapabilityPartialPresent
+passed :& capabilityDisplay.HasCapability(DisplayCapabilityPartialPresent)
+passed :& Not capabilityDisplay.HasCapability(DisplayCapabilityVSync)
 
 Local mono:TDisplayBuffer = TDisplayBuffer.Create(10, 4, DisplayPixelFormatMono1)
 passed :& mono <> Null And mono.Size() = 8
@@ -45,6 +72,12 @@ passed :& external <> Null And external.Size() = 12 And external.Bytes() = Null
 external.SetPixel(1, 1, $ff0000)
 passed :& external.Pixel(1, 1) = $ff0000
 passed :& externalBytes[8] = 0 And (Int(externalBytes[9]) & $ff) = $f8
+Local replacementBytes:Byte[] = New Byte[12]
+passed :& external.RetargetExternal(Varptr replacementBytes[0])
+external.SetPixel(0, 0, $0000ff)
+passed :& external.Pixel(0, 0) = $0000ff And replacementBytes[0] <> 0
+passed :& externalBytes[0] = 0 And externalBytes[1] = 0
+passed :& Not external.RetargetExternal(Null) And Not rgb565.RetargetExternal(Varptr replacementBytes[0])
 passed :& TDisplayBuffer.CreateExternal(3, 2, DisplayPixelFormatRGB565, ..
 	Varptr externalBytes[0], 5) = Null
 
