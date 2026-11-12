@@ -37,6 +37,9 @@ Const EmbeddedGraphicsStateMaximum:Int = 16
 Const TextAlignLeft:Int = EmbeddedTextAlignLeft
 Const TextAlignCenter:Int = EmbeddedTextAlignCenter
 Const TextAlignRight:Int = EmbeddedTextAlignRight
+Const ImageFlipX:Int = EmbeddedImageDrawFlipX
+Const ImageFlipY:Int = EmbeddedImageDrawFlipY
+Const ImageColorKeyDisabled:UInt = EmbeddedImageColorKeyDisabled
 
 Private
 
@@ -981,29 +984,37 @@ Type TEmbedded2DContext Final
 			viewportX, viewportY, viewportWidth, viewportHeight)
 	End Method
 
-	Method DrawImage(image:TEmbeddedImage, x:Int, y:Int)
+	Rem
+	bbdoc: Draws an image with optional flipping, opacity, and source colour-key transparency.
+	about: Opacity is clamped to 0..255. The colour key is matched against the
+	original source pixel before tinting; omit it to use only the image's mask.
+	End Rem
+	Method DrawImage(image:TEmbeddedImage, x:Int, y:Int, drawFlags:Int = 0, ..
+			opacity:Int = 255, colorKey:UInt = ImageColorKeyDisabled)
 		If Not target Or Not image Then Return
 		image.DrawRegionClipped(DrawingTarget(), x + originX, y + originY, 0, 0, ..
 			image.Width(), image.Height(), drawColor, ..
-			viewportX, viewportY, viewportWidth, viewportHeight)
+			viewportX, viewportY, viewportWidth, viewportHeight, drawFlags, opacity, colorKey)
 	End Method
 
 	Rem
 	bbdoc: Draws an image scaled to the supplied destination rectangle.
 	about: Scaling uses nearest-neighbour sampling.
 	End Rem
-	Method DrawImageRect(image:TEmbeddedImage, x:Int, y:Int, width:Int, height:Int)
+	Method DrawImageRect(image:TEmbeddedImage, x:Int, y:Int, width:Int, height:Int, ..
+			drawFlags:Int = 0, opacity:Int = 255, colorKey:UInt = ImageColorKeyDisabled)
 		If Not target Or Not image Then Return
 		image.DrawRectClipped(DrawingTarget(), x + originX, y + originY, width, height, drawColor, ..
-			viewportX, viewportY, viewportWidth, viewportHeight)
+			viewportX, viewportY, viewportWidth, viewportHeight, drawFlags, opacity, colorKey)
 	End Method
 
 	Method DrawImageRegion(image:TEmbeddedImage, x:Int, y:Int, sourceX:Int, sourceY:Int, ..
-			width:Int, height:Int)
+			width:Int, height:Int, drawFlags:Int = 0, opacity:Int = 255, ..
+			colorKey:UInt = ImageColorKeyDisabled)
 		If Not target Or Not image Then Return
 		image.DrawRegionClipped(DrawingTarget(), x + originX, y + originY, ..
 			sourceX, sourceY, width, height, drawColor, ..
-			viewportX, viewportY, viewportWidth, viewportHeight)
+			viewportX, viewportY, viewportWidth, viewportHeight, drawFlags, opacity, colorKey)
 	End Method
 
 	Method Present:Int(display:TDisplay = Null)
@@ -1440,17 +1451,21 @@ Function DrawTextBox:Int(text:String, x:Int, y:Int, width:Int, height:Int, ..
 	Return Default2DContext().DrawTextBox(text, x, y, width, height, alignment, scale, ellipsis)
 End Function
 
-Function DrawImage(image:TEmbeddedImage, x:Int, y:Int)
-	Default2DContext().DrawImage(image, x, y)
+Function DrawImage(image:TEmbeddedImage, x:Int, y:Int, drawFlags:Int = 0, ..
+		opacity:Int = 255, colorKey:UInt = ImageColorKeyDisabled)
+	Default2DContext().DrawImage(image, x, y, drawFlags, opacity, colorKey)
 End Function
 
-Function DrawImageRect(image:TEmbeddedImage, x:Int, y:Int, width:Int, height:Int)
-	Default2DContext().DrawImageRect(image, x, y, width, height)
+Function DrawImageRect(image:TEmbeddedImage, x:Int, y:Int, width:Int, height:Int, ..
+		drawFlags:Int = 0, opacity:Int = 255, colorKey:UInt = ImageColorKeyDisabled)
+	Default2DContext().DrawImageRect(image, x, y, width, height, drawFlags, opacity, colorKey)
 End Function
 
 Function DrawImageRegion(image:TEmbeddedImage, x:Int, y:Int, sourceX:Int, sourceY:Int, ..
-		width:Int, height:Int)
-	Default2DContext().DrawImageRegion(image, x, y, sourceX, sourceY, width, height)
+		width:Int, height:Int, drawFlags:Int = 0, opacity:Int = 255, ..
+		colorKey:UInt = ImageColorKeyDisabled)
+	Default2DContext().DrawImageRegion(image, x, y, sourceX, sourceY, width, height, ..
+		drawFlags, opacity, colorKey)
 End Function
 
 Function Present:Int(display:TDisplay = Null)

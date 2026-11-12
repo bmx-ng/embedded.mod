@@ -74,6 +74,7 @@ passed :& scaled.Pixel(1, 1) = $800000 And scaled.Pixel(2, 1) = $00ff00
 Local rotatedImage:TDisplayBuffer = TDisplayBuffer.Create(3, 2, DisplayPixelFormatRGB888)
 SetRenderTarget rotatedImage
 passed :& SetRotation(90)
+SetColor 255, 255, 255
 DrawImage image, 0, 0
 passed :& GraphicsWidth() = 2 And GraphicsHeight() = 3
 passed :& rotatedImage.Pixel(2, 0) = $ff0000 And rotatedImage.Pixel(2, 1) = $00ff00
@@ -91,6 +92,40 @@ maskedTarget.Clear($0000ff)
 masked.Draw(maskedTarget, 0, 0)
 passed :& masked <> Null And masked.HasMask()
 passed :& maskedTarget.Pixel(0, 0) = $ff0000 And maskedTarget.Pixel(1, 0) = $0000ff
+
+' Flips are source-space operations and may be combined.
+Local flipped:TDisplayBuffer = TDisplayBuffer.Create(2, 2, DisplayPixelFormatRGB888)
+image.Draw(flipped, 0, 0, $ffffff, EmbeddedImageDrawFlipX)
+passed :& flipped.Pixel(0, 0) = $00ff00 And flipped.Pixel(1, 0) = $ff0000
+passed :& flipped.Pixel(0, 1) = $ffffff And flipped.Pixel(1, 1) = $0000ff
+flipped.Clear()
+image.Draw(flipped, 0, 0, $ffffff, EmbeddedImageDrawFlipX | EmbeddedImageDrawFlipY)
+passed :& flipped.Pixel(0, 0) = $ffffff And flipped.Pixel(1, 0) = $0000ff
+passed :& flipped.Pixel(0, 1) = $00ff00 And flipped.Pixel(1, 1) = $ff0000
+
+' Opacity blends with the existing destination using exact 0..255 coverage.
+Local blended:TDisplayBuffer = TDisplayBuffer.Create(2, 1, DisplayPixelFormatRGB888)
+blended.Clear($0000ff)
+image.DrawRegion(blended, 0, 0, 0, 0, 2, 1, $ffffff, 0, 128)
+passed :& blended.Pixel(0, 0) = $80007f And blended.Pixel(1, 0) = $00807f
+Local unchanged:UInt = blended.Pixel(0, 0)
+image.DrawRegion(blended, 0, 0, 0, 0, 1, 1, $ffffff, 0, 0)
+passed :& blended.Pixel(0, 0) = unchanged
+
+' A colour key is compared with the original pixel, before tinting.
+Local keyed:TDisplayBuffer = TDisplayBuffer.Create(2, 1, DisplayPixelFormatRGB888)
+keyed.Clear($112233)
+image.DrawRegion(keyed, 0, 0, 0, 0, 2, 1, $808080, 0, 255, $00ff00)
+passed :& keyed.Pixel(0, 0) = $800000 And keyed.Pixel(1, 0) = $112233
+
+' Graphics2D exposes the same options and preserves its view transform.
+Local optionCanvas:TDisplayBuffer = TDisplayBuffer.Create(4, 2, DisplayPixelFormatRGB888)
+SetRenderTarget optionCanvas
+passed :& SetRotation(0)
+SetColor 255, 255, 255
+DrawImageRect image, 0, 0, 4, 2, ImageFlipX, 128, $00ff00
+passed :& optionCanvas.Pixel(0, 0) = 0 And optionCanvas.Pixel(1, 0) = 0
+passed :& optionCanvas.Pixel(2, 0) = $800000 And optionCanvas.Pixel(3, 0) = $800000
 
 Local truncated:Byte[] = New Byte[32]
 Header(truncated, 0, 2, 2, DisplayPixelFormatRGB888, 6, 32)

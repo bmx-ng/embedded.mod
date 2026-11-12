@@ -20,6 +20,9 @@ Import Embedded.Drivers.Display
 Const EmbeddedImageVersion:Int = 1
 Const EmbeddedImageEncodingRaw:Int = 0
 Const EmbeddedImageFlagMask:Int = 1
+Const EmbeddedImageDrawFlipX:Int = 1
+Const EmbeddedImageDrawFlipY:Int = 2
+Const EmbeddedImageColorKeyDisabled:UInt = $ffffffff:UInt
 
 Private
 
@@ -36,6 +39,10 @@ End Function
 
 Function TintComponent:UInt(value:UInt, tint:UInt)
 	Return (value * tint + 127) / 255
+End Function
+
+Function BlendComponent:UInt(source:UInt, destination:UInt, opacity:UInt)
+	Return (source * opacity + destination * (255 - opacity) + 127) / 255
 End Function
 
 Public
@@ -122,20 +129,23 @@ Type TEmbeddedImage Final
 	Rem
 	bbdoc: Draws the complete image at its native size.
 	End Rem
-	Method Draw(target:TDisplayBuffer, x:Int, y:Int, tint:UInt = $ffffff)
+	Method Draw(target:TDisplayBuffer, x:Int, y:Int, tint:UInt = $ffffff, ..
+			drawFlags:Int = 0, opacity:Int = 255, ..
+			colorKey:UInt = EmbeddedImageColorKeyDisabled)
 		If Not target Then Return
 		DrawRegionClipped(target, x, y, 0, 0, imageWidth, imageHeight, tint, ..
-			0, 0, target.Width(), target.Height())
+			0, 0, target.Width(), target.Height(), drawFlags, opacity, colorKey)
 	End Method
 
 	Rem
 	bbdoc: Draws an unscaled source region at the destination position.
 	End Rem
 	Method DrawRegion(target:TDisplayBuffer, x:Int, y:Int, sourceX:Int, sourceY:Int, ..
-			width:Int, height:Int, tint:UInt = $ffffff)
+			width:Int, height:Int, tint:UInt = $ffffff, drawFlags:Int = 0, ..
+			opacity:Int = 255, colorKey:UInt = EmbeddedImageColorKeyDisabled)
 		If Not target Then Return
 		DrawRegionClipped(target, x, y, sourceX, sourceY, width, height, tint, ..
-			0, 0, target.Width(), target.Height())
+			0, 0, target.Width(), target.Height(), drawFlags, opacity, colorKey)
 	End Method
 
 	Rem
@@ -143,18 +153,23 @@ Type TEmbeddedImage Final
 	about: Scaling uses deterministic nearest-neighbour sampling and allocates no memory.
 	End Rem
 	Method DrawRect(target:TDisplayBuffer, x:Int, y:Int, width:Int, height:Int, ..
-			tint:UInt = $ffffff)
+			tint:UInt = $ffffff, drawFlags:Int = 0, opacity:Int = 255, ..
+			colorKey:UInt = EmbeddedImageColorKeyDisabled)
 		If Not target Then Return
 		DrawRectClipped(target, x, y, width, height, tint, ..
-			0, 0, target.Width(), target.Height())
+			0, 0, target.Width(), target.Height(), drawFlags, opacity, colorKey)
 	End Method
 
 	Rem
 	bbdoc: Draws a source region while restricting changed pixels to a target rectangle.
 	End Rem
 	Method DrawRegionClipped(target:TDisplayBuffer, x:Int, y:Int, sourceX:Int, sourceY:Int, ..
-			width:Int, height:Int, tint:UInt, clipX:Int, clipY:Int, clipWidth:Int, clipHeight:Int)
+			width:Int, height:Int, tint:UInt, clipX:Int, clipY:Int, clipWidth:Int, clipHeight:Int, ..
+			drawFlags:Int = 0, opacity:Int = 255, colorKey:UInt = EmbeddedImageColorKeyDisabled)
 		If Not target Or width <= 0 Or height <= 0 Or clipWidth <= 0 Or clipHeight <= 0 Then Return
+		If opacity <= 0 Then Return
+		If opacity > 255 Then opacity = 255
+		drawFlags :& EmbeddedImageDrawFlipX | EmbeddedImageDrawFlipY
 		If sourceX < 0 Then
 			Local delta:Int = -sourceX
 			sourceX = 0
@@ -177,40 +192,40 @@ Type TEmbeddedImage Final
 		If clipY < 0 Then clipY = 0
 		If clipX1 > target.Width() Then clipX1 = target.Width()
 		If clipY1 > target.Height() Then clipY1 = target.Height()
-		If x < clipX Then
-			Local delta:Int = clipX - x
-			x = clipX
-			sourceX :+ delta
-			width :- delta
-		End If
-		If y < clipY Then
-			Local delta:Int = clipY - y
-			y = clipY
-			sourceY :+ delta
-			height :- delta
-		End If
-		If x + width > clipX1 Then width = clipX1 - x
-		If y + height > clipY1 Then height = clipY1 - y
-		If width <= 0 Or height <= 0 Then Return
+		Local x0:Int = x
+		Local y0:Int = y
+		Local x1:Int = x + width
+		Local y1:Int = y + height
+		If x0 < clipX Then x0 = clipX
+		If y0 < clipY Then y0 = clipY
+		If x1 > clipX1 Then x1 = clipX1
+		If y1 > clipY1 Then y1 = clipY1
+		If x0 >= x1 Or y0 >= y1 Then Return
 
 		Local targetPixels:Byte Ptr = target.Pixels()
-		If targetPixels And tint = $ffffff And Not HasMask() And imageFormat = target.Format() And ..
+		If targetPixels And tint = $ffffff And Not HasMask() And drawFlags = 0 And ..
+				opacity = 255 And colorKey = EmbeddedImageColorKeyDisabled And imageFormat = target.Format() And ..
 				imageFormat <> DisplayPixelFormatMono1 Then
 			Local bytesPerPixel:Int = DisplayPixelFormatBits(imageFormat) / 8
-			For Local row:Int = 0 Until height
-				MemCopy(targetPixels + (y + row) * target.Stride() + x * bytesPerPixel, ..
-					data + pixelOffset + (sourceY + row) * pixelStride + sourceX * bytesPerPixel, ..
-					Size_T(width * bytesPerPixel))
+			For Local py:Int = y0 Until y1
+				Local sx:Int = sourceX + x0 - x
+				Local sy:Int = sourceY + py - y
+				MemCopy(targetPixels + py * target.Stride() + x0 * bytesPerPixel, ..
+					data + pixelOffset + sy * pixelStride + sx * bytesPerPixel, ..
+					Size_T((x1 - x0) * bytesPerPixel))
 			Next
 			Return
 		End If
 
-		For Local row:Int = 0 Until height
-			For Local column:Int = 0 Until width
-				Local sx:Int = sourceX + column
-				Local sy:Int = sourceY + row
-				If PixelVisible(sx, sy) Then ..
-					target.SetPixel(x + column, y + row, TintedPixel(sx, sy, tint))
+		For Local py:Int = y0 Until y1
+			Local sourceRow:Int = py - y
+			Local sy:Int = sourceY + sourceRow
+			If drawFlags & EmbeddedImageDrawFlipY Then sy = sourceY + height - 1 - sourceRow
+			For Local px:Int = x0 Until x1
+				Local sourceColumn:Int = px - x
+				Local sx:Int = sourceX + sourceColumn
+				If drawFlags & EmbeddedImageDrawFlipX Then sx = sourceX + width - 1 - sourceColumn
+				DrawPixel(target, px, py, sx, sy, tint, opacity, colorKey)
 			Next
 		Next
 	End Method
@@ -219,8 +234,12 @@ Type TEmbeddedImage Final
 	bbdoc: Draws and scales the complete image while clipping changed pixels.
 	End Rem
 	Method DrawRectClipped(target:TDisplayBuffer, x:Int, y:Int, width:Int, height:Int, ..
-			tint:UInt, clipX:Int, clipY:Int, clipWidth:Int, clipHeight:Int)
+			tint:UInt, clipX:Int, clipY:Int, clipWidth:Int, clipHeight:Int, ..
+			drawFlags:Int = 0, opacity:Int = 255, colorKey:UInt = EmbeddedImageColorKeyDisabled)
 		If Not target Or width <= 0 Or height <= 0 Or clipWidth <= 0 Or clipHeight <= 0 Then Return
+		If opacity <= 0 Then Return
+		If opacity > 255 Then opacity = 255
+		drawFlags :& EmbeddedImageDrawFlipX | EmbeddedImageDrawFlipY
 		Local destinationX:Int = x
 		Local destinationY:Int = y
 		Local destinationWidth:Int = width
@@ -242,22 +261,41 @@ Type TEmbeddedImage Final
 		If x0 >= x1 Or y0 >= y1 Then Return
 		For Local py:Int = y0 Until y1
 			Local sy:Int = (py - destinationY) * imageHeight / destinationHeight
+			If drawFlags & EmbeddedImageDrawFlipY Then sy = imageHeight - 1 - sy
 			For Local px:Int = x0 Until x1
 				Local sx:Int = (px - destinationX) * imageWidth / destinationWidth
-				If PixelVisible(sx, sy) Then target.SetPixel(px, py, TintedPixel(sx, sy, tint))
+				If drawFlags & EmbeddedImageDrawFlipX Then sx = imageWidth - 1 - sx
+				DrawPixel(target, px, py, sx, sy, tint, opacity, colorKey)
 			Next
 		Next
 	End Method
 
 	Private
+	Method DrawPixel(target:TDisplayBuffer, x:Int, y:Int, sourceX:Int, sourceY:Int, ..
+			tint:UInt, opacity:Int, colorKey:UInt)
+		If Not PixelVisible(sourceX, sourceY) Then Return
+		Local source:UInt = Pixel(sourceX, sourceY)
+		If colorKey <> EmbeddedImageColorKeyDisabled And source = (colorKey & $ffffff) Then Return
+		source = TintPixel(source, tint)
+		If opacity >= 255 Then
+			target.SetPixel(x, y, source)
+			Return
+		End If
+		Local destination:UInt = target.Pixel(x, y)
+		Local alpha:UInt = UInt(opacity)
+		Local red:UInt = BlendComponent((source Shr 16) & $ff, (destination Shr 16) & $ff, alpha)
+		Local green:UInt = BlendComponent((source Shr 8) & $ff, (destination Shr 8) & $ff, alpha)
+		Local blue:UInt = BlendComponent(source & $ff, destination & $ff, alpha)
+		target.SetPixel(x, y, (red Shl 16) | (green Shl 8) | blue)
+	End Method
+
 	Method PixelVisible:Int(x:Int, y:Int)
 		If Not HasMask() Then Return True
 		Local packed:Int = Int(data[maskOffset + y * maskStride + (x Shr 3)]) & $ff
 		Return (packed & ($80 Shr (x & 7))) <> 0
 	End Method
 
-	Method TintedPixel:UInt(x:Int, y:Int, tint:UInt)
-		Local color:UInt = Pixel(x, y)
+	Method TintPixel:UInt(color:UInt, tint:UInt)
 		If tint = $ffffff Then Return color
 		Local red:UInt = TintComponent((color Shr 16) & $ff, (tint Shr 16) & $ff)
 		Local green:UInt = TintComponent((color Shr 8) & $ff, (tint Shr 8) & $ff)

@@ -174,7 +174,10 @@ firmware memory. An EBI1 image contains raw Mono1, RGB565, or RGB888 pixels and
 an optional one-bit transparency mask. The header and every data range are
 validated when `TEmbeddedImage.Create` is called. Drawing thereafter is
 allocation-free and supports clipping, colour tinting, pixel-format conversion,
-unscaled source regions, and deterministic nearest-neighbour scaling.
+unscaled source regions, deterministic nearest-neighbour scaling, horizontal
+and vertical flips, 0..255 opacity, and source colour-key transparency. Existing
+one-bit masks and colour keys may be used together; either can suppress a pixel.
+Opacity uses straight source-over blending against the current framebuffer.
 
 The desktop converter in `tools/image2embedded.bmx` uses the normal BlitzMax
 `image.mod` loaders. It accepts PNG, JPEG, BMP, GIF, TGA, PNM, QOI, WebP, TIFF,
@@ -206,8 +209,18 @@ SetRenderTarget frame, display
 SetColor 255, 255, 255
 DrawImage icon, 2, 2
 DrawImageRect icon, 24, 2, 32, 32
+DrawImage icon, 60, 2, ImageFlipX
+DrawImageRect icon, 92, 2, 32, 32, ImageFlipY, 128
+' Magenta source pixels are transparent; the key is tested before SetColor tinting.
+DrawImage icon, 128, 2, 0, 255, $ff00ff
 Present
 ```
+
+`ImageFlipX` and `ImageFlipY` can be combined with `|`. Omitting the final
+arguments preserves the original opaque draw fast path, including direct row
+copies when the source and destination pixel formats match. Blended draws read
+the existing destination pixel and are consequently more expensive; opacity
+zero returns without touching the framebuffer.
 
 Image pixels live in flash through `Incbin`; only the display framebuffer uses
 RAM. Applications only pay for assets and the image module when they import it.
