@@ -488,6 +488,260 @@ Type TEmbedded2DContext Final
 		DrawLine(x + width - 1, y, x + width - 1, y + height - 1)
 	End Method
 
+	Rem
+	bbdoc: Draws a circle using integer midpoint rasterisation.
+	End Rem
+	Method DrawCircle(centerX:Int, centerY:Int, radius:Int)
+		If radius < 0 Then Return
+		If radius = 0 Then
+			Plot(centerX, centerY)
+			Return
+		End If
+		Local x:Int = radius
+		Local y:Int
+		Local error:Int = 1 - radius
+		While x >= y
+			Plot(centerX + x, centerY + y)
+			Plot(centerX + y, centerY + x)
+			Plot(centerX - y, centerY + x)
+			Plot(centerX - x, centerY + y)
+			Plot(centerX - x, centerY - y)
+			Plot(centerX - y, centerY - x)
+			Plot(centerX + y, centerY - x)
+			Plot(centerX + x, centerY - y)
+			y :+ 1
+			If error < 0 Then
+				error :+ 2 * y + 1
+			Else
+				x :- 1
+				error :+ 2 * (y - x + 1)
+			End If
+		Wend
+	End Method
+
+	Rem
+	bbdoc: Draws a filled circle using clipped horizontal spans.
+	End Rem
+	Method FillCircle(centerX:Int, centerY:Int, radius:Int)
+		If radius < 0 Then Return
+		Local extent:Int
+		Local radiusSquared:Long = Long(radius) * radius
+		For Local offset:Int = radius To 0 Step -1
+			While extent < radius And Long(extent + 1) * (extent + 1) + ..
+				Long(offset) * offset <= radiusSquared
+				extent :+ 1
+			Wend
+			DrawLine(centerX - extent, centerY - offset, centerX + extent, centerY - offset)
+			If offset Then ..
+				DrawLine(centerX - extent, centerY + offset, centerX + extent, centerY + offset)
+		Next
+	End Method
+
+	Rem
+	bbdoc: Draws an ellipse from its centre and horizontal and vertical radii.
+	End Rem
+	Method DrawEllipse(centerX:Int, centerY:Int, radiusX:Int, radiusY:Int)
+		If radiusX < 0 Or radiusY < 0 Then Return
+		If radiusX = 0 Then
+			DrawLine(centerX, centerY - radiusY, centerX, centerY + radiusY)
+			Return
+		End If
+		If radiusY = 0 Then
+			DrawLine(centerX - radiusX, centerY, centerX + radiusX, centerY)
+			Return
+		End If
+
+		' Plot both the horizontal and vertical boundary samples. Combining the
+		' two monotonic passes avoids holes on very wide or very tall ellipses.
+		Local radiusXSquared:Long = Long(radiusX) * radiusX
+		Local radiusYSquared:Long = Long(radiusY) * radiusY
+		Local extentX:Int = radiusX
+		For Local offsetY:Int = 0 To radiusY
+			While extentX > 0 And Long(extentX) * extentX * radiusYSquared + ..
+				Long(offsetY) * offsetY * radiusXSquared > radiusXSquared * radiusYSquared
+				extentX :- 1
+			Wend
+			Plot(centerX - extentX, centerY - offsetY)
+			Plot(centerX + extentX, centerY - offsetY)
+			If offsetY Then
+				Plot(centerX - extentX, centerY + offsetY)
+				Plot(centerX + extentX, centerY + offsetY)
+			End If
+		Next
+		Local extentY:Int = radiusY
+		For Local offsetX:Int = 0 To radiusX
+			While extentY > 0 And Long(offsetX) * offsetX * radiusYSquared + ..
+				Long(extentY) * extentY * radiusXSquared > radiusXSquared * radiusYSquared
+				extentY :- 1
+			Wend
+			Plot(centerX - offsetX, centerY - extentY)
+			Plot(centerX - offsetX, centerY + extentY)
+			If offsetX Then
+				Plot(centerX + offsetX, centerY - extentY)
+				Plot(centerX + offsetX, centerY + extentY)
+			End If
+		Next
+	End Method
+
+	Rem
+	bbdoc: Draws a filled ellipse from its centre and radii.
+	End Rem
+	Method FillEllipse(centerX:Int, centerY:Int, radiusX:Int, radiusY:Int)
+		If radiusX < 0 Or radiusY < 0 Then Return
+		If radiusX = 0 Then
+			DrawLine(centerX, centerY - radiusY, centerX, centerY + radiusY)
+			Return
+		End If
+		If radiusY = 0 Then
+			DrawLine(centerX - radiusX, centerY, centerX + radiusX, centerY)
+			Return
+		End If
+		Local radiusXSquared:Long = Long(radiusX) * radiusX
+		Local radiusYSquared:Long = Long(radiusY) * radiusY
+		Local limit:Long = radiusXSquared * radiusYSquared
+		Local extentX:Int = radiusX
+		For Local offsetY:Int = 0 To radiusY
+			While extentX > 0 And Long(extentX) * extentX * radiusYSquared + ..
+				Long(offsetY) * offsetY * radiusXSquared > limit
+				extentX :- 1
+			Wend
+			DrawLine(centerX - extentX, centerY - offsetY, centerX + extentX, centerY - offsetY)
+			If offsetY Then ..
+				DrawLine(centerX - extentX, centerY + offsetY, centerX + extentX, centerY + offsetY)
+		Next
+	End Method
+
+	Method DrawTriangle(x0:Int, y0:Int, x1:Int, y1:Int, x2:Int, y2:Int)
+		DrawLine(x0, y0, x1, y1)
+		DrawLine(x1, y1, x2, y2)
+		DrawLine(x2, y2, x0, y0)
+	End Method
+
+	Rem
+	bbdoc: Draws a filled triangle using deterministic integer scanlines.
+	End Rem
+	Method FillTriangle(x0:Int, y0:Int, x1:Int, y1:Int, x2:Int, y2:Int)
+		Local swap:Int
+		If y1 < y0 Then
+			swap = x0
+			x0 = x1
+			x1 = swap
+			swap = y0
+			y0 = y1
+			y1 = swap
+		End If
+		If y2 < y0 Then
+			swap = x0
+			x0 = x2
+			x2 = swap
+			swap = y0
+			y0 = y2
+			y2 = swap
+		End If
+		If y2 < y1 Then
+			swap = x1
+			x1 = x2
+			x2 = swap
+			swap = y1
+			y1 = y2
+			y2 = swap
+		End If
+		If y0 = y2 Then
+			Local minimumX:Int = x0
+			Local maximumX:Int = x0
+			If x1 < minimumX Then minimumX = x1
+			If x2 < minimumX Then minimumX = x2
+			If x1 > maximumX Then maximumX = x1
+			If x2 > maximumX Then maximumX = x2
+			DrawLine(minimumX, y0, maximumX, y0)
+			Return
+		End If
+		For Local y:Int = y0 To y2
+			Local edgeX:Int = x0 + Int(Long(x2 - x0) * (y - y0) / (y2 - y0))
+			Local splitX:Int
+			If y < y1 And y1 <> y0 Then
+				splitX = x0 + Int(Long(x1 - x0) * (y - y0) / (y1 - y0))
+			Else If y2 <> y1 Then
+				splitX = x1 + Int(Long(x2 - x1) * (y - y1) / (y2 - y1))
+			Else
+				splitX = x1
+			End If
+			If edgeX <= splitX Then
+				DrawLine(edgeX, y, splitX, y)
+			Else
+				DrawLine(splitX, y, edgeX, y)
+			End If
+		Next
+	End Method
+
+	Method DrawRoundRect(x:Int, y:Int, width:Int, height:Int, radius:Int)
+		If width <= 0 Or height <= 0 Or radius < 0 Then Return
+		Local maximumRadius:Int = width / 2
+		If height / 2 < maximumRadius Then maximumRadius = height / 2
+		If radius > maximumRadius Then radius = maximumRadius
+		If radius = 0 Then
+			DrawRect(x, y, width, height)
+			Return
+		End If
+		Local leftCenter:Int = x + radius
+		Local rightCenter:Int = x + width - radius - 1
+		Local topCenter:Int = y + radius
+		Local bottomCenter:Int = y + height - radius - 1
+		DrawLine(leftCenter, y, rightCenter, y)
+		DrawLine(leftCenter, y + height - 1, rightCenter, y + height - 1)
+		DrawLine(x, topCenter, x, bottomCenter)
+		DrawLine(x + width - 1, topCenter, x + width - 1, bottomCenter)
+		Local curveX:Int = radius
+		Local curveY:Int
+		Local error:Int = 1 - radius
+		While curveX >= curveY
+			Plot(leftCenter - curveX, topCenter - curveY)
+			Plot(leftCenter - curveY, topCenter - curveX)
+			Plot(rightCenter + curveX, topCenter - curveY)
+			Plot(rightCenter + curveY, topCenter - curveX)
+			Plot(leftCenter - curveX, bottomCenter + curveY)
+			Plot(leftCenter - curveY, bottomCenter + curveX)
+			Plot(rightCenter + curveX, bottomCenter + curveY)
+			Plot(rightCenter + curveY, bottomCenter + curveX)
+			curveY :+ 1
+			If error < 0 Then
+				error :+ 2 * curveY + 1
+			Else
+				curveX :- 1
+				error :+ 2 * (curveY - curveX + 1)
+			End If
+		Wend
+	End Method
+
+	Method FillRoundRect(x:Int, y:Int, width:Int, height:Int, radius:Int)
+		If width <= 0 Or height <= 0 Or radius < 0 Then Return
+		Local maximumRadius:Int = width / 2
+		If height / 2 < maximumRadius Then maximumRadius = height / 2
+		If radius > maximumRadius Then radius = maximumRadius
+		If radius = 0 Then
+			FillRect(x, y, width, height)
+			Return
+		End If
+		Local leftCenter:Int = x + radius
+		Local rightCenter:Int = x + width - radius - 1
+		Local topCenter:Int = y + radius
+		Local bottomCenter:Int = y + height - radius - 1
+		Local extent:Int
+		Local radiusSquared:Long = Long(radius) * radius
+		For Local offset:Int = radius To 0 Step -1
+			While extent < radius And Long(extent + 1) * (extent + 1) + ..
+				Long(offset) * offset <= radiusSquared
+				extent :+ 1
+			Wend
+			DrawLine(leftCenter - extent, topCenter - offset, ..
+				rightCenter + extent, topCenter - offset)
+			If offset Then DrawLine(leftCenter - extent, bottomCenter + offset, ..
+				rightCenter + extent, bottomCenter + offset)
+		Next
+		If bottomCenter - topCenter > 1 Then ..
+			FillRect(x, topCenter + 1, width, bottomCenter - topCenter - 1)
+	End Method
+
 	Method FillRect(x:Int, y:Int, width:Int, height:Int)
 		If Not target Or width <= 0 Or height <= 0 Or viewportWidth <= 0 Or viewportHeight <= 0 Then Return
 		x :+ originX
@@ -1093,6 +1347,38 @@ End Function
 
 Function DrawRect(x:Int, y:Int, width:Int, height:Int)
 	Default2DContext().DrawRect(x, y, width, height)
+End Function
+
+Function DrawCircle(centerX:Int, centerY:Int, radius:Int)
+	Default2DContext().DrawCircle(centerX, centerY, radius)
+End Function
+
+Function FillCircle(centerX:Int, centerY:Int, radius:Int)
+	Default2DContext().FillCircle(centerX, centerY, radius)
+End Function
+
+Function DrawEllipse(centerX:Int, centerY:Int, radiusX:Int, radiusY:Int)
+	Default2DContext().DrawEllipse(centerX, centerY, radiusX, radiusY)
+End Function
+
+Function FillEllipse(centerX:Int, centerY:Int, radiusX:Int, radiusY:Int)
+	Default2DContext().FillEllipse(centerX, centerY, radiusX, radiusY)
+End Function
+
+Function DrawTriangle(x0:Int, y0:Int, x1:Int, y1:Int, x2:Int, y2:Int)
+	Default2DContext().DrawTriangle(x0, y0, x1, y1, x2, y2)
+End Function
+
+Function FillTriangle(x0:Int, y0:Int, x1:Int, y1:Int, x2:Int, y2:Int)
+	Default2DContext().FillTriangle(x0, y0, x1, y1, x2, y2)
+End Function
+
+Function DrawRoundRect(x:Int, y:Int, width:Int, height:Int, radius:Int)
+	Default2DContext().DrawRoundRect(x, y, width, height, radius)
+End Function
+
+Function FillRoundRect(x:Int, y:Int, width:Int, height:Int, radius:Int)
+	Default2DContext().FillRoundRect(x, y, width, height, radius)
 End Function
 
 Function FillRect(x:Int, y:Int, width:Int, height:Int)

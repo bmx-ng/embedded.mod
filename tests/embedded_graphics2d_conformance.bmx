@@ -142,6 +142,44 @@ For Local depth:Int = 0 Until EmbeddedGraphicsStateMaximum
 	passed :& stateGraphics.PopState()
 Next
 
+' Common UI primitives use integer, allocation-free rasterisation and the same
+' clipping and transform path as the original line and rectangle operations.
+Local shapeFrame:TDisplayBuffer = TDisplayBuffer.Create(24, 20, DisplayPixelFormatMono1)
+Local shapeGraphics:TEmbedded2DContext = TEmbedded2DContext.Create(shapeFrame)
+shapeGraphics.SetColor(255, 255, 255)
+shapeGraphics.DrawCircle(5, 5, 3)
+passed :& shapeFrame.Pixel(8, 5) = 1 And shapeFrame.Pixel(5, 2) = 1
+passed :& shapeFrame.Pixel(5, 5) = 0
+shapeFrame.Clear()
+shapeGraphics.FillCircle(5, 5, 3)
+passed :& shapeFrame.Pixel(5, 5) = 1 And shapeFrame.Pixel(5, 2) = 1
+passed :& shapeFrame.Pixel(2, 2) = 0
+shapeFrame.Clear()
+shapeGraphics.DrawEllipse(8, 5, 5, 2)
+passed :& shapeFrame.Pixel(3, 5) = 1 And shapeFrame.Pixel(13, 5) = 1
+passed :& shapeFrame.Pixel(8, 3) = 1 And shapeFrame.Pixel(8, 7) = 1
+shapeFrame.Clear()
+shapeGraphics.FillEllipse(8, 5, 5, 2)
+passed :& shapeFrame.Pixel(8, 5) = 1 And shapeFrame.Pixel(4, 5) = 1
+passed :& shapeFrame.Pixel(3, 3) = 0
+shapeFrame.Clear()
+shapeGraphics.FillTriangle(2, 2, 10, 2, 6, 9)
+passed :& shapeFrame.Pixel(6, 2) = 1 And shapeFrame.Pixel(6, 6) = 1
+passed :& shapeFrame.Pixel(1, 2) = 0 And shapeFrame.Pixel(2, 8) = 0
+shapeFrame.Clear()
+shapeGraphics.DrawTriangle(2, 2, 10, 2, 6, 9)
+passed :& shapeFrame.Pixel(6, 2) = 1 And shapeFrame.Pixel(6, 9) = 1
+passed :& shapeFrame.Pixel(6, 5) = 0
+shapeFrame.Clear()
+shapeGraphics.FillRoundRect(2, 2, 12, 8, 3)
+passed :& shapeFrame.Pixel(2, 2) = 0 And shapeFrame.Pixel(13, 2) = 0
+passed :& shapeFrame.Pixel(5, 2) = 1 And shapeFrame.Pixel(2, 5) = 1
+passed :& shapeFrame.Pixel(7, 5) = 1
+shapeFrame.Clear()
+shapeGraphics.DrawRoundRect(2, 2, 12, 8, 3)
+passed :& shapeFrame.Pixel(5, 2) = 1 And shapeFrame.Pixel(2, 5) = 1
+passed :& shapeFrame.Pixel(7, 5) = 0
+
 ' Local views translate and rotate into their parent without owning another buffer.
 Local viewFrame:TDisplayBuffer = TDisplayBuffer.Create(10, 6, DisplayPixelFormatMono1)
 Local viewGraphics:TEmbedded2DContext = TEmbedded2DContext.Create(viewFrame)
@@ -237,6 +275,12 @@ viewGraphics.ScreenToView(screenX, screenY, localX, localY)
 passed :& localX = 0 And localY = 0
 passed :& viewGraphics.EndView()
 passed :& viewGraphics.SetRotation(0)
+
+viewFrame.Clear()
+passed :& viewGraphics.BeginView(2, 1, 4, 3, 90)
+viewGraphics.FillCircle(1, 1, 1)
+passed :& viewFrame.Pixel(4, 2) = 1 And viewFrame.Pixel(5, 2) = 1
+passed :& viewGraphics.EndView()
 
 If passed Then
 	Print "Embedded Graphics2D conformance test passed"

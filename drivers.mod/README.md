@@ -112,6 +112,18 @@ End If
 EndView
 ```
 
+The shared primitive set includes outlined and filled rectangles, circles,
+ellipses, triangles, and rounded rectangles. Curves and fills use deterministic
+integer rasterisation, inherit the current colour, origin, viewport, and nested
+view transform, and do not allocate while drawing:
+
+```blitzmax
+SetColor 40, 170, 255
+FillRoundRect 12, 12, 120, 48, 10
+DrawCircle 172, 36, 22
+FillTriangle 220, 58, 252, 12, 284, 58
+```
+
 Concrete display drivers live beneath `Embedded.Drivers.Displays.*`.
 `Embedded.Drivers.Displays.SSD1306` is the first controller implementation. It uses
 `Embedded.Hardware.I2C`, supports dirty page updates, and includes the 72x40
