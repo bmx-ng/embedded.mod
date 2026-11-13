@@ -58,7 +58,9 @@ Changes should preserve these acceptance checks:
    and focus without increasing stack or retained history.
 2. Drag input tracks the newest contact position without replaying a stale
    event backlog.
-3. Dirty, single-buffered and multi-buffered presentation agree visually.
+3. Dirty and complete redraws agree byte-for-byte
+   (`tests/embedded_ui_dirty_equivalence.bmx`); single- and multi-buffered
+   presentation agree visually on hardware.
 4. Layout remains bounded on representative small, medium and large displays
    (`tests/embedded_ui_layout_matrix.bmx`).
 5. Controls intended for touch can set minimum target dimensions independently

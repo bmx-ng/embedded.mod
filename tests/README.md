@@ -41,3 +41,8 @@ five-column layouts, walks the retained tree iteratively to reject invalid or
 unclipped out-of-frame geometry, and repeats the checks after a dirty redraw.
 It deliberately imports no controls or touch adapter, so it also remains a
 display-only build fixture suitable for resource-constrained targets.
+
+`embedded_ui_dirty_equivalence.bmx` renders matching retained trees through
+normal dirty invalidation and forced full redraws, then compares every raster
+byte after value changes, visibility-driven reflow and restoration. Both
+one-bit and RGB565 framebuffers are covered.
