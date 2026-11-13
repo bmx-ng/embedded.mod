@@ -56,6 +56,7 @@ Global selectionEventIndex:Int
 Global selectionCallbackCount:Int
 Global radioCallbackCount:Int
 Global stepperCallbackCount:Int
+Global dialCallbackCount:Int
 Global segmentCallbackCount:Int
 Global dialogCallbackCount:Int
 Global dialogCallbackResult:Int
@@ -86,6 +87,10 @@ End Function
 
 Function StepperChanged(stepper:TUIStepper)
 	stepperCallbackCount :+ 1
+End Function
+
+Function DialChanged(dial:TUIRotaryDial)
+	dialCallbackCount :+ 1
 End Function
 
 Function SegmentChanged(control:TUISegmentedControl)
@@ -322,6 +327,51 @@ Function RunDecimalStepperTests(touch:TFakeTouch)
 	decimalUI.Close()
 End Function
 
+Function RunDashboardTests(ui:TUIContext, page:TUIColumn)
+	' Dashboard widgets retain bounded data and use the same value semantics as
+	' existing range controls. Keeping this in its own function also keeps the
+	' deliberately broad conformance application's main stack frame compact.
+	Local dashboardRow:TUIRow = page.Row()
+	dashboardRow.SetHeight(72)
+	Local indicator:TUIStatusIndicator = dashboardRow.StatusIndicator("Link", False)
+	indicator.SetActive(True)
+	Check(indicator.Active() And indicator.Text() = "Link", "status indicator did not retain its state")
+	Local gauge:TUIArcGauge = dashboardRow.ArcGauge(0, 200, 50)
+	gauge.SetLabel("Load")
+	gauge.SetUnit("%")
+	Check(gauge.Value() = 50 And gauge.Fraction(100) = 25, "arc gauge range semantics were incorrect")
+	Local sparkline:TUISparkline = dashboardRow.Sparkline(4)
+	For Local sample:Int = 1 To 5
+		sparkline.AddValue(sample)
+	Next
+	Check(sparkline.Count() = 4 And sparkline.ValueAt(0) = 2 And sparkline.ValueAt(3) = 5, ..
+		"sparkline rolling storage was not bounded")
+	Local dial:TUIRotaryDial = dashboardRow.RotaryDial(0, 100, 40)
+	dial.OnChange(DialChanged)
+	dial.SetFocusIndicatorVisible(False)
+	Check(Not dial.FocusIndicatorVisible() And dial.Focusable(), ..
+		"hiding a focus indicator changed focus participation")
+	Check(ui.Render(), "dashboard widgets did not render")
+	Local dialStart:Int = dial.Value()
+	Check(dial.DragDirection() = UIDialDragHorizontal, "rotary dial did not default to horizontal dragging")
+	dial._BeginPointer(dial.X() + dial.Width() / 2, dial.Y() + dial.Height() / 2)
+	dial._TrackPointer(dial.X() + dial.Width(), dial.Y() + dial.Height() / 2)
+	dial._EndPointer()
+	Check(dial.Value() > dialStart And dialCallbackCount = 1, ..
+		"rotary dial did not track a rightward drag")
+	Local dialAfterDrag:Int = dial.Value()
+	dial._Adjust(-1)
+	Check(dial.Value() = dialAfterDrag - dial.Step() And dialCallbackCount = 2, ..
+		"rotary dial did not support focused adjustment")
+	dial.SetDragDirection(UIDialDragVertical)
+	Local dialBeforeVertical:Int = dial.Value()
+	dial._BeginPointer(dial.X() + dial.Width() / 2, dial.Y() + dial.Height() / 2)
+	dial._TrackPointer(dial.X() + dial.Width() / 2, dial.Y())
+	dial._EndPointer()
+	Check(dial.Value() > dialBeforeVertical And dialCallbackCount = 3, ..
+		"rotary dial did not support configured vertical dragging")
+End Function
+
 Function RunToastTests(toastUI:TUIContext, toastFrame:TDisplayBuffer, focused:TUIWidget)
 	' Reuse the primary fixture: the embedded collector deliberately retains
 	' closed fixtures until its next collection, while this suite uses a small
@@ -543,6 +593,8 @@ Check(progress.Value() = 200, "progress value was not clamped to its range")
 progress.SetRange(20, 80)
 Check(progress.Value() = 80, "range change did not clamp the progress value")
 Check(ui.Render(), "value control changes were not invalidated")
+
+RunDashboardTests(ui, page)
 
 RunToastTests(ui, frame, cancel)
 

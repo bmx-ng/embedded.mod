@@ -52,6 +52,11 @@ GPIO buttons, an encoder, keypad or keyboard events. Focus changes emit
 `EVENT_UIFOCUSCHANGED`; disabling or hiding a focused control safely releases
 focus.
 
+The theme controls the focus outline colour, width and inset. Set
+`theme.focusWidth = 0` to hide every outline while preserving focus semantics,
+or call `widget.SetFocusIndicatorVisible(False)` to hide it for one widget
+without removing that widget from focus traversal.
+
 Raw touch events are consumed only to update widget interaction state. Buttons
 emit `EVENT_UIACTION`; checkboxes, switches and sliders emit
 `EVENT_UIVALUECHANGED`. The event source identifies the widget and `event.data`
@@ -244,6 +249,46 @@ bound is reached. `DismissToast()` closes the newest visible toast and advances
 the queue, while `DismissToast(toast)` can dismiss a specific visible toast or
 cancel a queued message. `ClearToasts()` removes every visible and pending
 notification. Messages wrap automatically to the available display width.
+
+## Dashboards and widget images
+
+Dashboard widgets share the existing retained layout and dirty-region model:
+
+```blitzmax
+Local link:TUIStatusIndicator = page.StatusIndicator("Network", True)
+
+Local temperature:TUIArcGauge = page.ArcGauge(-20, 80, 23)
+temperature.SetLabel("Temperature")
+temperature.SetUnit(" C")
+
+Local history:TUISparkline = page.Sparkline(60)
+history.SetRange(0, 100)
+history.AddValue(42)
+
+Local setPoint:TUIRotaryDial = page.RotaryDial(0, 100, 50)
+setPoint.SetStep(5)
+```
+
+`TUIStatusIndicator` is a compact labelled state lamp. `TUIArcGauge` draws a
+read-only 270-degree meter with optional ticks, units and value text.
+`TUISparkline` owns a fixed-capacity rolling sample buffer: once full, adding a
+sample replaces the oldest one without allocating. It can use an explicit
+range or calculate one from the retained samples.
+
+`TUIRotaryDial` is interactive. Horizontal dragging is the default: drag right
+to increase and left to decrease. Use
+`SetDragDirection(UIDialDragVertical)` to instead drag upward to increase and
+downward to decrease. Both modes avoid the discontinuity that angle-following
+knobs have near their end stops. User changes use `EVENT_UIVALUECHANGED` and
+`OnChange()`. Focused dials also respond to `AdjustFocused()`.
+
+Images are optional presentation rather than part of widget behaviour.
+`TUIButton.SetStateImages()` accepts normal, pressed and disabled artwork, so
+an image-backed button retains the same touch, focus and action semantics as a
+themed button. Status indicators accept inactive and active images. Arc gauges
+and rotary dials accept an optional face image, then draw their live value over
+it. Without images all four controls render from primitives and remain suitable
+for monochrome displays.
 
 ## Themes and rendering cost
 

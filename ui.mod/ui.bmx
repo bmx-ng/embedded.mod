@@ -19,8 +19,10 @@ Import BRL.Event
 Import BRL.System
 Import Embedded.Drivers.Display
 Import Embedded.Drivers.Display.Font
+Import Embedded.Drivers.Display.Image
 Import Embedded.Drivers.Touch
 Import Embedded.Graphics2D
+Import "native/ui_math.c"
 
 Const UILayoutAuto:Int = -1
 Const UILayoutFill:Int = -2
@@ -49,11 +51,20 @@ Const UIToastCenterRight:Int = 5
 Const UIToastBottomLeft:Int = 6
 Const UIToastBottomCenter:Int = 7
 Const UIToastBottomRight:Int = 8
+Const UIGaugeSweepDegrees:Int = 270
+Const UIGaugeStartDegrees:Int = 135
+Const UIDialDragHorizontal:Int = 0
+Const UIDialDragVertical:Int = 1
 
 Global EVENT_UIACTION:Int = AllocUserEventId("UIAction")
 Global EVENT_UIVALUECHANGED:Int = AllocUserEventId("UIValueChanged")
 Global EVENT_UIFOCUSCHANGED:Int = AllocUserEventId("UIFocusChanged")
 Global EVENT_UISELECTIONCHANGED:Int = AllocUserEventId("UISelectionChanged")
+
+Extern "C"
+	Function _UISin:Double(degrees:Double) = "bmx_ui_sin"
+	Function _UICos:Double(degrees:Double) = "bmx_ui_cos"
+End Extern
 
 Type TUIStyle
 	Field font:TBitmapFont
@@ -210,6 +221,39 @@ Function _ClampNonNegative:Int(value:Int)
 	Return value
 End Function
 
+Function _UIRounded:Int(value:Double)
+	If value >= 0.0 Then Return Int(value + 0.5)
+	Return Int(value - 0.5)
+End Function
+
+Function _UIDrawArc(graphics:TEmbedded2DContext, centerX:Int, centerY:Int, radius:Int, ..
+		startDegrees:Int, sweepDegrees:Int, width:Int)
+	If Not graphics Or radius <= 0 Or sweepDegrees = 0 Then Return
+	If width < 1 Then width = 1
+	If width > radius Then width = radius
+	Local segmentCount:Int = Max(Abs(sweepDegrees) / 5, 1)
+	For Local ring:Int = 0 Until width
+		Local ringRadius:Int = radius - ring
+		Local previousX:Int = centerX + _UIRounded(_UICos(Double(startDegrees)) * Double(ringRadius))
+		Local previousY:Int = centerY + _UIRounded(_UISin(Double(startDegrees)) * Double(ringRadius))
+		For Local segment:Int = 1 To segmentCount
+			Local angle:Double = Double(startDegrees) + ..
+				Double(sweepDegrees) * Double(segment) / Double(segmentCount)
+			Local x:Int = centerX + _UIRounded(_UICos(angle) * Double(ringRadius))
+			Local y:Int = centerY + _UIRounded(_UISin(angle) * Double(ringRadius))
+			graphics.DrawLine(previousX, previousY, x, y)
+			previousX = x
+			previousY = y
+		Next
+	Next
+End Function
+
+Function _UIDrawImageRect(graphics:TEmbedded2DContext, image:TEmbeddedImage, ..
+		x:Int, y:Int, width:Int, height:Int)
+	If graphics And image And width > 0 And height > 0 Then ..
+		graphics.DrawImageRect(image, x, y, width, height)
+End Function
+
 Public
 
 Type TUIWidget
@@ -235,6 +279,7 @@ Type TUIWidget
 	Field pressed:Int
 	Field clickable:Int
 	Field focusable:Int
+	Field focusIndicatorVisible:Int = True
 
 	Public
 	Method Context:TUIContext() Final
@@ -359,6 +404,21 @@ Type TUIWidget
 
 	Method Focusable:Int()
 		Return focusable
+	End Method
+
+	Rem
+	bbdoc: Controls whether this widget draws the theme focus indicator.
+	about: Hiding the indicator does not remove the widget from focus traversal.
+	End Rem
+	Method SetFocusIndicatorVisible(value:Int)
+		value = value <> 0
+		If focusIndicatorVisible = value Then Return
+		focusIndicatorVisible = value
+		_Invalidate()
+	End Method
+
+	Method FocusIndicatorVisible:Int()
+		Return focusIndicatorVisible
 	End Method
 
 	Method Focused:Int()
@@ -622,6 +682,37 @@ Type TUIContainer Extends TUIWidget
 
 	Method ProgressBar:TUIProgressBar(minimum:Int = 0, maximum:Int = 100, value:Int = 0) Final
 		Local widget:TUIProgressBar = New TUIProgressBar
+		widget.SetRange(minimum, maximum)
+		widget.SetValue(value)
+		Add(widget)
+		Return widget
+	End Method
+
+	Method StatusIndicator:TUIStatusIndicator(text:String = "", active:Int = False) Final
+		Local widget:TUIStatusIndicator = New TUIStatusIndicator
+		widget.SetText(text)
+		widget.SetActive(active)
+		Add(widget)
+		Return widget
+	End Method
+
+	Method ArcGauge:TUIArcGauge(minimum:Int = 0, maximum:Int = 100, value:Int = 0) Final
+		Local widget:TUIArcGauge = New TUIArcGauge
+		widget.SetRange(minimum, maximum)
+		widget.SetValue(value)
+		Add(widget)
+		Return widget
+	End Method
+
+	Method Sparkline:TUISparkline(capacity:Int = 32) Final
+		Local widget:TUISparkline = New TUISparkline
+		widget.SetCapacity(capacity)
+		Add(widget)
+		Return widget
+	End Method
+
+	Method RotaryDial:TUIRotaryDial(minimum:Int = 0, maximum:Int = 100, value:Int = 0) Final
+		Local widget:TUIRotaryDial = New TUIRotaryDial
 		widget.SetRange(minimum, maximum)
 		widget.SetValue(value)
 		Add(widget)
@@ -1730,6 +1821,10 @@ Type TUIButton Extends TUIWidget
 	Public
 	Field buttonText:String
 	Field clickHandler(button:TUIButton)
+	Field normalImage:TEmbeddedImage
+	Field pressedImage:TEmbeddedImage
+	Field disabledImage:TEmbeddedImage
+	Field imageReplacesChrome:Int
 
 	Public
 	Method New()
@@ -1753,6 +1848,26 @@ Type TUIButton Extends TUIWidget
 		clickHandler = handler
 	End Method
 
+	Rem
+	bbdoc: Sets optional normal, pressed, and disabled button artwork.
+	about: Missing state images fall back to the normal image. When replaceChrome
+	is true the image replaces the themed background and border; button text is
+	still drawn over it.
+	End Rem
+	Method SetStateImages(normal:TEmbeddedImage, pressed:TEmbeddedImage = Null, ..
+			disabled:TEmbeddedImage = Null, replaceChrome:Int = True)
+		normalImage = normal
+		pressedImage = pressed
+		disabledImage = disabled
+		imageReplacesChrome = replaceChrome <> 0
+		_Invalidate()
+		_RequestLayout()
+	End Method
+
+	Method NormalImage:TEmbeddedImage()
+		Return normalImage
+	End Method
+
 	Method DefaultStyle:TUIStyle() Override
 		If Context() And Context().Theme() Then
 			If Not Enabled() Then Return Context().Theme().buttonDisabled
@@ -1771,6 +1886,10 @@ Type TUIButton Extends TUIWidget
 			width = style.font.TextWidth(buttonText, style.fontScale)
 			height = style.font.LineHeight() * style.fontScale
 		End If
+		If normalImage Then
+			If normalImage.Width() > width Then width = normalImage.Width()
+			If normalImage.Height() > height Then height = normalImage.Height()
+		End If
 		width :+ style.paddingLeft + style.paddingRight
 		height :+ style.paddingTop + style.paddingBottom
 		If requestedWidth >= 0 Then width = requestedWidth
@@ -1780,7 +1899,13 @@ Type TUIButton Extends TUIWidget
 	Method Draw(graphics:TEmbedded2DContext) Override
 		Local style:TUIStyle = DefaultStyle()
 		If uiStyle Then style = uiStyle
-		If style.backgroundVisible Then
+		Local stateImage:TEmbeddedImage = normalImage
+		If Not Enabled() And disabledImage Then
+			stateImage = disabledImage
+		Else If Pressed() And pressedImage Then
+			stateImage = pressedImage
+		End If
+		If style.backgroundVisible And Not (stateImage And imageReplacesChrome) Then
 			graphics.SetColorValue(style.background)
 			If style.cornerRadius > 0 Then
 				graphics.FillRoundRect(X(), Y(), Width(), Height(), style.cornerRadius)
@@ -1788,7 +1913,7 @@ Type TUIButton Extends TUIWidget
 				graphics.FillRect(X(), Y(), Width(), Height())
 			End If
 		End If
-		If style.borderWidth > 0 Then
+		If style.borderWidth > 0 And Not (stateImage And imageReplacesChrome) Then
 			graphics.SetColorValue(style.border)
 			For Local edge:Int = 0 Until style.borderWidth
 				If style.cornerRadius > 0 Then
@@ -1799,6 +1924,7 @@ Type TUIButton Extends TUIWidget
 				End If
 			Next
 		End If
+		If stateImage Then _UIDrawImageRect(graphics, stateImage, X(), Y(), Width(), Height())
 		If style.font Then
 			graphics.SetFont(style.font)
 			graphics.SetColorValue(style.foreground)
@@ -2617,6 +2743,481 @@ Type TUIProgressBar Extends TUIRangeWidget Final
 	End Method
 End Type
 
+Rem
+bbdoc: Compact labelled state lamp for status dashboards.
+End Rem
+Type TUIStatusIndicator Extends TUIWidget Final
+	Private
+	Field indicatorText:String
+	Field active:Int
+	Field inactiveImage:TEmbeddedImage
+	Field activeImage:TEmbeddedImage
+
+	Public
+	Method SetText(text:String)
+		If Not text Then text = ""
+		If indicatorText = text Then Return
+		indicatorText = text
+		_RequestLayout()
+	End Method
+
+	Method Text:String()
+		Return indicatorText
+	End Method
+
+	Method SetActive(value:Int)
+		value = value <> 0
+		If active = value Then Return
+		active = value
+		_Invalidate()
+	End Method
+
+	Method Active:Int()
+		Return active
+	End Method
+
+	Method SetStateImages(inactive:TEmbeddedImage, active:TEmbeddedImage = Null)
+		inactiveImage = inactive
+		activeImage = active
+		_Invalidate()
+		_RequestLayout()
+	End Method
+
+	Method DefaultStyle:TUIStyle() Override
+		If Context() And Context().Theme() Then
+			If active Then Return Context().Theme().controlActive
+			Return Context().Theme().control
+		End If
+		Return Super.DefaultStyle()
+	End Method
+
+	Method PreferredSize(availableWidth:Int, availableHeight:Int, width:Int Var, height:Int Var) Override
+		Local style:TUIStyle = DefaultStyle()
+		If uiStyle Then style = uiStyle
+		Local lampSize:Int = 14 * style.fontScale
+		If inactiveImage Then lampSize = Max(lampSize, Max(inactiveImage.Width(), inactiveImage.Height()))
+		width = lampSize + style.paddingLeft + style.paddingRight
+		height = lampSize + style.paddingTop + style.paddingBottom
+		If style.font And indicatorText.Length Then
+			width :+ Max(style.fontScale * 4, 6) + style.font.TextWidth(indicatorText, style.fontScale)
+			height = Max(height, style.font.LineHeight() * style.fontScale + ..
+				style.paddingTop + style.paddingBottom)
+		End If
+		If requestedWidth >= 0 Then width = requestedWidth
+		If requestedHeight >= 0 Then height = requestedHeight
+	End Method
+
+	Method Draw(graphics:TEmbedded2DContext) Override
+		Local style:TUIStyle = DefaultStyle()
+		If uiStyle Then style = uiStyle
+		Local lampSize:Int = Max(Min(Height() - style.paddingTop - style.paddingBottom, ..
+			14 * style.fontScale), 6)
+		Local lampX:Int = X() + style.paddingLeft
+		Local lampY:Int = Y() + (Height() - lampSize) / 2
+		Local image:TEmbeddedImage = inactiveImage
+		If active And activeImage Then image = activeImage
+		If image Then
+			_UIDrawImageRect(graphics, image, lampX, lampY, lampSize, lampSize)
+		Else
+			graphics.SetColorValue(style.border)
+			graphics.FillCircle(lampX + lampSize / 2, lampY + lampSize / 2, lampSize / 2)
+			graphics.SetColorValue(style.background)
+			graphics.FillCircle(lampX + lampSize / 2, lampY + lampSize / 2, ..
+				Max(lampSize / 2 - Max(style.borderWidth, 1), 1))
+		End If
+		If style.font And indicatorText.Length Then
+			graphics.SetFont(style.font)
+			graphics.SetColorValue(style.foreground)
+			Local textHeight:Int = style.font.LineHeight() * style.fontScale
+			graphics.DrawText(indicatorText, lampX + lampSize + Max(style.fontScale * 4, 6), ..
+				Y() + (Height() - textHeight) / 2, style.fontScale)
+		End If
+	End Method
+End Type
+
+Rem
+bbdoc: Read-only circular dashboard gauge with an optional image face.
+End Rem
+Type TUIArcGauge Extends TUIRangeWidget Final
+	Private
+	Field labelText:String
+	Field unitText:String
+	Field showValue:Int = True
+	Field arcWidth:Int = 6
+	Field tickCount:Int = 10
+	Field faceImage:TEmbeddedImage
+
+	Public
+	Method SetLabel(text:String)
+		If Not text Then text = ""
+		If labelText = text Then Return
+		labelText = text
+		_Invalidate()
+	End Method
+
+	Method SetUnit(text:String)
+		If Not text Then text = ""
+		If unitText = text Then Return
+		unitText = text
+		_Invalidate()
+	End Method
+
+	Method SetShowValue(value:Int)
+		showValue = value <> 0
+		_Invalidate()
+	End Method
+
+	Method SetArcWidth(value:Int)
+		arcWidth = Max(value, 1)
+		_Invalidate()
+	End Method
+
+	Method SetTickCount(value:Int)
+		tickCount = Max(value, 0)
+		_Invalidate()
+	End Method
+
+	Method SetFaceImage(image:TEmbeddedImage)
+		faceImage = image
+		_Invalidate()
+	End Method
+
+	Method DefaultStyle:TUIStyle() Override
+		If Context() And Context().Theme() Then Return Context().Theme().progress
+		Return Super.DefaultStyle()
+	End Method
+
+	Method PreferredSize(availableWidth:Int, availableHeight:Int, width:Int Var, height:Int Var) Override
+		Local style:TUIStyle = DefaultStyle()
+		If uiStyle Then style = uiStyle
+		width = 120 * style.fontScale
+		height = 100 * style.fontScale
+		If faceImage Then
+			width = Max(width, faceImage.Width())
+			height = Max(height, faceImage.Height())
+		End If
+		If requestedWidth >= 0 Then width = requestedWidth
+		If requestedHeight >= 0 Then height = requestedHeight
+	End Method
+
+	Method Draw(graphics:TEmbedded2DContext) Override
+		Local style:TUIStyle = DefaultStyle()
+		If uiStyle Then style = uiStyle
+		Local activeStyle:TUIStyle = style
+		If Context() And Context().Theme() Then activeStyle = Context().Theme().progressFill
+		If faceImage Then _UIDrawImageRect(graphics, faceImage, X(), Y(), Width(), Height())
+		Local textReserve:Int
+		If style.font And labelText.Length Then textReserve = style.font.LineHeight() * style.fontScale
+		Local diameter:Int = Min(Width() - style.paddingLeft - style.paddingRight, ..
+			Height() - style.paddingTop - style.paddingBottom - textReserve)
+		Local radius:Int = Max(diameter / 2 - arcWidth - 2, 4)
+		Local centerX:Int = X() + Width() / 2
+		Local centerY:Int = Y() + style.paddingTop + diameter / 2
+		graphics.SetColorValue(style.background)
+		_UIDrawArc(graphics, centerX, centerY, radius, UIGaugeStartDegrees, UIGaugeSweepDegrees, arcWidth)
+		Local valueSweep:Int = Fraction(UIGaugeSweepDegrees)
+		If valueSweep > 0 Then
+			graphics.SetColorValue(activeStyle.background)
+			_UIDrawArc(graphics, centerX, centerY, radius, UIGaugeStartDegrees, valueSweep, arcWidth)
+		End If
+		If tickCount > 0 Then
+			graphics.SetColorValue(style.border)
+			For Local tick:Int = 0 To tickCount
+				Local angle:Double = Double(UIGaugeStartDegrees) + ..
+					Double(UIGaugeSweepDegrees * tick) / Double(tickCount)
+				Local outerRadius:Int = radius + arcWidth + 2
+				Local innerRadius:Int = radius + arcWidth
+				graphics.DrawLine(centerX + _UIRounded(_UICos(angle) * innerRadius), ..
+					centerY + _UIRounded(_UISin(angle) * innerRadius), ..
+					centerX + _UIRounded(_UICos(angle) * outerRadius), ..
+					centerY + _UIRounded(_UISin(angle) * outerRadius))
+			Next
+		End If
+		If style.font Then
+			graphics.SetFont(style.font)
+			graphics.SetColorValue(style.foreground)
+			If showValue Then
+				Local valueText:String = String(Value()) + unitText
+				Local valueWidth:Int = style.font.TextWidth(valueText, style.fontScale)
+				graphics.DrawText(valueText, centerX - valueWidth / 2, ..
+					centerY - style.font.LineHeight() * style.fontScale / 2, style.fontScale)
+			End If
+			If labelText.Length Then
+				Local labelWidth:Int = style.font.TextWidth(labelText, style.fontScale)
+				graphics.DrawText(labelText, centerX - labelWidth / 2, ..
+					Y() + Height() - style.paddingBottom - style.font.LineHeight() * style.fontScale, ..
+					style.fontScale)
+			End If
+		End If
+	End Method
+End Type
+
+Rem
+bbdoc: Allocation-free rolling line graph for sampled dashboard values.
+End Rem
+Type TUISparkline Extends TUIWidget Final
+	Private
+	Field samples:Int[] = New Int[0]
+	Field sampleStart:Int
+	Field sampleCount:Int
+	Field minimumValue:Int
+	Field maximumValue:Int = 100
+	Field autoRange:Int = True
+
+	Public
+	Method SetCapacity(value:Int)
+		value = Max(value, 2)
+		If samples.Length = value Then Return
+		samples = New Int[value]
+		sampleStart = 0
+		sampleCount = 0
+		_Invalidate()
+	End Method
+
+	Method Capacity:Int()
+		Return samples.Length
+	End Method
+
+	Method Count:Int()
+		Return sampleCount
+	End Method
+
+	Method Clear()
+		sampleStart = 0
+		sampleCount = 0
+		_Invalidate()
+	End Method
+
+	Method AddValue(value:Int)
+		If samples.Length < 2 Then SetCapacity(32)
+		Local index:Int
+		If sampleCount < samples.Length Then
+			index = (sampleStart + sampleCount) Mod samples.Length
+			sampleCount :+ 1
+		Else
+			index = sampleStart
+			sampleStart = (sampleStart + 1) Mod samples.Length
+		End If
+		samples[index] = value
+		_Invalidate()
+	End Method
+
+	Method ValueAt:Int(index:Int)
+		If index < 0 Or index >= sampleCount Then Return 0
+		Return samples[(sampleStart + index) Mod samples.Length]
+	End Method
+
+	Method SetRange(minimum:Int, maximum:Int)
+		If maximum <= minimum Then maximum = minimum + 1
+		minimumValue = minimum
+		maximumValue = maximum
+		autoRange = False
+		_Invalidate()
+	End Method
+
+	Method SetAutoRange(value:Int)
+		autoRange = value <> 0
+		_Invalidate()
+	End Method
+
+	Method AutoRange:Int()
+		Return autoRange
+	End Method
+
+	Method DefaultStyle:TUIStyle() Override
+		If Context() And Context().Theme() Then Return Context().Theme().progress
+		Return Super.DefaultStyle()
+	End Method
+
+	Method PreferredSize(availableWidth:Int, availableHeight:Int, width:Int Var, height:Int Var) Override
+		Local style:TUIStyle = DefaultStyle()
+		If uiStyle Then style = uiStyle
+		width = 120 * style.fontScale
+		height = 48 * style.fontScale
+		If requestedWidth >= 0 Then width = requestedWidth
+		If requestedHeight >= 0 Then height = requestedHeight
+	End Method
+
+	Method Draw(graphics:TEmbedded2DContext) Override
+		Local style:TUIStyle = DefaultStyle()
+		If uiStyle Then style = uiStyle
+		Local activeStyle:TUIStyle = style
+		If Context() And Context().Theme() Then activeStyle = Context().Theme().progressFill
+		graphics.SetColorValue(style.background)
+		graphics.FillRoundRect(X(), Y(), Width(), Height(), style.cornerRadius)
+		If style.borderWidth > 0 Then
+			graphics.SetColorValue(style.border)
+			graphics.DrawRoundRect(X(), Y(), Width(), Height(), style.cornerRadius)
+		End If
+		If sampleCount = 0 Then Return
+		Local minimum:Int = minimumValue
+		Local maximum:Int = maximumValue
+		If autoRange Then
+			minimum = ValueAt(0)
+			maximum = minimum
+			For Local index:Int = 1 Until sampleCount
+				Local value:Int = ValueAt(index)
+				If value < minimum Then minimum = value
+				If value > maximum Then maximum = value
+			Next
+			If maximum <= minimum Then maximum = minimum + 1
+		End If
+		Local left:Int = X() + Max(style.paddingLeft, 2)
+		Local top:Int = Y() + Max(style.paddingTop, 2)
+		Local graphWidth:Int = Max(Width() - Max(style.paddingLeft, 2) - Max(style.paddingRight, 2) - 1, 1)
+		Local graphHeight:Int = Max(Height() - Max(style.paddingTop, 2) - Max(style.paddingBottom, 2) - 1, 1)
+		Local previousX:Int = left
+		Local previousY:Int = top + graphHeight - ..
+			Int(Long(ValueAt(0) - minimum) * graphHeight / Long(maximum - minimum))
+		graphics.SetColorValue(activeStyle.background)
+		For Local index:Int = 1 Until sampleCount
+			Local x:Int = left + Int(Long(index) * graphWidth / Long(Max(sampleCount - 1, 1)))
+			Local y:Int = top + graphHeight - ..
+				Int(Long(ValueAt(index) - minimum) * graphHeight / Long(maximum - minimum))
+			graphics.DrawLine(previousX, previousY, x, y)
+			previousX = x
+			previousY = y
+		Next
+		If sampleCount = 1 Then graphics.DrawLine(previousX, previousY, previousX, previousY)
+	End Method
+End Type
+
+Rem
+bbdoc: Focusable rotary value control adjusted with a linear drag gesture.
+about: Horizontal dragging is the default. Applications can select vertical
+dragging; both modes avoid the discontinuity of angle-following knobs near
+their end stop.
+End Rem
+Type TUIRotaryDial Extends TUIRangeWidget Final
+	Private
+	Field faceImage:TEmbeddedImage
+	Field dragStartX:Int
+	Field dragStartY:Int
+	Field dragStartValue:Int
+	Field dragging:Int
+	Field dragDirection:Int = UIDialDragHorizontal
+	Field stepValue:Int = 1
+	Field changeHandler(dial:TUIRotaryDial)
+
+	Public
+	Method New()
+		clickable = True
+		focusable = True
+	End Method
+
+	Method SetFaceImage(image:TEmbeddedImage)
+		faceImage = image
+		_Invalidate()
+	End Method
+
+	Method SetStep(value:Int)
+		stepValue = Max(value, 1)
+	End Method
+
+	Method Step:Int()
+		Return stepValue
+	End Method
+
+	Method SetDragDirection(direction:Int)
+		If direction <> UIDialDragVertical Then direction = UIDialDragHorizontal
+		dragDirection = direction
+	End Method
+
+	Method DragDirection:Int()
+		Return dragDirection
+	End Method
+
+	Method OnChange(handler(dial:TUIRotaryDial))
+		changeHandler = handler
+	End Method
+
+	Method DefaultStyle:TUIStyle() Override
+		If Context() And Context().Theme() Then
+			If Not Enabled() Then Return Context().Theme().controlDisabled
+			If Pressed() Then Return Context().Theme().controlPressed
+			Return Context().Theme().control
+		End If
+		Return Super.DefaultStyle()
+	End Method
+
+	Method PreferredSize(availableWidth:Int, availableHeight:Int, width:Int Var, height:Int Var) Override
+		Local style:TUIStyle = DefaultStyle()
+		If uiStyle Then style = uiStyle
+		width = 96 * style.fontScale
+		height = 96 * style.fontScale
+		If faceImage Then
+			width = Max(width, faceImage.Width())
+			height = Max(height, faceImage.Height())
+		End If
+		If requestedWidth >= 0 Then width = requestedWidth
+		If requestedHeight >= 0 Then height = requestedHeight
+	End Method
+
+	Method Draw(graphics:TEmbedded2DContext) Override
+		Local style:TUIStyle = DefaultStyle()
+		If uiStyle Then style = uiStyle
+		Local activeStyle:TUIStyle = style
+		If Context() And Context().Theme() And Enabled() Then activeStyle = Context().Theme().controlActive
+		If faceImage Then _UIDrawImageRect(graphics, faceImage, X(), Y(), Width(), Height())
+		Local radius:Int = Max(Min(Width(), Height()) / 2 - 8 * style.fontScale, 6)
+		Local centerX:Int = X() + Width() / 2
+		Local centerY:Int = Y() + Height() / 2
+		Local arcWidth:Int = Max(4 * style.fontScale, 2)
+		graphics.SetColorValue(style.background)
+		_UIDrawArc(graphics, centerX, centerY, radius, UIGaugeStartDegrees, UIGaugeSweepDegrees, arcWidth)
+		graphics.SetColorValue(activeStyle.background)
+		_UIDrawArc(graphics, centerX, centerY, radius, UIGaugeStartDegrees, Fraction(UIGaugeSweepDegrees), arcWidth)
+		Local angle:Double = Double(UIGaugeStartDegrees + Fraction(UIGaugeSweepDegrees))
+		Local needleRadius:Int = Max(radius - arcWidth - 3, 2)
+		graphics.SetColorValue(activeStyle.foreground)
+		graphics.DrawLine(centerX, centerY, ..
+			centerX + _UIRounded(_UICos(angle) * needleRadius), ..
+			centerY + _UIRounded(_UISin(angle) * needleRadius))
+		graphics.FillCircle(centerX, centerY, Max(3 * style.fontScale, 2))
+	End Method
+
+	Public
+	Method _BeginPointer(x:Int, y:Int)
+		dragStartX = x
+		dragStartY = y
+		dragStartValue = Value()
+		dragging = True
+	End Method
+
+	Method _TrackPointer(x:Int, y:Int)
+		If Not dragging Then _BeginPointer(x, y)
+		Local span:Int = Max(Maximum() - Minimum(), 1)
+		Local travel:Int
+		Local distance:Int
+		If dragDirection = UIDialDragVertical Then
+			travel = Max(Height(), 32)
+			distance = dragStartY - y
+		Else
+			travel = Max(Width(), 32)
+			distance = x - dragStartX
+		End If
+		Local delta:Int = Int(Long(distance) * span / Long(travel))
+		_SetUserValue(dragStartValue + delta)
+	End Method
+
+	Method _EndPointer()
+		dragging = False
+	End Method
+
+	Method _Adjust(delta:Int)
+		_SetUserValue(Value() + delta * stepValue)
+	End Method
+
+	Method _SetUserValue(value:Int)
+		If value < Minimum() Then value = Minimum()
+		If value > Maximum() Then value = Maximum()
+		If value = Value() Then Return
+		SetValue(value)
+		If changeHandler Then changeHandler(Self)
+		EmitEvent(CreateEvent(EVENT_UIVALUECHANGED, Self, Value()))
+	End Method
+End Type
+
 Type TUIDialogAction Extends TUIButton Final
 	Private
 	Field dialogOwner:TUIDialog
@@ -3248,6 +3849,11 @@ Type TUIContext
 			slider._SetUserValue(slider.Value() + delta)
 			Return True
 		End If
+		Local dial:TUIRotaryDial = TUIRotaryDial(focusedWidget)
+		If dial Then
+			dial._Adjust(delta)
+			Return True
+		End If
 		Local listItem:TUIListItem = TUIListItem(focusedWidget)
 		If listItem And listItem.listOwner Then Return listItem.listOwner.MoveSelection(delta)
 		Local combo:TUIComboBox = TUIComboBox(focusedWidget)
@@ -3431,7 +4037,12 @@ Type TUIContext
 					pressedArmed = True
 					target._SetPressed(True)
 					Local slider:TUISlider = TUISlider(target)
-					If slider Then slider._TrackPointer(x)
+					If slider Then
+						slider._TrackPointer(x)
+					Else
+						Local dial:TUIRotaryDial = TUIRotaryDial(target)
+						If dial Then dial._BeginPointer(x, y)
+					End If
 				End If
 			Case EVENT_TOUCHMOVE
 				If pressedContact = event.data Then
@@ -3449,8 +4060,13 @@ Type TUIContext
 						If slider Then
 							slider._TrackPointer(x)
 						Else
-							pressedArmed = pressedWidget.Contains(x, y)
-							pressedWidget._SetPressed(pressedArmed)
+							Local dial:TUIRotaryDial = TUIRotaryDial(pressedWidget)
+							If dial Then
+								dial._TrackPointer(x, y)
+							Else
+								pressedArmed = pressedWidget.Contains(x, y)
+								pressedWidget._SetPressed(pressedArmed)
+							End If
 						End If
 					End If
 				End If
@@ -3462,6 +4078,11 @@ Type TUIContext
 					If target Then
 						Local slider:TUISlider = TUISlider(target)
 						If slider And Not touchScrolled Then slider._TrackPointer(x)
+						Local dial:TUIRotaryDial = TUIRotaryDial(target)
+						If dial Then
+							If Not touchScrolled Then dial._TrackPointer(x, y)
+							dial._EndPointer()
+						End If
 						activate = Not touchScrolled And pressedArmed And target.Contains(x, y) And target.Enabled()
 						target._SetPressed(False)
 					End If
@@ -3665,7 +4286,7 @@ Type TUIContext
 	End Method
 
 	Method _DrawFocus(widget:TUIWidget)
-		If Not themeValue Or themeValue.focusWidth <= 0 Then Return
+		If Not themeValue Or themeValue.focusWidth <= 0 Or Not widget.FocusIndicatorVisible() Then Return
 		Local inset:Int = Max(themeValue.focusInset, 0)
 		Local width:Int = widget.Width() - inset * 2
 		Local height:Int = widget.Height() - inset * 2
