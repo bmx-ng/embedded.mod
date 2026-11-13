@@ -60,6 +60,9 @@ Global dialCallbackCount:Int
 Global segmentCallbackCount:Int
 Global dialogCallbackCount:Int
 Global dialogCallbackResult:Int
+Global pageChangeCount:Int
+Global pageEventCount:Int
+Global pageEventDepth:Int
 
 Function Clicked(button:TUIButton)
 	callbackCount :+ 1
@@ -102,6 +105,10 @@ Function DialogClosed(dialog:TUIDialog, result:Int)
 	dialogCallbackResult = result
 End Function
 
+Function PageChanged(stack:TUIPageStack)
+	pageChangeCount :+ 1
+End Function
+
 Function CaptureAction:Object(hookId:Int, data:Object, context:Object)
 	Local event:TEvent = TEvent(data)
 	If event And event.id = EVENT_UIACTION Then
@@ -118,6 +125,9 @@ Function CaptureAction:Object(hookId:Int, data:Object, context:Object)
 		selectionChangeCount :+ 1
 		selectionEventSource = event.source
 		selectionEventIndex = event.data
+	Else If event And event.id = EVENT_UIPAGECHANGED Then
+		pageEventCount :+ 1
+		pageEventDepth = event.data
 	End If
 	Return data
 End Function
@@ -325,6 +335,46 @@ Function RunDecimalStepperTests(touch:TFakeTouch)
 	Check(stepper.ValueText() = "-0.50" And stepperCallbackCount = callbackStart + 1, ..
 		"decimal stepper programmatic value or notification semantics were incorrect")
 	decimalUI.Close()
+End Function
+
+Function RunPageStackTests(ui:TUIContext, page:TUIColumn)
+	Local navigation:TUIPageStack = page.PageStack()
+	navigation.SetHeight(72)
+	Local home:TUIPage = navigation.Page("Home")
+	Local homeButton:TUIButton = home.Button("Open")
+	Local details:TUIPage = navigation.Page("Details")
+	Local detailsButton:TUIButton = details.Button("Back")
+	Local replacement:TUIPage = navigation.Page("Replacement")
+	navigation.OnPageChanged(PageChanged)
+	pageChangeCount = 0
+	pageEventCount = 0
+	pageEventDepth = 0
+	Check(navigation.Depth() = 1 And navigation.CurrentPage() = home And home.Visible() And ..
+		Not details.Visible(), "page stack did not activate its first page")
+	Check(ui.SetFocus(homeButton), "page stack home control could not receive focus")
+	Check(navigation.Push(details) And navigation.Depth() = 2 And navigation.CurrentPage() = details And ..
+		Not home.Visible() And details.Visible(), "page stack push did not change its active page")
+	Check(pageChangeCount = 1 And pageEventCount = 1 And pageEventDepth = 2, ..
+		"page stack push did not report its navigation state")
+	Check(ui.SetFocus(detailsButton), "page stack detail control could not receive focus")
+	Check(ui.Back() And navigation.CurrentPage() = home, ..
+		"context back did not pop the page")
+	Check(ui.Present() And ui.FocusedWidget() = homeButton, ..
+		"context back did not restore focus on the next presentation")
+	Check(Not ui.Back(), "context back escaped the root page")
+	Check(navigation.Push(details) And navigation.Replace(replacement) And ..
+		navigation.Depth() = 2 And navigation.CurrentPage() = replacement And ..
+		Not details.Visible() And replacement.Visible(), "page replacement did not preserve stack depth")
+	ui.Render()
+	Check(ui.Back() And navigation.CurrentPage() = home, "replacement page did not pop to its predecessor")
+	Check(ui.Present(), "replacement page pop did not present its predecessor")
+	For Local cycle:Int = 0 Until 256
+		Check(navigation.Push(details) And navigation.Pop() And ui.Present(), ..
+			"page stack failed during repeated bounded navigation")
+		If cycle Mod 4 = 3 Then Delay(10)
+	Next
+	Check(navigation.Depth() = 1 And navigation.CurrentPage() = home, ..
+		"repeated navigation did not return to the root page")
 End Function
 
 Function RunDashboardTests(ui:TUIContext, page:TUIColumn)
@@ -595,6 +645,7 @@ Check(progress.Value() = 80, "range change did not clamp the progress value")
 Check(ui.Render(), "value control changes were not invalidated")
 
 RunDashboardTests(ui, page)
+RunPageStackTests(ui, page)
 
 RunToastTests(ui, frame, cancel)
 

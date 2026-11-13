@@ -121,6 +121,37 @@ Touching or explicitly activating a tab emits `EVENT_UISELECTIONCHANGED` with
 the tab view as its source. `SetSelectedIndex()` switches pages
 programmatically without emitting a user action.
 
+## Page navigation
+
+`TUIPageStack` provides application-style navigation while retaining every
+page and its widget state:
+
+```blitzmax
+Local navigation:TUIPageStack = page.PageStack()
+navigation.SetGrow(1)
+
+Local home:TUIPage = navigation.Page("Home")
+Local open:TUIButton = home.Button("Open settings")
+
+Local settings:TUIPage = navigation.Page("Settings")
+Local back:TUIButton = settings.Button("Back")
+
+navigation.Push(settings)
+```
+
+The first page becomes the root automatically. `Push()` adds another page,
+`Pop()` returns to its predecessor, and `Replace()` changes the current page
+without changing the stack depth. Pages are hidden rather than destroyed, so
+values, scroll positions and other retained state survive navigation. Popping
+also restores the widget that was focused on the previous page. History has a
+fixed `UIPageStackMaximum` capacity and Push/Pop do not allocate.
+
+`TUIContext.Back()` first dismisses an open menu or dialog, then pops the
+deepest visible page stack. It returns false at the root so an application can
+handle an otherwise unconsumed system Back action. Navigation invokes the
+optional `OnPageChanged()` callback and emits `EVENT_UIPAGECHANGED`; the event
+data contains the new stack depth.
+
 A combo box owns a persistent popup and reports user selections through the
 same selection event:
 

@@ -42,6 +42,7 @@ Const UIToastWarning:Int = 2
 Const UIToastError:Int = 3
 Const UIToastDefaultDuration:Int = 2500
 Const UIToastQueueMaximum:Int = 8
+Const UIPageStackMaximum:Int = 16
 Const UIToastTopLeft:Int = 0
 Const UIToastTopCenter:Int = 1
 Const UIToastTopRight:Int = 2
@@ -60,6 +61,7 @@ Global EVENT_UIACTION:Int = AllocUserEventId("UIAction")
 Global EVENT_UIVALUECHANGED:Int = AllocUserEventId("UIValueChanged")
 Global EVENT_UIFOCUSCHANGED:Int = AllocUserEventId("UIFocusChanged")
 Global EVENT_UISELECTIONCHANGED:Int = AllocUserEventId("UISelectionChanged")
+Global EVENT_UIPAGECHANGED:Int = AllocUserEventId("UIPageChanged")
 
 Extern "C"
 	Function _UISin:Double(degrees:Double) = "bmx_ui_sin"
@@ -604,6 +606,12 @@ Type TUIContainer Extends TUIWidget
 
 	Method TabView:TUITabView() Final
 		Local widget:TUITabView = New TUITabView
+		Add(widget)
+		Return widget
+	End Method
+
+	Method PageStack:TUIPageStack() Final
+		Local widget:TUIPageStack = New TUIPageStack
 		Add(widget)
 		Return widget
 	End Method
@@ -1476,6 +1484,174 @@ Type TUIComboBox Extends TUIWidget Final
 			If changeHandler Then changeHandler(Self)
 			EmitEvent(CreateEvent(EVENT_UISELECTIONCHANGED, Self, selectedIndex))
 		End If
+	End Method
+End Type
+
+Rem
+bbdoc: One retained page owned by a TUIPageStack.
+End Rem
+Type TUIPage Extends TUIContainer Final
+	Public
+	Field pageOwner:TUIPageStack
+	Field pageName:String
+
+	Public
+	Method New()
+		layoutDirection = 2
+	End Method
+
+	Method SetName(name:String)
+		If Not name Then name = ""
+		pageName = name
+	End Method
+
+	Method Name:String()
+		Return pageName
+	End Method
+End Type
+
+Rem
+bbdoc: Retained last-in, first-out navigation container.
+about: Pages remain allocated while hidden. Push and Pop preserve the previous
+page's focused widget so non-touch navigation resumes where the user left it.
+End Rem
+Type TUIPageStack Extends TUIContainer Final
+	Private
+	Field navigationPages:TUIPage[] = New TUIPage[0]
+	Field pageHistory:TUIPage[UIPageStackMaximum]
+	Field focusHistory:TUIWidget[UIPageStackMaximum]
+	Field historyDepth:Int
+	Field changeHandler(stack:TUIPageStack)
+
+	Public
+	Method New()
+		layoutDirection = 0
+	End Method
+
+	Method Page:TUIPage(name:String = "")
+		Local page:TUIPage = New TUIPage
+		page.pageOwner = Self
+		page.SetName(name)
+		page.SetVisible(False)
+		navigationPages = navigationPages[..navigationPages.Length + 1]
+		navigationPages[navigationPages.Length - 1] = page
+		Add(page)
+		If historyDepth = 0 Then Push(page)
+		Return page
+	End Method
+
+	Method PageCount:Int()
+		Return navigationPages.Length
+	End Method
+
+	Method PageAt:TUIPage(index:Int)
+		If index < 0 Or index >= navigationPages.Length Then Return Null
+		Return navigationPages[index]
+	End Method
+
+	Method Depth:Int()
+		Return historyDepth
+	End Method
+
+	Method CurrentPage:TUIPage()
+		If historyDepth = 0 Then Return Null
+		Return pageHistory[historyDepth - 1]
+	End Method
+
+	Method CanPop:Int()
+		Return historyDepth > 1
+	End Method
+
+	Method OnPageChanged(handler(stack:TUIPageStack))
+		changeHandler = handler
+	End Method
+
+	Method Push:Int(page:TUIPage)
+		If Not page Or page.pageOwner <> Self Or page = CurrentPage() Or ..
+				historyDepth >= UIPageStackMaximum Then Return False
+		For Local index:Int = 0 Until historyDepth
+			If pageHistory[index] = page Then Return False
+		Next
+		Local previous:TUIPage = CurrentPage()
+		If previous Then
+			focusHistory[historyDepth - 1] = _FocusedDescendant(previous)
+			previous.SetVisible(False)
+		End If
+		pageHistory[historyDepth] = page
+		focusHistory[historyDepth] = Null
+		historyDepth :+ 1
+		page.SetVisible(True)
+		_RequestLayout()
+		_NotifyChanged()
+		Return True
+	End Method
+
+	Method Pop:Int()
+		If historyDepth <= 1 Then Return False
+		Local outgoing:TUIPage = CurrentPage()
+		outgoing.SetVisible(False)
+		historyDepth :- 1
+		pageHistory[historyDepth] = Null
+		focusHistory[historyDepth] = Null
+		Local incoming:TUIPage = CurrentPage()
+		incoming.SetVisible(True)
+		_RequestLayout()
+		If Context() Then
+			Local restore:TUIWidget = focusHistory[historyDepth - 1]
+			If restore Then Context().DeferFocus(restore)
+		End If
+		_NotifyChanged()
+		Return True
+	End Method
+
+	Method Replace:Int(page:TUIPage)
+		If Not page Or page.pageOwner <> Self Or page = CurrentPage() Then Return False
+		For Local index:Int = 0 Until historyDepth - 1
+			If pageHistory[index] = page Then Return False
+		Next
+		If historyDepth = 0 Then Return Push(page)
+		CurrentPage().SetVisible(False)
+		pageHistory[historyDepth - 1] = page
+		focusHistory[historyDepth - 1] = Null
+		page.SetVisible(True)
+		_RequestLayout()
+		_NotifyChanged()
+		Return True
+	End Method
+
+	Method PreferredSize(availableWidth:Int, availableHeight:Int, width:Int Var, height:Int Var) Override
+		Local page:TUIPage = CurrentPage()
+		If page Then page.PreferredSize(availableWidth, availableHeight, width, height)
+		If requestedWidth >= 0 Then width = requestedWidth
+		If requestedHeight >= 0 Then height = requestedHeight
+	End Method
+
+	Public
+	Method _LayoutChildren() Override
+		Local page:TUIPage = CurrentPage()
+		If Not page Then Return
+		page._SetBounds(X() + paddingLeft, Y() + paddingTop, ..
+			Max(Width() - paddingLeft - paddingRight, 0), ..
+			Max(Height() - paddingTop - paddingBottom, 0))
+		page._LayoutChildren()
+	End Method
+
+	Private
+	Method _FocusedDescendant:TUIWidget(page:TUIPage)
+		If Not Context() Then Return Null
+		Local widget:TUIWidget = Context().FocusedWidget()
+		Local current:TUIWidget = widget
+		While current
+			If current = page Then Return widget
+			current = current.Parent()
+		Wend
+		Return Null
+	End Method
+
+	Method _NotifyChanged()
+		_Invalidate()
+		If changeHandler Then changeHandler(Self)
+		EmitEvent(CreateEvent(EVENT_UIPAGECHANGED, Self, Depth()))
 	End Method
 End Type
 
@@ -3459,6 +3635,8 @@ Type TUIContext
 	Field contextSlot:Int = -1
 	Field pressedWidget:TUIWidget
 	Field focusedWidget:TUIWidget
+	Field deferredFocus:TUIWidget
+	Field deferredFocusPending:Int
 	Field pressedContact:Int = -1
 	Field pressedArmed:Int
 	Field touchScroll:TUIScrollView
@@ -3517,6 +3695,8 @@ Type TUIContext
 		contextSlot = -1
 		pressedWidget = Null
 		focusedWidget = Null
+		deferredFocus = Null
+		deferredFocusPending = False
 		overlayWidget = Null
 		overlayPreviousFocus = Null
 		visibleToasts = New TUIToast[0]
@@ -3755,6 +3935,16 @@ Type TUIContext
 		Return True
 	End Method
 
+	Rem
+	bbdoc: Restores focus during the next presentation after pending layout has completed.
+	about: Navigation uses this to keep layout and framebuffer submission out of
+	the input callback which changed the visible page.
+	End Rem
+	Method DeferFocus(widget:TUIWidget)
+		deferredFocus = widget
+		deferredFocusPending = True
+	End Method
+
 	Method ClearFocus()
 		SetFocus(Null)
 	End Method
@@ -3887,6 +4077,19 @@ Type TUIContext
 		Return False
 	End Method
 
+	Rem
+	bbdoc: Handles one application-level back action.
+	about: An active overlay is dismissed first. Otherwise the deepest visible
+	page stack is popped. Returns false when there is nowhere to go back to.
+	End Rem
+	Method Back:Int()
+		If overlayWidget Then
+			DismissOverlay()
+			Return True
+		End If
+		Return _BackInWidget(rootWidget)
+	End Method
+
 	Method SetTheme(theme:TUITheme)
 		If Not theme Then Return
 		themeValue = theme
@@ -3988,6 +4191,13 @@ Type TUIContext
 		_UpdateScrollMomentum(rootWidget, now)
 		If overlayWidget Then _UpdateScrollMomentum(overlayWidget, now)
 		_UpdateToast(now)
+		If deferredFocusPending Then
+			Local restore:TUIWidget = deferredFocus
+			deferredFocus = Null
+			deferredFocusPending = False
+			If layoutPending Then Layout()
+			If restore And _CanFocus(restore) Then SetFocus(restore) Else ClearFocus()
+		End If
 		Render()
 		If display Then Return graphics.PresentDirty(display)
 		Return True
@@ -4297,6 +4507,16 @@ Type TUIContext
 			graphics.DrawRoundRect(widget.X() + inset + edge, widget.Y() + inset + edge, ..
 				width - edge * 2, height - edge * 2, Max(4 - edge, 0))
 		Next
+	End Method
+
+	Method _BackInWidget:Int(widget:TUIWidget)
+		If Not widget Or Not widget.Visible() Then Return False
+		For Local index:Int = widget.uiChildren.Length - 1 To 0 Step -1
+			If _BackInWidget(widget.uiChildren[index]) Then Return True
+		Next
+		Local stack:TUIPageStack = TUIPageStack(widget)
+		If stack And stack.CanPop() Then Return stack.Pop()
+		Return False
 	End Method
 
 	Method _CanFocus:Int(widget:TUIWidget)
