@@ -243,6 +243,8 @@ End Type
 
 Private
 
+Global _uiControlFactory:TUIControlFactory
+
 Function _ClampNonNegative:Int(value:Int)
 	If value < 0 Then Return 0
 	Return value
@@ -568,6 +570,158 @@ Type TUIWidget
 	End Method
 End Type
 
+Rem
+bbdoc: Optional constructor provider for interactive widget families.
+about: Embedded.UI.Controls installs the standard provider. Keeping concrete
+control construction behind this boundary lets display-only firmware omit
+controls which it never creates while retaining the fluent container API.
+End Rem
+Type TUIControlFactory
+	Method CreateList:TUIList()
+		Return Null
+	End Method
+
+	Method CreateTabView:TUITabView()
+		Return Null
+	End Method
+
+	Method CreateButton:TUIButton()
+		Return Null
+	End Method
+
+	Method CreateComboBox:TUIComboBox()
+		Return Null
+	End Method
+
+	Method CreateCheckBox:TUICheckBox()
+		Return Null
+	End Method
+
+	Method CreateRadioGroup:TUIRadioGroup()
+		Return Null
+	End Method
+
+	Method CreateStepper:TUIStepper()
+		Return Null
+	End Method
+
+	Method CreateSegmentedControl:TUISegmentedControl()
+		Return Null
+	End Method
+
+	Method CreateSwitch:TUISwitch()
+		Return Null
+	End Method
+
+	Method CreateSlider:TUISlider()
+		Return Null
+	End Method
+
+	Method CreateRotaryDial:TUIRotaryDial()
+		Return Null
+	End Method
+
+	Method CreatePopupMenu:TUIPopupMenu()
+		Return Null
+	End Method
+
+	Method CreateDialog:TUIDialog()
+		Return Null
+	End Method
+End Type
+
+Private
+
+Type TUIStandardControlFactory Extends TUIControlFactory Final
+	Method CreateList:TUIList() Override
+		Return New TUIList
+	End Method
+
+	Method CreateTabView:TUITabView() Override
+		Return New TUITabView
+	End Method
+
+	Method CreateButton:TUIButton() Override
+		Return New TUIButton
+	End Method
+
+	Method CreateComboBox:TUIComboBox() Override
+		Return New TUIComboBox
+	End Method
+
+	Method CreateCheckBox:TUICheckBox() Override
+		Return New TUICheckBox
+	End Method
+
+	Method CreateRadioGroup:TUIRadioGroup() Override
+		Return New TUIRadioGroup
+	End Method
+
+	Method CreateStepper:TUIStepper() Override
+		Return New TUIStepper
+	End Method
+
+	Method CreateSegmentedControl:TUISegmentedControl() Override
+		Return New TUISegmentedControl
+	End Method
+
+	Method CreateSwitch:TUISwitch() Override
+		Return New TUISwitch
+	End Method
+
+	Method CreateSlider:TUISlider() Override
+		Return New TUISlider
+	End Method
+
+	Method CreateRotaryDial:TUIRotaryDial() Override
+		Return New TUIRotaryDial
+	End Method
+
+	Method CreatePopupMenu:TUIPopupMenu() Override
+		Return New TUIPopupMenu
+	End Method
+
+	Method CreateDialog:TUIDialog() Override
+		Return New TUIDialog
+	End Method
+End Type
+
+Public
+
+Rem
+bbdoc: Installs the standard interactive-control constructors.
+about: Embedded.UI.Controls calls this automatically. Display-only firmware
+can omit that module so the linker can discard the control implementation.
+End Rem
+Function InstallStandardUIControls()
+	If Not _uiControlFactory Then
+		RegisterUIControlFactory(New TUIStandardControlFactory)
+	End If
+End Function
+
+Rem
+bbdoc: Installs the interactive-control constructor provider.
+about: Applications normally obtain this automatically by importing
+Embedded.UI.Controls or Embedded.UI.Interactive.
+End Rem
+Function RegisterUIControlFactory(factory:TUIControlFactory)
+	_uiControlFactory = factory
+End Function
+
+Function UIControlsAvailable:Int()
+	Return _uiControlFactory <> Null
+End Function
+
+Private
+
+Function _UIRequireControls:TUIControlFactory()
+	If Not _uiControlFactory Then RuntimeError ..
+		"Interactive UI controls require Import Embedded.UI.Controls"
+	Return _uiControlFactory
+End Function
+
+Public
+
 Type TUIContainer Extends TUIWidget
 	Public
 	Field layoutDirection:Int
@@ -641,13 +795,13 @@ Type TUIContainer Extends TUIWidget
 	End Method
 
 	Method List:TUIList() Final
-		Local widget:TUIList = New TUIList
+		Local widget:TUIList = _UIRequireControls().CreateList()
 		Add(widget)
 		Return widget
 	End Method
 
 	Method TabView:TUITabView() Final
-		Local widget:TUITabView = New TUITabView
+		Local widget:TUITabView = _UIRequireControls().CreateTabView()
 		Add(widget)
 		Return widget
 	End Method
@@ -694,20 +848,20 @@ Type TUIContainer Extends TUIWidget
 	End Method
 
 	Method Button:TUIButton(text:String = "") Final
-		Local widget:TUIButton = New TUIButton
+		Local widget:TUIButton = _UIRequireControls().CreateButton()
 		widget.SetText(text)
 		Add(widget)
 		Return widget
 	End Method
 
 	Method ComboBox:TUIComboBox() Final
-		Local widget:TUIComboBox = New TUIComboBox
+		Local widget:TUIComboBox = _UIRequireControls().CreateComboBox()
 		Add(widget)
 		Return widget
 	End Method
 
 	Method CheckBox:TUICheckBox(text:String = "", checked:Int = False) Final
-		Local widget:TUICheckBox = New TUICheckBox
+		Local widget:TUICheckBox = _UIRequireControls().CreateCheckBox()
 		widget.SetText(text)
 		widget.SetChecked(checked)
 		Add(widget)
@@ -715,13 +869,13 @@ Type TUIContainer Extends TUIWidget
 	End Method
 
 	Method RadioGroup:TUIRadioGroup() Final
-		Local widget:TUIRadioGroup = New TUIRadioGroup
+		Local widget:TUIRadioGroup = _UIRequireControls().CreateRadioGroup()
 		Add(widget)
 		Return widget
 	End Method
 
 	Method Stepper:TUIStepper(minimum:Int = 0, maximum:Int = 100, value:Int = 0, step:Int = 1) Final
-		Local widget:TUIStepper = New TUIStepper
+		Local widget:TUIStepper = _UIRequireControls().CreateStepper()
 		widget.SetRange(minimum, maximum)
 		widget.SetStep(step)
 		widget.SetValue(value)
@@ -731,27 +885,27 @@ Type TUIContainer Extends TUIWidget
 
 	Method DecimalStepper:TUIStepper(minimum:Double = 0.0, maximum:Double = 100.0, ..
 			value:Double = 0.0, step:Double = 1.0, decimalPlaces:Int = 1) Final
-		Local widget:TUIStepper = New TUIStepper
+		Local widget:TUIStepper = _UIRequireControls().CreateStepper()
 		widget.ConfigureDecimal(minimum, maximum, value, step, decimalPlaces)
 		Add(widget)
 		Return widget
 	End Method
 
 	Method SegmentedControl:TUISegmentedControl() Final
-		Local widget:TUISegmentedControl = New TUISegmentedControl
+		Local widget:TUISegmentedControl = _UIRequireControls().CreateSegmentedControl()
 		Add(widget)
 		Return widget
 	End Method
 
 	Method Switch:TUISwitch(value:Int = False) Final
-		Local widget:TUISwitch = New TUISwitch
+		Local widget:TUISwitch = _UIRequireControls().CreateSwitch()
 		widget.SetValue(value)
 		Add(widget)
 		Return widget
 	End Method
 
 	Method Slider:TUISlider(minimum:Int = 0, maximum:Int = 100, value:Int = 0) Final
-		Local widget:TUISlider = New TUISlider
+		Local widget:TUISlider = _UIRequireControls().CreateSlider()
 		widget.SetRange(minimum, maximum)
 		widget.SetValue(value)
 		Add(widget)
@@ -790,7 +944,7 @@ Type TUIContainer Extends TUIWidget
 	End Method
 
 	Method RotaryDial:TUIRotaryDial(minimum:Int = 0, maximum:Int = 100, value:Int = 0) Final
-		Local widget:TUIRotaryDial = New TUIRotaryDial
+		Local widget:TUIRotaryDial = _UIRequireControls().CreateRotaryDial()
 		widget.SetRange(minimum, maximum)
 		widget.SetValue(value)
 		Add(widget)
@@ -1185,11 +1339,6 @@ Type TUIHeader Extends TUIContainer Final
 	Method New()
 		layoutDirection = 1
 		gap = 10
-		backButton = New TUIButton
-		backButton.SetText("< Back")
-		backButton.SetVisible(False)
-		backButton.OnClick(_UIHeaderBack)
-		Add(backButton)
 		titleLabel = New TUILabel
 		titleLabel.SetGrow(1)
 		titleLabel.SetAlign(UIAlignCenter)
@@ -1209,11 +1358,15 @@ Type TUIHeader Extends TUIContainer Final
 	End Method
 
 	Method SetBackVisible(value:Int)
-		backButton.SetVisible(value)
+		If value Then
+			_EnsureBackButton().SetVisible(True)
+		Else If backButton Then
+			backButton.SetVisible(False)
+		End If
 	End Method
 
 	Method BackButton:TUIButton()
-		Return backButton
+		Return _EnsureBackButton()
 	End Method
 
 	Method Action:TUIButton(text:String, handler(button:TUIButton) = Null)
@@ -1225,6 +1378,21 @@ Type TUIHeader Extends TUIContainer Final
 	Method DefaultStyle:TUIStyle() Override
 		If Context() And Context().Theme() Then Return Context().Theme().header
 		Return Super.DefaultStyle()
+	End Method
+
+	Private
+	Method _EnsureBackButton:TUIButton()
+		If backButton Then Return backButton
+		backButton = _UIRequireControls().CreateButton()
+		backButton.SetText("< Back")
+		backButton.SetVisible(False)
+		backButton.OnClick(_UIHeaderBack)
+		Add(backButton)
+		' The title already occupies the first slot; Back belongs before it.
+		Local last:Int = uiChildren.Length - 1
+		uiChildren[last] = uiChildren[0]
+		uiChildren[0] = backButton
+		Return backButton
 	End Method
 End Type
 
@@ -4125,13 +4293,13 @@ Type TUIContext
 	End Method
 
 	Method PopupMenu:TUIPopupMenu()
-		Local menu:TUIPopupMenu = New TUIPopupMenu
+		Local menu:TUIPopupMenu = _UIRequireControls().CreatePopupMenu()
 		menu._Attach(Self, Null)
 		Return menu
 	End Method
 
 	Method Dialog:TUIDialog(title:String = "", message:String = "")
-		Local dialog:TUIDialog = New TUIDialog
+		Local dialog:TUIDialog = _UIRequireControls().CreateDialog()
 		dialog.SetTitle(title)
 		dialog.SetMessage(message)
 		dialog._Attach(Self, Null)

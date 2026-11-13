@@ -3,7 +3,8 @@
 `Embedded.UI` is a small retained user-interface layer for embedded displays.
 It provides rows, columns and stacks, styled controls, focus navigation,
 semantic events, scrolling, selectable lists, tabs and popup overlays, dialogs
-and queued notifications. Optional touch handling lives in
+and queued notifications. Optional control construction lives in
+`Embedded.UI.Controls`, while touch handling lives in
 `Embedded.UI.Interactive`. Rendering uses
 `Embedded.Graphics2D`, so the same widget code can sit over mono or colour
 display drivers.
@@ -67,8 +68,9 @@ an encoder or another application input source needs them.
 
 Only import `Embedded.UI.Interactive` when touch is required. It owns the touch
 driver dependency, global event hook, contact adapter and pointer/drag state
-machine; these are absent from a firmware image which imports only
-`Embedded.UI`. `TUITouchInput.Attach()` can also add touch to an existing
+machine, and automatically imports `Embedded.UI.Controls`; these are absent
+from a firmware image which imports only `Embedded.UI`.
+`TUITouchInput.Attach()` can also add touch to an existing
 context, while `CreateContext()` and `CreateContextWithBuffer()` provide
 one-step construction.
 
@@ -79,6 +81,14 @@ Containers create their children with `Row()`, `Column()`, `Stack()`,
 checkboxes, switches, sliders and progress bars. Requested sizes, grow factors,
 alignment, margins, padding and gaps determine layout without allocating a new
 tree for every frame.
+
+Passive presentation widgets such as labels, cards, images, gauges, progress
+bars, indicators and sparklines need only `Embedded.UI`. Import
+`Embedded.UI.Controls` for buttons, lists, tabs, selection/value controls,
+popup menus and dialogs. This is useful for a non-touch device driven by GPIO
+buttons or an encoder: it includes the controls without including a touch
+driver or pointer state. Importing `Embedded.UI.Interactive` installs both the
+standard controls and touch support automatically.
 
 Controls support touch and explicit focus navigation. A non-touch input adapter
 can use `FocusNext()`, `FocusPrevious()`, `ActivateFocused()` and

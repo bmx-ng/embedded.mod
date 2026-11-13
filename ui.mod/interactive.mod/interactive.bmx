@@ -19,6 +19,7 @@ Import BRL.Event
 Import Embedded.Drivers.Display
 Import Embedded.Drivers.Touch
 Import Embedded.UI
+Import Embedded.UI.Controls
 
 Const UITouchContextMaximum:Int = 4
 

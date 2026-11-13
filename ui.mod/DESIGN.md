@@ -21,6 +21,11 @@ intended to reproduce a desktop widget toolkit or all of LVGL.
   import the touch abstraction, install an input event hook, or retain pointer
   and drag state. A display-only context must not occupy an input slot, receive
   touch events, perform input hit-testing, or scan for gesture momentum.
+- Concrete interactive-control construction is installed by the optional
+  `Embedded.UI.Controls` module. The fluent container API remains in the core,
+  but display-only firmware must be able to link without the button, list,
+  selection, dialog and tab implementations. The touch adapter imports this
+  provider automatically; physical-input applications may import it alone.
 - Dirty rendering must produce the same visible result as a complete redraw.
   Page changes may invalidate the complete output when every pixel can change.
 - Platform acceleration and multiple framebuffers are optional adapters. UI

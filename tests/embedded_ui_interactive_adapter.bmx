@@ -47,6 +47,7 @@ page.SetPadding(2)
 Local card:TUICard = page.Card("Sensor")
 card.Label("Temperature")
 card.ProgressBar(-20, 60, 21)
+card.Button("Refresh")
 
 If Not ui.Render() Then RuntimeError "interactive UI did not render"
 ui.Close()
