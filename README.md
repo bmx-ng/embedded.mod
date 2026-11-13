@@ -83,7 +83,8 @@ and other capabilities that do not share equivalent semantics.
 | [`Embedded.Drivers.Display.Fonts.*`](drivers.mod/README.md) | Independently imported ANAKRON, Cozette, Scientifica, Spleen, Tamzen, and Terminus bitmap fonts |
 | [`Embedded.Drivers.Displays.SSD1306`](drivers.mod/README.md) | Portable I2C SSD1306 OLED driver, including the 72x40 0.42-inch panel preset |
 | [`Embedded.Drivers.Touch`](drivers.mod/README.md) | Controller-neutral multitouch polling translated to standard `BRL.Event` touch events |
-| [`Embedded.Graphics2D`](drivers.mod/README.md) | Optional Max2D-style stateful drawing facade over portable display buffers |
+| [`Embedded.Graphics2D`](graphics2d.mod/README.md) | Optional Max2D-style stateful drawing facade over portable display buffers |
+| [`Embedded.Graphics2D.Sprite`](graphics2d.mod/README.md#sprite-sheets-and-animation) | Flash-resident sprite sheets, atlas metadata, and deterministic animation playback |
 | [`Embedded.UI`](ui.mod/README.md) | Lightweight retained widget trees and passive presentation, with optional controls and touch adapters |
 | `Embedded.Hardware.UART` | Controller setup, pin routing, framing, flow control, synchronous I/O, deadlines, break, and error state |
 | `Embedded.IO.BufferedUART` | A managed receive buffer and `TStream`-compatible, line-oriented UART access |
