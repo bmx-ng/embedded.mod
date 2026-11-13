@@ -561,6 +561,35 @@ Type TUIContainer Extends TUIWidget
 		Return widget
 	End Method
 
+	Method RadioGroup:TUIRadioGroup() Final
+		Local widget:TUIRadioGroup = New TUIRadioGroup
+		Add(widget)
+		Return widget
+	End Method
+
+	Method Stepper:TUIStepper(minimum:Int = 0, maximum:Int = 100, value:Int = 0, step:Int = 1) Final
+		Local widget:TUIStepper = New TUIStepper
+		widget.SetRange(minimum, maximum)
+		widget.SetStep(step)
+		widget.SetValue(value)
+		Add(widget)
+		Return widget
+	End Method
+
+	Method DecimalStepper:TUIStepper(minimum:Double = 0.0, maximum:Double = 100.0, ..
+			value:Double = 0.0, step:Double = 1.0, decimalPlaces:Int = 1) Final
+		Local widget:TUIStepper = New TUIStepper
+		widget.ConfigureDecimal(minimum, maximum, value, step, decimalPlaces)
+		Add(widget)
+		Return widget
+	End Method
+
+	Method SegmentedControl:TUISegmentedControl() Final
+		Local widget:TUISegmentedControl = New TUISegmentedControl
+		Add(widget)
+		Return widget
+	End Method
+
 	Method Switch:TUISwitch(value:Int = False) Final
 		Local widget:TUISwitch = New TUISwitch
 		widget.SetValue(value)
@@ -588,11 +617,13 @@ Type TUIContainer Extends TUIWidget
 		Local contentWidth:Int
 		Local contentHeight:Int
 		Local visibleCount:Int
+		Local childAvailableWidth:Int = Max(availableWidth - paddingLeft - paddingRight, 0)
+		Local childAvailableHeight:Int = Max(availableHeight - paddingTop - paddingBottom, 0)
 		For Local child:TUIWidget = EachIn uiChildren
 			If Not child.Visible() Then Continue
 			Local childWidth:Int
 			Local childHeight:Int
-			child.PreferredSize(availableWidth, availableHeight, childWidth, childHeight)
+			child.PreferredSize(childAvailableWidth, childAvailableHeight, childWidth, childHeight)
 			If layoutDirection = 1 Then
 				contentWidth :+ childWidth + child.marginLeft + child.marginRight
 				If childHeight + child.marginTop + child.marginBottom > contentHeight Then ..
@@ -1550,17 +1581,38 @@ Type TUILabel Extends TUIWidget Final
 	Public
 	Field labelText:String
 
+	Private
+	Field wordWrap:Int
+	Field wrappedLines:String[] = New String[0]
+	Field wrappedWidth:Int = -1
+	Field wrappedFont:TBitmapFont
+	Field wrappedScale:Int
+
 	Public
 	Method SetText(text:String)
 		If Not text Then text = ""
 		If labelText = text Then Return
 		_Invalidate()
 		labelText = text
+		wrappedWidth = -1
 		_RequestLayout()
 	End Method
 
 	Method Text:String()
 		Return labelText
+	End Method
+
+	Method SetWordWrap(value:Int)
+		value = value <> 0
+		If wordWrap = value Then Return
+		wordWrap = value
+		wrappedWidth = -1
+		_RequestLayout()
+		_Invalidate()
+	End Method
+
+	Method WordWrap:Int()
+		Return wordWrap
 	End Method
 
 	Method DefaultStyle:TUIStyle() Override
@@ -1574,12 +1626,23 @@ Type TUILabel Extends TUIWidget Final
 		width = 0
 		height = 0
 		If style.font Then
-			width = style.font.TextWidth(labelText, style.fontScale)
-			Local lineCount:Int = 1
-			For Local index:Int = 0 Until labelText.length
-				If labelText[index] = 10 Then lineCount :+ 1
-			Next
-			height = style.font.LineHeight() * style.fontScale * lineCount
+			If wordWrap Then
+				Local contentWidth:Int = availableWidth - style.paddingLeft - style.paddingRight
+				If requestedWidth >= 0 Then contentWidth = requestedWidth - style.paddingLeft - style.paddingRight
+				If contentWidth < 1 Then contentWidth = 1
+				_Wrap(contentWidth, style)
+				For Local line:String = EachIn wrappedLines
+					width = Max(width, style.font.TextWidth(line, style.fontScale))
+				Next
+				height = style.font.LineHeight() * style.fontScale * Max(wrappedLines.Length, 1)
+			Else
+				width = style.font.TextWidth(labelText, style.fontScale)
+				Local lineCount:Int = 1
+				For Local index:Int = 0 Until labelText.length
+					If labelText[index] = 10 Then lineCount :+ 1
+				Next
+				height = style.font.LineHeight() * style.fontScale * lineCount
+			End If
 		End If
 		width :+ style.paddingLeft + style.paddingRight
 		height :+ style.paddingTop + style.paddingBottom
@@ -1593,11 +1656,62 @@ Type TUILabel Extends TUIWidget Final
 		If Not style.font Then Return
 		graphics.SetFont(style.font)
 		graphics.SetColorValue(style.foreground)
-		graphics.DrawText(labelText, X() + style.paddingLeft, Y() + style.paddingTop, style.fontScale)
+		If wordWrap Then
+			Local contentWidth:Int = Max(Width() - style.paddingLeft - style.paddingRight, 1)
+			_Wrap(contentWidth, style)
+			Local y:Int = Y() + style.paddingTop
+			Local lineHeight:Int = style.font.LineHeight() * style.fontScale
+			For Local line:String = EachIn wrappedLines
+				graphics.DrawText(line, X() + style.paddingLeft, y, style.fontScale)
+				y :+ lineHeight
+			Next
+		Else
+			graphics.DrawText(labelText, X() + style.paddingLeft, Y() + style.paddingTop, style.fontScale)
+		End If
+	End Method
+
+	Private
+	Method _Wrap(maxWidth:Int, style:TUIStyle)
+		If wrappedWidth = maxWidth And wrappedFont = style.font And wrappedScale = style.fontScale Then Return
+		wrappedWidth = maxWidth
+		wrappedFont = style.font
+		wrappedScale = style.fontScale
+		wrappedLines = New String[0]
+		Local line:String
+		Local word:String
+		For Local index:Int = 0 To labelText.Length
+			Local character:Int = 10
+			If index < labelText.Length Then character = labelText[index]
+			If character = 32 Or character = 10 Then
+				If word.Length Then
+					Local candidate:String = word
+					If line.Length Then candidate = line + " " + word
+					If line.Length And style.font.TextWidth(candidate, style.fontScale) > maxWidth Then
+						_AppendWrappedLine(line)
+						line = word
+					Else
+						line = candidate
+					End If
+					word = ""
+				End If
+				If character = 10 Then
+					_AppendWrappedLine(line)
+					line = ""
+				End If
+			Else
+				word :+ Chr(character)
+			End If
+		Next
+		If wrappedLines.Length = 0 Then _AppendWrappedLine("")
+	End Method
+
+	Method _AppendWrappedLine(line:String)
+		wrappedLines = wrappedLines[..wrappedLines.Length + 1]
+		wrappedLines[wrappedLines.Length - 1] = line
 	End Method
 End Type
 
-Type TUIButton Extends TUIWidget Final
+Type TUIButton Extends TUIWidget
 	Public
 	Field buttonText:String
 	Field clickHandler(button:TUIButton)
@@ -1796,6 +1910,166 @@ Type TUICheckBox Extends TUIWidget Final
 	End Method
 End Type
 
+Type TUIRadioGroup Extends TUIContainer Final
+	Private
+	Field options:TUIRadioButton[] = New TUIRadioButton[0]
+	Field selectedIndex:Int = -1
+	Field selectionHandler(group:TUIRadioGroup)
+
+	Public
+	Method New()
+		layoutDirection = 2
+		gap = 2
+	End Method
+
+	Method Option:TUIRadioButton(text:String = "")
+		Local option:TUIRadioButton = New TUIRadioButton
+		option._Configure(Self, options.Length)
+		option.SetText(text)
+		options = options[..options.Length + 1]
+		options[options.Length - 1] = option
+		Add(option)
+		If selectedIndex < 0 Then selectedIndex = 0
+		Return option
+	End Method
+
+	Method OptionCount:Int()
+		Return options.Length
+	End Method
+
+	Method OptionAt:TUIRadioButton(index:Int)
+		If index < 0 Or index >= options.Length Then Return Null
+		Return options[index]
+	End Method
+
+	Method SelectedIndex:Int()
+		Return selectedIndex
+	End Method
+
+	Method SetSelectedIndex(value:Int)
+		_SelectIndex(value, False)
+	End Method
+
+	Method OnSelectionChanged(handler(group:TUIRadioGroup))
+		selectionHandler = handler
+	End Method
+
+	Public
+	Method _SelectIndex(value:Int, notify:Int)
+		If options.Length = 0 Then value = -1
+		If value < -1 Then value = -1
+		If value >= options.Length Then value = options.Length - 1
+		If selectedIndex = value Then Return
+		Local previous:Int = selectedIndex
+		selectedIndex = value
+		If previous >= 0 Then options[previous]._Invalidate()
+		If selectedIndex >= 0 Then options[selectedIndex]._Invalidate()
+		If notify Then
+			If selectionHandler Then selectionHandler(Self)
+			EmitEvent(CreateEvent(EVENT_UISELECTIONCHANGED, Self, selectedIndex))
+		End If
+	End Method
+End Type
+
+Type TUIRadioButton Extends TUIWidget Final
+	Private
+	Field radioText:String
+	Field radioOwner:TUIRadioGroup
+	Field radioIndex:Int
+
+	Public
+	Method _Configure(owner:TUIRadioGroup, index:Int)
+		radioOwner = owner
+		radioIndex = index
+	End Method
+
+	Method New()
+		clickable = True
+		focusable = True
+	End Method
+
+	Method SetText(text:String)
+		If Not text Then text = ""
+		If radioText = text Then Return
+		radioText = text
+		_Invalidate()
+		_RequestLayout()
+	End Method
+
+	Method Text:String()
+		Return radioText
+	End Method
+
+	Method Selected:Int()
+		Return radioOwner And radioOwner.SelectedIndex() = radioIndex
+	End Method
+
+	Method DefaultStyle:TUIStyle() Override
+		If Context() And Context().Theme() Then
+			If Not Enabled() Then Return Context().Theme().controlDisabled
+			If Pressed() Then Return Context().Theme().controlPressed
+			If Selected() Then Return Context().Theme().controlActive
+			Return Context().Theme().control
+		End If
+		Return Super.DefaultStyle()
+	End Method
+
+	Method PreferredSize(availableWidth:Int, availableHeight:Int, width:Int Var, height:Int Var) Override
+		Local style:TUIStyle = DefaultStyle()
+		If uiStyle Then style = uiStyle
+		Local lineHeight:Int = 16
+		Local textWidth:Int
+		If style.font Then
+			lineHeight = style.font.LineHeight() * style.fontScale
+			textWidth = style.font.TextWidth(radioText, style.fontScale)
+		End If
+		Local circleSize:Int = 16 * style.fontScale
+		Local labelGap:Int = Max(style.fontScale * 4, 6)
+		width = circleSize + labelGap + textWidth + style.paddingLeft + style.paddingRight
+		height = Max(lineHeight, circleSize) + style.paddingTop + style.paddingBottom
+		If requestedWidth >= 0 Then width = requestedWidth
+		If requestedHeight >= 0 Then height = requestedHeight
+	End Method
+
+	Method Draw(graphics:TEmbedded2DContext) Override
+		Local style:TUIStyle = DefaultStyle()
+		If uiStyle Then style = uiStyle
+		Local diameter:Int = Max(Min(Height() - style.paddingTop - style.paddingBottom, ..
+			16 * style.fontScale), 8)
+		Local centerX:Int = X() + style.paddingLeft + diameter / 2
+		Local centerY:Int = Y() + Height() / 2
+		graphics.SetColorValue(style.border)
+		graphics.FillCircle(centerX, centerY, diameter / 2)
+		graphics.SetColorValue(style.background)
+		graphics.FillCircle(centerX, centerY, Max(diameter / 2 - Max(style.borderWidth, 1), 1))
+		If Selected() Then
+			graphics.SetColorValue(style.foreground)
+			graphics.FillCircle(centerX, centerY, Max(diameter / 5, 2))
+		End If
+		If style.font And radioText.Length Then
+			graphics.SetFont(style.font)
+			graphics.SetColorValue(style.foreground)
+			Local textHeight:Int = style.font.LineHeight() * style.fontScale
+			graphics.DrawText(radioText, centerX + diameter / 2 + Max(style.fontScale * 4, 6), ..
+				Y() + (Height() - textHeight) / 2, style.fontScale)
+		End If
+	End Method
+
+	Public
+	Method _Activate()
+		If radioOwner Then radioOwner._SelectIndex(radioIndex, True)
+	End Method
+
+	Method _Move(delta:Int)
+		If Not radioOwner Or delta = 0 Then Return
+		Local nextIndex:Int = radioOwner.SelectedIndex() + delta
+		If nextIndex < 0 Then nextIndex = 0
+		If nextIndex >= radioOwner.OptionCount() Then nextIndex = radioOwner.OptionCount() - 1
+		radioOwner._SelectIndex(nextIndex, True)
+		If Context() Then Context().SetFocus(radioOwner.OptionAt(nextIndex))
+	End Method
+End Type
+
 Type TUISwitch Extends TUIWidget Final
 	Public
 	Field switchValue:Int
@@ -1911,6 +2185,300 @@ Type TUIRangeWidget Extends TUIWidget
 	Method Fraction:Int(scale:Int)
 		If maximumValue <= minimumValue Then Return 0
 		Return Int(Long(currentValue - minimumValue) * scale / Long(maximumValue - minimumValue))
+	End Method
+End Type
+
+Type TUIStepper Extends TUIRangeWidget Final
+	Private
+	Field stepValue:Int = 1
+	Field decimalPlaces:Int
+	Field decimalScale:Int = 1
+	Field changeHandler(stepper:TUIStepper)
+
+	Public
+	Method New()
+		clickable = True
+		focusable = True
+	End Method
+
+	Method SetStep(value:Int)
+		If value < 1 Then value = 1
+		stepValue = value
+	End Method
+
+	Method Step:Int()
+		Return stepValue
+	End Method
+
+	Method ConfigureDecimal(minimum:Double, maximum:Double, value:Double, step:Double, places:Int = 1)
+		If places < 1 Then places = 1
+		If places > 6 Then places = 6
+		decimalPlaces = places
+		decimalScale = 1
+		For Local index:Int = 0 Until decimalPlaces
+			decimalScale :* 10
+		Next
+		SetRange(_DecimalUnits(minimum), _DecimalUnits(maximum))
+		stepValue = Max(Abs(_DecimalUnits(step)), 1)
+		SetValue(_DecimalUnits(value))
+	End Method
+
+	Method SetDecimalRange(minimum:Double, maximum:Double)
+		SetRange(_DecimalUnits(minimum), _DecimalUnits(maximum))
+	End Method
+
+	Method SetDecimalValue(value:Double)
+		SetValue(_DecimalUnits(value))
+	End Method
+
+	Method DecimalValue:Double()
+		Return Double(currentValue) / Double(decimalScale)
+	End Method
+
+	Method SetDecimalStep(value:Double)
+		stepValue = Max(Abs(_DecimalUnits(value)), 1)
+	End Method
+
+	Method DecimalPlaces:Int()
+		Return decimalPlaces
+	End Method
+
+	Method ValueText:String()
+		Return _ValueText()
+	End Method
+
+	Method OnChange(handler(stepper:TUIStepper))
+		changeHandler = handler
+	End Method
+
+	Method DefaultStyle:TUIStyle() Override
+		If Context() And Context().Theme() Then
+			If Not Enabled() Then Return Context().Theme().controlDisabled
+			If Pressed() Then Return Context().Theme().controlPressed
+			Return Context().Theme().control
+		End If
+		Return Super.DefaultStyle()
+	End Method
+
+	Method PreferredSize(availableWidth:Int, availableHeight:Int, width:Int Var, height:Int Var) Override
+		Local style:TUIStyle = DefaultStyle()
+		If uiStyle Then style = uiStyle
+		Local lineHeight:Int = 16
+		If style.font Then lineHeight = style.font.LineHeight() * style.fontScale
+		width = lineHeight * 6 + style.paddingLeft + style.paddingRight
+		height = lineHeight + style.paddingTop + style.paddingBottom
+		If requestedWidth >= 0 Then width = requestedWidth
+		If requestedHeight >= 0 Then height = requestedHeight
+	End Method
+
+	Method Draw(graphics:TEmbedded2DContext) Override
+		Local style:TUIStyle = DefaultStyle()
+		If uiStyle Then style = uiStyle
+		graphics.SetColorValue(style.background)
+		graphics.FillRoundRect(X(), Y(), Width(), Height(), style.cornerRadius)
+		graphics.SetColorValue(style.border)
+		If style.borderWidth > 0 Then graphics.DrawRoundRect(X(), Y(), Width(), Height(), style.cornerRadius)
+		Local partWidth:Int = Width() / 3
+		graphics.DrawLine(X() + partWidth, Y(), X() + partWidth, Y() + Height() - 1)
+		graphics.DrawLine(X() + partWidth * 2, Y(), X() + partWidth * 2, Y() + Height() - 1)
+		If style.font Then
+			graphics.SetFont(style.font)
+			graphics.SetColorValue(style.foreground)
+			Local textHeight:Int = style.font.LineHeight() * style.fontScale
+			_DrawCenteredText(graphics, "-", X(), partWidth, textHeight, style)
+			_DrawCenteredText(graphics, _ValueText(), X() + partWidth, partWidth, textHeight, style)
+			_DrawCenteredText(graphics, "+", X() + partWidth * 2, Width() - partWidth * 2, textHeight, style)
+		End If
+	End Method
+
+	Private
+	Method _DecimalUnits:Int(value:Double)
+		If value >= 0.0 Then Return Int(value * Double(decimalScale) + 0.5)
+		Return Int(value * Double(decimalScale) - 0.5)
+	End Method
+
+	Method _ValueText:String()
+		If decimalPlaces <= 0 Then Return String(currentValue)
+		Local units:Int = currentValue
+		Local sign:String
+		If units < 0 Then
+			sign = "-"
+			units = -units
+		End If
+		Local fraction:Int = units Mod decimalScale
+		Local fractionText:String = String(fraction)
+		While fractionText.Length < decimalPlaces
+			fractionText = "0" + fractionText
+		Wend
+		Return sign + String(units / decimalScale) + "." + fractionText
+	End Method
+
+	Method _DrawCenteredText(graphics:TEmbedded2DContext, text:String, x:Int, width:Int, ..
+			textHeight:Int, style:TUIStyle)
+		Local textWidth:Int = style.font.TextWidth(text, style.fontScale)
+		graphics.DrawText(text, x + (width - textWidth) / 2, Y() + (Height() - textHeight) / 2, style.fontScale)
+	End Method
+
+	Public
+	Method _Activate()
+		_SetUserValue(currentValue + stepValue)
+	End Method
+
+	Method _ActivateAt(x:Int)
+		Local partWidth:Int = Max(Width() / 3, 1)
+		If x < X() + partWidth Then
+			_SetUserValue(currentValue - stepValue)
+		Else If x >= X() + partWidth * 2 Then
+			_SetUserValue(currentValue + stepValue)
+		End If
+	End Method
+
+	Method _Adjust(delta:Int)
+		_SetUserValue(currentValue + delta * stepValue)
+	End Method
+
+	Method _SetUserValue(value:Int)
+		If value < minimumValue Then value = minimumValue
+		If value > maximumValue Then value = maximumValue
+		If value = currentValue Then Return
+		SetValue(value)
+		If changeHandler Then changeHandler(Self)
+		EmitEvent(CreateEvent(EVENT_UIVALUECHANGED, Self, currentValue))
+	End Method
+End Type
+
+Type TUISegmentedControl Extends TUIWidget Final
+	Private
+	Field itemNames:String[] = New String[0]
+	Field selectedIndex:Int = -1
+	Field selectionHandler(control:TUISegmentedControl)
+
+	Public
+	Method New()
+		clickable = True
+		focusable = True
+	End Method
+
+	Method AddItem:Int(text:String)
+		If Not text Then text = ""
+		itemNames = itemNames[..itemNames.Length + 1]
+		itemNames[itemNames.Length - 1] = text
+		If selectedIndex < 0 Then selectedIndex = 0
+		_RequestLayout()
+		Return itemNames.Length - 1
+	End Method
+
+	Method ItemCount:Int()
+		Return itemNames.Length
+	End Method
+
+	Method ItemText:String(index:Int)
+		If index < 0 Or index >= itemNames.Length Then Return ""
+		Return itemNames[index]
+	End Method
+
+	Method SelectedIndex:Int()
+		Return selectedIndex
+	End Method
+
+	Method SetSelectedIndex(value:Int)
+		_SetSelectedIndex(value, False)
+	End Method
+
+	Method OnSelectionChanged(handler(control:TUISegmentedControl))
+		selectionHandler = handler
+	End Method
+
+	Method DefaultStyle:TUIStyle() Override
+		If Context() And Context().Theme() Then
+			If Not Enabled() Then Return Context().Theme().controlDisabled
+			If Pressed() Then Return Context().Theme().controlPressed
+			Return Context().Theme().control
+		End If
+		Return Super.DefaultStyle()
+	End Method
+
+	Method PreferredSize(availableWidth:Int, availableHeight:Int, width:Int Var, height:Int Var) Override
+		Local style:TUIStyle = DefaultStyle()
+		If uiStyle Then style = uiStyle
+		Local lineHeight:Int = 16
+		Local widest:Int
+		If style.font Then
+			lineHeight = style.font.LineHeight() * style.fontScale
+			For Local text:String = EachIn itemNames
+				widest = Max(widest, style.font.TextWidth(text, style.fontScale))
+			Next
+		End If
+		width = (widest + style.paddingLeft + style.paddingRight) * Max(itemNames.Length, 1)
+		height = lineHeight + style.paddingTop + style.paddingBottom
+		If requestedWidth >= 0 Then width = requestedWidth
+		If requestedHeight >= 0 Then height = requestedHeight
+	End Method
+
+	Method Draw(graphics:TEmbedded2DContext) Override
+		Local style:TUIStyle = DefaultStyle()
+		If uiStyle Then style = uiStyle
+		Local active:TUIStyle = style
+		If Context() And Context().Theme() And Enabled() Then active = Context().Theme().controlActive
+		graphics.SetColorValue(style.background)
+		graphics.FillRoundRect(X(), Y(), Width(), Height(), style.cornerRadius)
+		If itemNames.Length = 0 Then Return
+		Local partWidth:Int = Width() / itemNames.Length
+		For Local index:Int = 0 Until itemNames.Length
+			Local partX:Int = X() + index * partWidth
+			Local partRight:Int = X() + (index + 1) * partWidth
+			If index = itemNames.Length - 1 Then partRight = X() + Width()
+			If index = selectedIndex Then
+				graphics.SetColorValue(active.background)
+				graphics.FillRect(partX, Y(), partRight - partX, Height())
+			End If
+			If index > 0 Then
+				graphics.SetColorValue(style.border)
+				graphics.DrawLine(partX, Y(), partX, Y() + Height() - 1)
+			End If
+			If style.font Then
+				Local text:String = itemNames[index]
+				Local textWidth:Int = style.font.TextWidth(text, style.fontScale)
+				Local textHeight:Int = style.font.LineHeight() * style.fontScale
+				graphics.SetFont(style.font)
+				If index = selectedIndex Then graphics.SetColorValue(active.foreground) Else graphics.SetColorValue(style.foreground)
+				graphics.DrawText(text, partX + (partRight - partX - textWidth) / 2, ..
+					Y() + (Height() - textHeight) / 2, style.fontScale)
+			End If
+		Next
+		If style.borderWidth > 0 Then
+			graphics.SetColorValue(style.border)
+			graphics.DrawRoundRect(X(), Y(), Width(), Height(), style.cornerRadius)
+		End If
+	End Method
+
+	Public
+	Method _Activate()
+		If itemNames.Length = 0 Then Return
+		_SetSelectedIndex((selectedIndex + 1) Mod itemNames.Length, True)
+	End Method
+
+	Method _ActivateAt(x:Int)
+		If itemNames.Length = 0 Or Width() <= 0 Then Return
+		Local index:Int = Int(Long(x - X()) * itemNames.Length / Width())
+		_SetSelectedIndex(index, True)
+	End Method
+
+	Method _Adjust(delta:Int)
+		_SetSelectedIndex(selectedIndex + delta, True)
+	End Method
+
+	Method _SetSelectedIndex(value:Int, notify:Int)
+		If itemNames.Length = 0 Then value = -1
+		If value < 0 And itemNames.Length > 0 Then value = 0
+		If value >= itemNames.Length Then value = itemNames.Length - 1
+		If selectedIndex = value Then Return
+		selectedIndex = value
+		_Invalidate()
+		If notify Then
+			If selectionHandler Then selectionHandler(Self)
+			EmitEvent(CreateEvent(EVENT_UISELECTIONCHANGED, Self, selectedIndex))
+		End If
 	End Method
 End Type
 
@@ -2034,6 +2602,119 @@ Type TUIProgressBar Extends TUIRangeWidget Final
 	End Method
 End Type
 
+Type TUIDialogAction Extends TUIButton Final
+	Private
+	Field dialogOwner:TUIDialog
+	Field actionResult:Int
+
+	Public
+	Method _Configure(owner:TUIDialog, result:Int)
+		dialogOwner = owner
+		actionResult = result
+	End Method
+
+	Method Result:Int()
+		Return actionResult
+	End Method
+
+	Public
+	Method _Activate() Override
+		Super._Activate()
+		If dialogOwner Then dialogOwner.Close(actionResult)
+	End Method
+End Type
+
+Type TUIDialog Extends TUIContainer Final
+	Private
+	Field titleLabel:TUILabel
+	Field messageLabel:TUILabel
+	Field actionRow:TUIRow
+	Field dialogResult:Int
+	Field resultHandler(dialog:TUIDialog, result:Int)
+
+	Public
+	Method New()
+		layoutDirection = 2
+		gap = 12
+		SetPadding(18)
+		drawBackground = True
+		titleLabel = Label()
+		messageLabel = Label()
+		messageLabel.SetWordWrap(True)
+		actionRow = Row()
+		actionRow.SetGap(6)
+	End Method
+
+	Method SetTitle(text:String)
+		titleLabel.SetText(text)
+	End Method
+
+	Method Title:String()
+		Return titleLabel.Text()
+	End Method
+
+	Method SetMessage(text:String)
+		messageLabel.SetText(text)
+	End Method
+
+	Method Message:String()
+		Return messageLabel.Text()
+	End Method
+
+	Method TitleLabel:TUILabel()
+		Return titleLabel
+	End Method
+
+	Method MessageLabel:TUILabel()
+		Return messageLabel
+	End Method
+
+	Method Action:TUIDialogAction(text:String, result:Int = 0)
+		Local action:TUIDialogAction = New TUIDialogAction
+		action._Configure(Self, result)
+		action.SetText(text)
+		action.SetGrow(1)
+		actionRow.Add(action)
+		Return action
+	End Method
+
+	Method OnResult(handler(dialog:TUIDialog, result:Int))
+		resultHandler = handler
+	End Method
+
+	Method Result:Int()
+		Return dialogResult
+	End Method
+
+	Method Show:Int(width:Int = UILayoutAuto, height:Int = UILayoutAuto)
+		If Not Context() Then Return False
+		Local preferredWidth:Int
+		Local preferredHeight:Int
+		Local availableWidth:Int = Context().Frame().Width()
+		If width >= 0 Then availableWidth = width
+		PreferredSize(availableWidth, Context().Frame().Height(), preferredWidth, preferredHeight)
+		If width < 0 Then width = preferredWidth
+		If height < 0 Then height = preferredHeight
+		Local x:Int = (Context().Frame().Width() - width) / 2
+		Local y:Int = (Context().Frame().Height() - height) / 2
+		Return Context().ShowOverlay(Self, x, y, width, height, False)
+	End Method
+
+	Method Close:Int(result:Int = 0)
+		If Not Context() Or Context().ActiveOverlay() <> Self Then Return False
+		dialogResult = result
+		Context().DismissOverlay()
+		If resultHandler Then resultHandler(Self, result)
+		EmitEvent(CreateEvent(EVENT_UIACTION, Self, result))
+		Return True
+	End Method
+
+	Method DefaultStyle:TUIStyle() Override
+		If Context() And Context().Theme() Then Return Context().Theme().control
+		Return Super.DefaultStyle()
+	End Method
+End Type
+
 Type TUIContext
 	Public
 	Field display:TDisplay
@@ -2127,6 +2808,14 @@ Type TUIContext
 		Local menu:TUIPopupMenu = New TUIPopupMenu
 		menu._Attach(Self, Null)
 		Return menu
+	End Method
+
+	Method Dialog:TUIDialog(title:String = "", message:String = "")
+		Local dialog:TUIDialog = New TUIDialog
+		dialog.SetTitle(title)
+		dialog.SetMessage(message)
+		dialog._Attach(Self, Null)
+		Return dialog
 	End Method
 
 	Method ShowOverlay:Int(widget:TUIContainer, x:Int, y:Int, width:Int = UILayoutAuto, ..
@@ -2225,6 +2914,11 @@ Type TUIContext
 	Method ActivateFocused:Int()
 		Local target:TUIWidget = focusedWidget
 		If Not _CanFocus(target) Then Return False
+		Local dialogAction:TUIDialogAction = TUIDialogAction(target)
+		If dialogAction Then
+			dialogAction._Activate()
+			Return True
+		End If
 		Local button:TUIButton = TUIButton(target)
 		If button Then
 			button._Activate()
@@ -2234,6 +2928,11 @@ Type TUIContext
 		Local checkBox:TUICheckBox = TUICheckBox(target)
 		If checkBox Then
 			checkBox._Activate()
+			Return True
+		End If
+		Local radioButton:TUIRadioButton = TUIRadioButton(target)
+		If radioButton Then
+			radioButton._Activate()
 			Return True
 		End If
 		Local switchControl:TUISwitch = TUISwitch(target)
@@ -2254,6 +2953,16 @@ Type TUIContext
 		Local tabButton:TUITabButton = TUITabButton(target)
 		If tabButton Then
 			tabButton._Activate()
+			Return True
+		End If
+		Local stepper:TUIStepper = TUIStepper(target)
+		If stepper Then
+			stepper._Activate()
+			Return True
+		End If
+		Local segmented:TUISegmentedControl = TUISegmentedControl(target)
+		If segmented Then
+			segmented._Activate()
 			Return True
 		End If
 		Return False
@@ -2279,6 +2988,21 @@ Type TUIContext
 			If nextIndex < 0 Then nextIndex = 0
 			If nextIndex >= tabButton.tabOwner.PageCount() Then nextIndex = tabButton.tabOwner.PageCount() - 1
 			tabButton.tabOwner._SelectIndex(nextIndex, True)
+			Return True
+		End If
+		Local stepper:TUIStepper = TUIStepper(focusedWidget)
+		If stepper Then
+			stepper._Adjust(delta)
+			Return True
+		End If
+		Local segmented:TUISegmentedControl = TUISegmentedControl(focusedWidget)
+		If segmented Then
+			segmented._Adjust(delta)
+			Return True
+		End If
+		Local radioButton:TUIRadioButton = TUIRadioButton(focusedWidget)
+		If radioButton Then
+			radioButton._Move(delta)
 			Return True
 		End If
 		Return False
@@ -2377,8 +3101,9 @@ Type TUIContext
 	End Method
 
 	Method Present:Int()
-		_UpdateScrollMomentum(rootWidget, UInt(MilliSecs()))
-		If overlayWidget Then _UpdateScrollMomentum(overlayWidget, UInt(MilliSecs()))
+		Local now:UInt = UInt(MilliSecs())
+		_UpdateScrollMomentum(rootWidget, now)
+		If overlayWidget Then _UpdateScrollMomentum(overlayWidget, now)
 		Render()
 		If display Then Return graphics.PresentDirty(display)
 		Return True
@@ -2468,29 +3193,49 @@ Type TUIContext
 					touchScroll = Null
 					touchScrolled = False
 					If activate Then
-						Local button:TUIButton = TUIButton(target)
-						If button Then
-							button._Activate()
-							EmitEvent(CreateEvent(EVENT_UIACTION, target, 0, 0, x, y))
+						Local dialogAction:TUIDialogAction = TUIDialogAction(target)
+						If dialogAction Then
+							dialogAction._Activate()
 						Else
-							Local checkBox:TUICheckBox = TUICheckBox(target)
-							If checkBox Then
-								checkBox._Activate()
+							Local button:TUIButton = TUIButton(target)
+							If button Then
+								button._Activate()
+								EmitEvent(CreateEvent(EVENT_UIACTION, target, 0, 0, x, y))
 							Else
-								Local switchControl:TUISwitch = TUISwitch(target)
-								If switchControl Then
-									switchControl._Activate()
+								Local checkBox:TUICheckBox = TUICheckBox(target)
+								If checkBox Then
+									checkBox._Activate()
 								Else
-									Local listItem:TUIListItem = TUIListItem(target)
-									If listItem Then
-										listItem._Activate()
+									Local radioButton:TUIRadioButton = TUIRadioButton(target)
+									If radioButton Then
+										radioButton._Activate()
 									Else
-										Local combo:TUIComboBox = TUIComboBox(target)
-										If combo Then
-											combo._Activate()
+										Local switchControl:TUISwitch = TUISwitch(target)
+										If switchControl Then
+											switchControl._Activate()
 										Else
-											Local tabButton:TUITabButton = TUITabButton(target)
-											If tabButton Then tabButton._Activate()
+											Local listItem:TUIListItem = TUIListItem(target)
+											If listItem Then
+												listItem._Activate()
+											Else
+												Local combo:TUIComboBox = TUIComboBox(target)
+												If combo Then
+													combo._Activate()
+												Else
+													Local tabButton:TUITabButton = TUITabButton(target)
+													If tabButton Then
+														tabButton._Activate()
+													Else
+														Local stepper:TUIStepper = TUIStepper(target)
+														If stepper Then
+															stepper._ActivateAt(x)
+														Else
+															Local segmented:TUISegmentedControl = TUISegmentedControl(target)
+															If segmented Then segmented._ActivateAt(x)
+														End If
+													End If
+												End If
+											End If
 										End If
 									End If
 								End If

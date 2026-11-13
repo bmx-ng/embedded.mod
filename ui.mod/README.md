@@ -143,6 +143,70 @@ activate the control underneath. Use
 `ShowOverlay(menu, x, y, width, UILayoutAuto, False)` for a modal overlay which
 ignores outside touches.
 
+## Choice, value and dialog widgets
+
+Radio groups make the entire option label touchable and report the selected
+index through `EVENT_UISELECTIONCHANGED`:
+
+```blitzmax
+Local quality:TUIRadioGroup = page.RadioGroup()
+quality.Option("Economy")
+quality.Option("Balanced")
+quality.Option("Best")
+quality.SetSelectedIndex(1)
+```
+
+A segmented control presents a small set of peer choices in one compact row.
+Use it for modes or views rather than a large or changing collection:
+
+```blitzmax
+Local view:TUISegmentedControl = page.SegmentedControl()
+view.AddItem("List")
+view.AddItem("Grid")
+view.AddItem("Chart")
+```
+
+`TUIStepper` provides precise bounded adjustment where a slider would be
+ambiguous. Its fourth factory argument is the increment:
+
+```blitzmax
+Local copies:TUIStepper = page.Stepper(1, 9, 3, 1)
+```
+
+Decimal steppers use fixed-point units internally, keeping interaction
+predictable while exposing `DecimalValue()` to application code:
+
+```blitzmax
+Local gain:TUIStepper = page.DecimalStepper(0.5, 5.0, 2.5, 0.5, 1)
+```
+
+The final argument selects the displayed decimal places. `ValueText()` returns
+the same fixed-width representation shown by the control.
+
+User changes emit `EVENT_UIVALUECHANGED` for a stepper and
+`EVENT_UISELECTIONCHANGED` for radio groups and segmented controls. Their
+`OnChange()` or `OnSelectionChanged()` callbacks offer the equivalent direct
+notification. Programmatic setters do not emit user events.
+
+Dialogs use the overlay layer and remain modal until an action is selected:
+
+```blitzmax
+Local dialog:TUIDialog = ui.Dialog("Apply settings?", "Changes take effect immediately.")
+dialog.Action("Cancel", 0)
+dialog.Action("Apply", 1)
+dialog.OnResult(DialogClosed)
+dialog.Show(320)
+```
+
+The chosen result is available through `Result()`, is passed to `OnResult()`,
+and is emitted as `EVENT_UIACTION` with the dialog as the event source. Dialog
+focus remains trapped inside the overlay and returns to the previous widget on
+close.
+
+Labels can opt into width-aware word wrapping with `SetWordWrap(True)`.
+Dialog messages enable this automatically and their height is calculated from
+the width passed to `Show()`.
+
 ## Themes and rendering cost
 
 `TUITheme.Dark()` supplies a complete default theme and can use any imported

@@ -54,6 +54,11 @@ Global selectionChangeCount:Int
 Global selectionEventSource:Object
 Global selectionEventIndex:Int
 Global selectionCallbackCount:Int
+Global radioCallbackCount:Int
+Global stepperCallbackCount:Int
+Global segmentCallbackCount:Int
+Global dialogCallbackCount:Int
+Global dialogCallbackResult:Int
 
 Function Clicked(button:TUIButton)
 	callbackCount :+ 1
@@ -73,6 +78,23 @@ End Function
 
 Function SelectionChanged(list:TUIList)
 	selectionCallbackCount :+ 1
+End Function
+
+Function RadioChanged(group:TUIRadioGroup)
+	radioCallbackCount :+ 1
+End Function
+
+Function StepperChanged(stepper:TUIStepper)
+	stepperCallbackCount :+ 1
+End Function
+
+Function SegmentChanged(control:TUISegmentedControl)
+	segmentCallbackCount :+ 1
+End Function
+
+Function DialogClosed(dialog:TUIDialog, result:Int)
+	dialogCallbackCount :+ 1
+	dialogCallbackResult = result
 End Function
 
 Function CaptureAction:Object(hookId:Int, data:Object, context:Object)
@@ -199,6 +221,105 @@ Function RunPopupMenuTests(touch:TFakeTouch)
 		selectionCallbackCount = menuCallbackStart + 1, ..
 		"popup menu selection did not notify and dismiss")
 	navigationUI.Close()
+End Function
+
+Function RunChoiceWidgetTests(touch:TFakeTouch)
+	Local choiceFrame:TDisplayBuffer = TDisplayBuffer.Create(240, 180, DisplayPixelFormatMono1)
+	Local choiceUI:TUIContext = TUIContext.CreateWithBuffer(choiceFrame, Null, touch, ..
+		TUITheme.Dark(Spleen5x8Font()))
+	Check(choiceUI <> Null, "could not create choice widget UI")
+	Local page:TUIColumn = choiceUI.Root()
+	Local radios:TUIRadioGroup = page.RadioGroup()
+	radios.Option("Low")
+	radios.Option("Medium")
+	radios.Option("High")
+	radios.OnSelectionChanged(RadioChanged)
+	Local stepper:TUIStepper = page.Stepper(0, 10, 4, 2)
+	stepper.OnChange(StepperChanged)
+	Local segments:TUISegmentedControl = page.SegmentedControl()
+	segments.AddItem("One")
+	segments.AddItem("Two")
+	segments.AddItem("Three")
+	segments.OnSelectionChanged(SegmentChanged)
+	Check(choiceUI.Render(), "choice widget UI did not render")
+
+	Local selectionStart:Int = selectionChangeCount
+	Check(choiceUI.SetFocus(radios.OptionAt(1)), "radio option could not receive focus")
+	Check(choiceUI.ActivateFocused() And radios.SelectedIndex() = 1, "radio option did not select")
+	Check(radioCallbackCount = 1 And selectionChangeCount = selectionStart + 1 And ..
+		selectionEventSource = radios And selectionEventIndex = 1, "radio selection did not notify")
+	Check(choiceUI.AdjustFocused(1) And radios.SelectedIndex() = 2 And ..
+		choiceUI.FocusedWidget() = radios.OptionAt(2), "radio focus adjustment did not select and move")
+
+	Local valueStart:Int = valueEventCount
+	Check(choiceUI.SetFocus(stepper), "stepper could not receive focus")
+	Check(choiceUI.AdjustFocused(1) And stepper.Value() = 6, "stepper did not apply its step")
+	stepper._ActivateAt(stepper.X())
+	Check(stepper.Value() = 4 And stepperCallbackCount = 2 And ..
+		valueEventCount = valueStart + 2 And valueEventSource = stepper, "stepper did not notify both changes")
+
+	selectionStart = selectionChangeCount
+	Check(choiceUI.SetFocus(segments), "segmented control could not receive focus")
+	segments._ActivateAt(segments.X() + segments.Width() * 5 / 6)
+	Check(segments.SelectedIndex() = 2 And segmentCallbackCount = 1 And ..
+		selectionChangeCount = selectionStart + 1 And selectionEventSource = segments, ..
+		"segmented control did not select its touched segment")
+	Check(choiceUI.AdjustFocused(-1) And segments.SelectedIndex() = 1, ..
+		"segmented control did not adjust through focus")
+	choiceUI.Close()
+End Function
+
+Function RunDialogTests(touch:TFakeTouch)
+	Local dialogFrame:TDisplayBuffer = TDisplayBuffer.Create(240, 180, DisplayPixelFormatMono1)
+	Local dialogUI:TUIContext = TUIContext.CreateWithBuffer(dialogFrame, Null, touch, ..
+		TUITheme.Dark(Spleen5x8Font()))
+	Check(dialogUI <> Null, "could not create dialog UI")
+	Local opener:TUIButton = dialogUI.Root().Button("Open")
+	Check(dialogUI.Render() And dialogUI.SetFocus(opener), "dialog opener could not receive focus")
+	Local dialog:TUIDialog = dialogUI.Dialog("Apply changes?", "The device will restart.")
+	dialog.Action("Cancel", 0)
+	Local accept:TUIDialogAction = dialog.Action("Apply", 1)
+	dialog.OnResult(DialogClosed)
+	Local actionStart:Int = actionCount
+	Check(dialog.Show(180) And dialogUI.ActiveOverlay() = dialog, "modal dialog did not open")
+	Check(dialogUI.FocusedWidget() <> opener, "modal dialog did not trap focus")
+	Check(dialogUI.SetFocus(accept) And dialogUI.ActivateFocused(), "dialog action did not activate")
+	Check(Not dialogUI.OverlayVisible() And dialogUI.FocusedWidget() = opener, ..
+		"dialog did not dismiss and restore focus")
+	Check(dialog.Result() = 1 And dialogCallbackCount = 1 And dialogCallbackResult = 1, ..
+		"dialog did not report its result")
+	Check(actionCount >= actionStart + 1 And actionSource = dialog, "dialog did not emit its result event")
+	dialogUI.Close()
+End Function
+
+Function RunWrappedLabelTests(touch:TFakeTouch)
+	Local textFrame:TDisplayBuffer = TDisplayBuffer.Create(120, 80, DisplayPixelFormatMono1)
+	Local textUI:TUIContext = TUIContext.CreateWithBuffer(textFrame, Null, touch, ..
+		TUITheme.Dark(Spleen5x8Font()))
+	Check(textUI <> Null, "could not create wrapped label UI")
+	Local label:TUILabel = textUI.Root().Label("A retained label wraps at available words")
+	label.SetWordWrap(True)
+	Check(textUI.Render(), "wrapped label UI did not render")
+	Check(label.Height() >= Spleen5x8Font().LineHeight() * 2, "label did not wrap to multiple lines")
+	textUI.Close()
+End Function
+
+Function RunDecimalStepperTests(touch:TFakeTouch)
+	Local decimalFrame:TDisplayBuffer = TDisplayBuffer.Create(160, 60, DisplayPixelFormatMono1)
+	Local decimalUI:TUIContext = TUIContext.CreateWithBuffer(decimalFrame, Null, touch, ..
+		TUITheme.Dark(Spleen5x8Font()))
+	Check(decimalUI <> Null, "could not create decimal stepper UI")
+	Local stepper:TUIStepper = decimalUI.Root().DecimalStepper(-1.0, 1.0, 0.0, 0.25, 2)
+	stepper.OnChange(StepperChanged)
+	Check(decimalUI.Render() And stepper.ValueText() = "0.00", "decimal stepper did not format zero")
+	Local callbackStart:Int = stepperCallbackCount
+	stepper._ActivateAt(stepper.X() + stepper.Width() - 1)
+	Check(stepper.DecimalValue() = 0.25 And stepper.ValueText() = "0.25", ..
+		"decimal stepper did not apply its fractional step")
+	stepper.SetDecimalValue(-0.5)
+	Check(stepper.ValueText() = "-0.50" And stepperCallbackCount = callbackStart + 1, ..
+		"decimal stepper programmatic value or notification semantics were incorrect")
+	decimalUI.Close()
 End Function
 
 AddHook EmitEventHook, CaptureAction
@@ -445,5 +566,9 @@ scrollUI.Close()
 RunTabTests(touch)
 RunComboTests(touch)
 RunPopupMenuTests(touch)
+RunChoiceWidgetTests(touch)
+RunDialogTests(touch)
+RunWrappedLabelTests(touch)
+RunDecimalStepperTests(touch)
 touch.StopEvents()
 Print "embedded UI conformance: PASS"
