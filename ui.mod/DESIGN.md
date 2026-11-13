@@ -59,7 +59,8 @@ Changes should preserve these acceptance checks:
 2. Drag input tracks the newest contact position without replaying a stale
    event backlog.
 3. Dirty, single-buffered and multi-buffered presentation agree visually.
-4. Layout remains bounded on representative small, medium and large displays.
+4. Layout remains bounded on representative small, medium and large displays
+   (`tests/embedded_ui_layout_matrix.bmx`).
 5. Controls intended for touch can set minimum target dimensions independently
    of font choice.
 6. Pico and ESP32 use the same public UI behaviour; platform-specific code is

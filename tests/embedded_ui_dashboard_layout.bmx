@@ -4,6 +4,7 @@ Framework BRL.StandardIO
 Import Embedded.Drivers.Display
 Import Embedded.Drivers.Display.Fonts.Spleen.Size5x8
 Import Embedded.UI
+Import Embedded.UI.Controls
 
 Function Check(value:Int, message:String)
 	If Not value Then RuntimeError message

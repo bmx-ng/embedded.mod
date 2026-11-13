@@ -32,3 +32,12 @@ within one target toolchain. Target-specific ceilings can be adjusted with
 `UI_TEST_PICO_PASSIVE_MAX`, `UI_TEST_PICO_CONTROLS_MAX`,
 `UI_TEST_PICO_INTERACTIVE_MAX` and their `UI_TEST_ESP32_*` counterparts when a
 reviewed SDK or feature change deliberately moves the baseline.
+
+## Responsive layout matrix
+
+`embedded_ui_layout_matrix.bmx` builds the same passive six-card composition
+at 128x64, 320x240 and 800x480. It verifies the adaptive one-, two- and
+five-column layouts, walks the retained tree iteratively to reject invalid or
+unclipped out-of-frame geometry, and repeats the checks after a dirty redraw.
+It deliberately imports no controls or touch adapter, so it also remains a
+display-only build fixture suitable for resource-constrained targets.
