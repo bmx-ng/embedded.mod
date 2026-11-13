@@ -64,6 +64,9 @@ Changes should preserve these acceptance checks:
    of font choice.
 6. Pico and ESP32 use the same public UI behaviour; platform-specific code is
    restricted to display, touch and acceleration adapters.
+7. `embedded_ui_steady_state.bmx` observes no managed allocation, arena growth
+   or collection across repeated idle presentation, retained-value redraw,
+   idle device polling and caller-owned pointer-event dispatch.
 
 New widget families should wait until these checks are stable on both current
 embedded targets.
