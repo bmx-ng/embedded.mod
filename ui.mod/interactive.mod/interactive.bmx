@@ -169,13 +169,7 @@ Type TUITouchInput Extends TUIInputBinding Final
 					pressedWidget = target
 					pressedArmed = True
 					target._SetPressed(True)
-					Local slider:TUISlider = TUISlider(target)
-					If slider Then
-						slider._TrackPointer(x)
-					Else
-						Local dial:TUIRotaryDial = TUIRotaryDial(target)
-						If dial Then dial._BeginPointer(x, y)
-					End If
+					target._BeginPointer(x, y)
 				End If
 			Case EVENT_TOUCHMOVE
 				If pressedContact = event.data Then
@@ -189,17 +183,9 @@ Type TUITouchInput Extends TUIInputBinding Final
 						touchScroll._DragBy(touchLastY - y, now)
 						touchLastY = y
 					Else If pressedWidget Then
-						Local slider:TUISlider = TUISlider(pressedWidget)
-						If slider Then
-							slider._TrackPointer(x)
-						Else
-							Local dial:TUIRotaryDial = TUIRotaryDial(pressedWidget)
-							If dial Then
-								dial._TrackPointer(x, y)
-							Else
-								pressedArmed = pressedWidget.Contains(x, y)
-								pressedWidget._SetPressed(pressedArmed)
-							End If
+						If Not pressedWidget._TrackPointer(x, y) Then
+							pressedArmed = pressedWidget.Contains(x, y)
+							pressedWidget._SetPressed(pressedArmed)
 						End If
 					End If
 				End If
@@ -209,13 +195,8 @@ Type TUITouchInput Extends TUIInputBinding Final
 					Local target:TUIWidget = pressedWidget
 					Local activate:Int
 					If target Then
-						Local slider:TUISlider = TUISlider(target)
-						If slider And Not touchScrolled Then slider._TrackPointer(x)
-						Local dial:TUIRotaryDial = TUIRotaryDial(target)
-						If dial Then
-							If Not touchScrolled Then dial._TrackPointer(x, y)
-							dial._EndPointer()
-						End If
+						If Not touchScrolled Then target._TrackPointer(x, y)
+						target._EndPointer()
 						activate = Not touchScrolled And pressedArmed And target.Contains(x, y) And target.Enabled()
 						target._SetPressed(False)
 					End If
@@ -231,54 +212,7 @@ Type TUITouchInput Extends TUIInputBinding Final
 
 	Private
 	Method _Activate(target:TUIWidget, x:Int, y:Int)
-		Local dialogAction:TUIDialogAction = TUIDialogAction(target)
-		If dialogAction Then
-			dialogAction._Activate()
-			Return
-		End If
-		Local button:TUIButton = TUIButton(target)
-		If button Then
-			button._Activate()
-			EmitEvent(CreateEvent(EVENT_UIACTION, target, 0, 0, x, y))
-			Return
-		End If
-		Local checkBox:TUICheckBox = TUICheckBox(target)
-		If checkBox Then
-			checkBox._Activate()
-			Return
-		End If
-		Local radioButton:TUIRadioButton = TUIRadioButton(target)
-		If radioButton Then
-			radioButton._Activate()
-			Return
-		End If
-		Local switchControl:TUISwitch = TUISwitch(target)
-		If switchControl Then
-			switchControl._Activate()
-			Return
-		End If
-		Local listItem:TUIListItem = TUIListItem(target)
-		If listItem Then
-			listItem._Activate()
-			Return
-		End If
-		Local combo:TUIComboBox = TUIComboBox(target)
-		If combo Then
-			combo._Activate()
-			Return
-		End If
-		Local tabButton:TUITabButton = TUITabButton(target)
-		If tabButton Then
-			tabButton._Activate()
-			Return
-		End If
-		Local stepper:TUIStepper = TUIStepper(target)
-		If stepper Then
-			stepper._ActivateAt(x)
-			Return
-		End If
-		Local segmented:TUISegmentedControl = TUISegmentedControl(target)
-		If segmented Then segmented._ActivateAt(x)
+		If target Then target._ActivatePointer(x, y)
 	End Method
 End Type
 

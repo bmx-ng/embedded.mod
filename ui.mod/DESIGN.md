@@ -26,6 +26,10 @@ intended to reproduce a desktop widget toolkit or all of LVGL.
   but display-only firmware must be able to link without the button, list,
   selection, dialog and tab implementations. The touch adapter imports this
   provider automatically; physical-input applications may import it alone.
+- Focus and pointer dispatch use widget interaction hooks. The context and
+  touch adapter must not enumerate concrete control types: a new control owns
+  its activation, adjustment and pointer-tracking behaviour, and passive
+  builds must not retain controls merely because generic input APIs exist.
 - Dirty rendering must produce the same visible result as a complete redraw.
   Page changes may invalidate the complete output when every pixel can change.
 - Platform acceleration and multiple framebuffers are optional adapters. UI

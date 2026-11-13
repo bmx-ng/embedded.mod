@@ -568,6 +568,31 @@ Type TUIWidget
 		pressed = value
 		_Invalidate()
 	End Method
+
+	' Optional interaction hooks. Passive widgets retain the no-op defaults;
+	' controls override only the operations which they support.
+	Method _ActivateFocused:Int()
+		Return False
+	End Method
+
+	Method _AdjustFocused:Int(delta:Int)
+		Return False
+	End Method
+
+	Method _BeginPointer:Int(x:Int, y:Int)
+		Return False
+	End Method
+
+	Method _TrackPointer:Int(x:Int, y:Int)
+		Return False
+	End Method
+
+	Method _EndPointer()
+	End Method
+
+	Method _ActivatePointer:Int(x:Int, y:Int)
+		Return _ActivateFocused()
+	End Method
 End Type
 
 Rem
@@ -1848,6 +1873,16 @@ Type TUIListItem Extends TUIWidget Final
 	End Method
 
 	Public
+	Method _ActivateFocused:Int() Override
+		_Activate()
+		Return True
+	End Method
+
+	Method _AdjustFocused:Int(delta:Int) Override
+		If listOwner Then Return listOwner.MoveSelection(delta)
+		Return False
+	End Method
+
 	Method _Activate()
 		If listOwner Then listOwner._SelectItem(Self)
 	End Method
@@ -1991,6 +2026,17 @@ Type TUIComboBox Extends TUIWidget Final
 	End Method
 
 	Public
+	Method _ActivateFocused:Int() Override
+		_Activate()
+		Return True
+	End Method
+
+	Method _AdjustFocused:Int(delta:Int) Override
+		If itemNames.Length = 0 Then Return False
+		_SetSelectedIndex(selectedIndex + delta, True)
+		Return True
+	End Method
+
 	Method _Activate()
 		If Not Context() Or itemNames.Length = 0 Then Return
 		If popup And Context().ActiveOverlay() = popup Then
@@ -2268,6 +2314,20 @@ Type TUITabButton Extends TUIWidget Final
 
 	Method _Activate()
 		If tabOwner Then tabOwner._SelectIndex(tabIndex, True)
+	End Method
+
+	Method _ActivateFocused:Int() Override
+		_Activate()
+		Return True
+	End Method
+
+	Method _AdjustFocused:Int(delta:Int) Override
+		If Not tabOwner Then Return False
+		Local nextIndex:Int = tabOwner.SelectedIndex() + delta
+		If nextIndex < 0 Then nextIndex = 0
+		If nextIndex >= tabOwner.PageCount() Then nextIndex = tabOwner.PageCount() - 1
+		tabOwner._SelectIndex(nextIndex, True)
+		Return True
 	End Method
 End Type
 
@@ -2661,6 +2721,18 @@ Type TUIButton Extends TUIWidget
 	End Method
 
 	Public
+	Method _ActivateFocused:Int() Override
+		_Activate()
+		EmitEvent(CreateEvent(EVENT_UIACTION, Self))
+		Return True
+	End Method
+
+	Method _ActivatePointer:Int(x:Int, y:Int) Override
+		_Activate()
+		EmitEvent(CreateEvent(EVENT_UIACTION, Self, 0, 0, x, y))
+		Return True
+	End Method
+
 	Method _Activate()
 		If clickHandler Then clickHandler(Self)
 	End Method
@@ -2769,6 +2841,11 @@ Type TUICheckBox Extends TUIWidget Final
 	End Method
 
 	Public
+	Method _ActivateFocused:Int() Override
+		_Activate()
+		Return True
+	End Method
+
 	Method _Activate()
 		SetChecked(Not checked)
 		If changeHandler Then changeHandler(Self)
@@ -2922,6 +2999,16 @@ Type TUIRadioButton Extends TUIWidget Final
 	End Method
 
 	Public
+	Method _ActivateFocused:Int() Override
+		_Activate()
+		Return True
+	End Method
+
+	Method _AdjustFocused:Int(delta:Int) Override
+		_Move(delta)
+		Return True
+	End Method
+
 	Method _Activate()
 		If radioOwner Then radioOwner._SelectIndex(radioIndex, True)
 	End Method
@@ -3004,6 +3091,11 @@ Type TUISwitch Extends TUIWidget Final
 	End Method
 
 	Public
+	Method _ActivateFocused:Int() Override
+		_Activate()
+		Return True
+	End Method
+
 	Method _Activate()
 		SetValue(Not switchValue)
 		If changeHandler Then changeHandler(Self)
@@ -3186,6 +3278,21 @@ Type TUIStepper Extends TUIRangeWidget Final
 	End Method
 
 	Public
+	Method _ActivateFocused:Int() Override
+		_Activate()
+		Return True
+	End Method
+
+	Method _ActivatePointer:Int(x:Int, y:Int) Override
+		_ActivateAt(x)
+		Return True
+	End Method
+
+	Method _AdjustFocused:Int(delta:Int) Override
+		_Adjust(delta)
+		Return True
+	End Method
+
 	Method _Activate()
 		_SetUserValue(currentValue + stepValue)
 	End Method
@@ -3319,6 +3426,21 @@ Type TUISegmentedControl Extends TUIWidget Final
 	End Method
 
 	Public
+	Method _ActivateFocused:Int() Override
+		_Activate()
+		Return True
+	End Method
+
+	Method _ActivatePointer:Int(x:Int, y:Int) Override
+		_ActivateAt(x)
+		Return True
+	End Method
+
+	Method _AdjustFocused:Int(delta:Int) Override
+		_Adjust(delta)
+		Return True
+	End Method
+
 	Method _Activate()
 		If itemNames.Length = 0 Then Return
 		_SetSelectedIndex((selectedIndex + 1) Mod itemNames.Length, True)
@@ -3403,7 +3525,12 @@ Type TUISlider Extends TUIRangeWidget Final
 	End Method
 
 	Public
-	Method _TrackPointer(x:Int)
+	Method _BeginPointer:Int(x:Int, y:Int) Override
+		_TrackPointer(x, y)
+		Return True
+	End Method
+
+	Method _TrackPointer:Int(x:Int, y:Int) Override
 		Local style:TUIStyle = DefaultStyle()
 		If uiStyle Then style = uiStyle
 		Local radius:Int = Max((Height() - style.paddingTop - style.paddingBottom) / 2, 3)
@@ -3417,6 +3544,12 @@ Type TUISlider Extends TUIRangeWidget Final
 				Long(endX - startX) / 2) / Long(endX - startX))
 		End If
 		_SetUserValue(value)
+		Return True
+	End Method
+
+	Method _AdjustFocused:Int(delta:Int) Override
+		_SetUserValue(Value() + delta)
+		Return True
 	End Method
 
 	Method _SetUserValue(value:Int)
@@ -3902,14 +4035,15 @@ Type TUIRotaryDial Extends TUIRangeWidget Final
 	End Method
 
 	Public
-	Method _BeginPointer(x:Int, y:Int)
+	Method _BeginPointer:Int(x:Int, y:Int) Override
 		dragStartX = x
 		dragStartY = y
 		dragStartValue = Value()
 		dragging = True
+		Return True
 	End Method
 
-	Method _TrackPointer(x:Int, y:Int)
+	Method _TrackPointer:Int(x:Int, y:Int) Override
 		If Not dragging Then _BeginPointer(x, y)
 		Local span:Int = Max(Maximum() - Minimum(), 1)
 		Local travel:Int
@@ -3923,10 +4057,16 @@ Type TUIRotaryDial Extends TUIRangeWidget Final
 		End If
 		Local delta:Int = Int(Long(distance) * span / Long(travel))
 		_SetUserValue(dragStartValue + delta)
+		Return True
 	End Method
 
-	Method _EndPointer()
+	Method _EndPointer() Override
 		dragging = False
+	End Method
+
+	Method _AdjustFocused:Int(delta:Int) Override
+		_Adjust(delta)
+		Return True
 	End Method
 
 	Method _Adjust(delta:Int)
@@ -3959,6 +4099,16 @@ Type TUIDialogAction Extends TUIButton Final
 	End Method
 
 	Public
+	Method _ActivateFocused:Int() Override
+		_Activate()
+		Return True
+	End Method
+
+	Method _ActivatePointer:Int(x:Int, y:Int) Override
+		_Activate()
+		Return True
+	End Method
+
 	Method _Activate() Override
 		Super._Activate()
 		If dialogOwner Then dialogOwner.Close(actionResult)
@@ -4561,103 +4711,12 @@ Type TUIContext
 	Method ActivateFocused:Int()
 		Local target:TUIWidget = focusedWidget
 		If Not _CanFocus(target) Then Return False
-		Local dialogAction:TUIDialogAction = TUIDialogAction(target)
-		If dialogAction Then
-			dialogAction._Activate()
-			Return True
-		End If
-		Local button:TUIButton = TUIButton(target)
-		If button Then
-			button._Activate()
-			EmitEvent(CreateEvent(EVENT_UIACTION, target))
-			Return True
-		End If
-		Local checkBox:TUICheckBox = TUICheckBox(target)
-		If checkBox Then
-			checkBox._Activate()
-			Return True
-		End If
-		Local radioButton:TUIRadioButton = TUIRadioButton(target)
-		If radioButton Then
-			radioButton._Activate()
-			Return True
-		End If
-		Local switchControl:TUISwitch = TUISwitch(target)
-		If switchControl Then
-			switchControl._Activate()
-			Return True
-		End If
-		Local listItem:TUIListItem = TUIListItem(target)
-		If listItem Then
-			listItem._Activate()
-			Return True
-		End If
-		Local combo:TUIComboBox = TUIComboBox(target)
-		If combo Then
-			combo._Activate()
-			Return True
-		End If
-		Local tabButton:TUITabButton = TUITabButton(target)
-		If tabButton Then
-			tabButton._Activate()
-			Return True
-		End If
-		Local stepper:TUIStepper = TUIStepper(target)
-		If stepper Then
-			stepper._Activate()
-			Return True
-		End If
-		Local segmented:TUISegmentedControl = TUISegmentedControl(target)
-		If segmented Then
-			segmented._Activate()
-			Return True
-		End If
-		Return False
+		Return target._ActivateFocused()
 	End Method
 
 	Method AdjustFocused:Int(delta:Int)
 		If delta = 0 Or Not _CanFocus(focusedWidget) Then Return False
-		Local slider:TUISlider = TUISlider(focusedWidget)
-		If slider Then
-			slider._SetUserValue(slider.Value() + delta)
-			Return True
-		End If
-		Local dial:TUIRotaryDial = TUIRotaryDial(focusedWidget)
-		If dial Then
-			dial._Adjust(delta)
-			Return True
-		End If
-		Local listItem:TUIListItem = TUIListItem(focusedWidget)
-		If listItem And listItem.listOwner Then Return listItem.listOwner.MoveSelection(delta)
-		Local combo:TUIComboBox = TUIComboBox(focusedWidget)
-		If combo And combo.ItemCount() > 0 Then
-			combo._SetSelectedIndex(combo.SelectedIndex() + delta, True)
-			Return True
-		End If
-		Local tabButton:TUITabButton = TUITabButton(focusedWidget)
-		If tabButton And tabButton.tabOwner Then
-			Local nextIndex:Int = tabButton.tabOwner.SelectedIndex() + delta
-			If nextIndex < 0 Then nextIndex = 0
-			If nextIndex >= tabButton.tabOwner.PageCount() Then nextIndex = tabButton.tabOwner.PageCount() - 1
-			tabButton.tabOwner._SelectIndex(nextIndex, True)
-			Return True
-		End If
-		Local stepper:TUIStepper = TUIStepper(focusedWidget)
-		If stepper Then
-			stepper._Adjust(delta)
-			Return True
-		End If
-		Local segmented:TUISegmentedControl = TUISegmentedControl(focusedWidget)
-		If segmented Then
-			segmented._Adjust(delta)
-			Return True
-		End If
-		Local radioButton:TUIRadioButton = TUIRadioButton(focusedWidget)
-		If radioButton Then
-			radioButton._Move(delta)
-			Return True
-		End If
-		Return False
+		Return focusedWidget._AdjustFocused(delta)
 	End Method
 
 	Rem
