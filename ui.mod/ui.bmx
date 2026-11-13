@@ -20,7 +20,6 @@ Import BRL.System
 Import Embedded.Drivers.Display
 Import Embedded.Drivers.Display.Font
 Import Embedded.Drivers.Display.Image
-Import Embedded.Drivers.Touch
 Import Embedded.Graphics2D
 Import "native/ui_math.c"
 
@@ -30,7 +29,6 @@ Const UIAlignStart:Int = 0
 Const UIAlignCenter:Int = 1
 Const UIAlignEnd:Int = 2
 Const UIAlignStretch:Int = 3
-Const UIContextMaximum:Int = 4
 Const UIInvalidRegionMaximum:Int = 8
 Const UIScrollDragThreshold:Int = 4
 Const UIScrollMinimumMomentum:Int = 60
@@ -43,6 +41,7 @@ Const UIToastError:Int = 3
 Const UIToastDefaultDuration:Int = 2500
 Const UIToastQueueMaximum:Int = 8
 Const UIPageStackMaximum:Int = 16
+Const UIGridMaximumColumns:Int = 12
 Const UIToastTopLeft:Int = 0
 Const UIToastTopCenter:Int = 1
 Const UIToastTopRight:Int = 2
@@ -133,9 +132,14 @@ Type TUITheme
 	Field controlDisabled:TUIStyle
 	Field progress:TUIStyle
 	Field progressFill:TUIStyle
+	Field card:TUIStyle
+	Field header:TUIStyle
+	Field navigation:TUIStyle
 	Field focusColor:UInt = $ffd84a
 	Field focusWidth:Int = 2
 	Field focusInset:Int = 2
+	Field buttonMinimumHeight:Int
+	Field selectionMinimumHeight:Int
 
 	Function Dark:TUITheme(font:TBitmapFont = Null)
 		Local theme:TUITheme = New TUITheme
@@ -170,6 +174,15 @@ Type TUITheme
 		theme.progress.background = $202a33
 		theme.progressFill = theme.controlActive.Copy()
 		theme.progressFill.borderWidth = 0
+		theme.card = theme.control.Copy()
+		theme.card.background = $17222c
+		theme.card.border = $40566a
+		theme.card.cornerRadius = 6
+		theme.header = TUIStyle.Create($e8edf2)
+		theme.navigation = TUIStyle.Create($e8edf2, $17222c, True)
+		theme.navigation.border = $40566a
+		theme.navigation.borderWidth = 1
+		theme.navigation.cornerRadius = 6
 		theme.SetFont(font)
 		Return theme
 	End Function
@@ -188,6 +201,9 @@ Type TUITheme
 		controlDisabled.font = font
 		progress.font = font
 		progressFill.font = font
+		card.font = font
+		header.font = font
+		navigation.font = font
 		screen.fontScale = scale
 		container.fontScale = scale
 		label.fontScale = scale
@@ -200,23 +216,32 @@ Type TUITheme
 		controlDisabled.fontScale = scale
 		progress.fontScale = scale
 		progressFill.fontScale = scale
+		card.fontScale = scale
+		header.fontScale = scale
+		navigation.fontScale = scale
+	End Method
+
+	Rem
+	bbdoc: Sets the minimum automatically measured button height.
+	about: This keeps touch targets finger-sized independently of the selected
+	font. A button with an explicit height still uses that requested height.
+	End Rem
+	Method SetButtonMinimumHeight(height:Int)
+		buttonMinimumHeight = _ClampNonNegative(height)
+	End Method
+
+	Rem
+	bbdoc: Sets the minimum automatically measured selection-control height.
+	about: This applies to combo boxes and selectable list or popup rows, keeping
+	the closed control and its dropdown choices finger-sized independently of the
+	font. An explicit widget height still takes precedence.
+	End Rem
+	Method SetSelectionMinimumHeight(height:Int)
+		selectionMinimumHeight = _ClampNonNegative(height)
 	End Method
 End Type
 
 Private
-
-Global _uiContexts:TUIContext[UIContextMaximum]
-
-Function _UIEventHook:Object(hookId:Int, data:Object, context:Object)
-	Local event:TEvent = TEvent(data)
-	If Not event Then Return data
-	If event.id <> EVENT_TOUCHDOWN And event.id <> EVENT_TOUCHMOVE And ..
-			event.id <> EVENT_TOUCHUP Then Return data
-	For Local ui:TUIContext = EachIn _uiContexts
-		If ui Then ui._HandleTouchEvent(event)
-	Next
-	Return data
-End Function
 
 Function _ClampNonNegative:Int(value:Int)
 	If value < 0 Then Return 0
@@ -282,6 +307,7 @@ Type TUIWidget
 	Field clickable:Int
 	Field focusable:Int
 	Field focusIndicatorVisible:Int = True
+	Field gridColumnSpan:Int = 1
 
 	Public
 	Method Context:TUIContext() Final
@@ -364,6 +390,22 @@ Type TUIWidget
 		marginRight = _ClampNonNegative(right)
 		marginBottom = _ClampNonNegative(bottom)
 		_RequestLayout()
+	End Method
+
+	Rem
+	bbdoc: Sets the number of columns occupied by this widget in a TUIGrid.
+	about: Other container types ignore this value.
+	End Rem
+	Method SetGridSpan(columns:Int)
+		If columns < 1 Then columns = 1
+		If columns > UIGridMaximumColumns Then columns = UIGridMaximumColumns
+		If gridColumnSpan = columns Then Return
+		gridColumnSpan = columns
+		_RequestLayout()
+	End Method
+
+	Method GridSpan:Int()
+		Return gridColumnSpan
 	End Method
 
 	Method SetVisible(value:Int)
@@ -612,6 +654,34 @@ Type TUIContainer Extends TUIWidget
 
 	Method PageStack:TUIPageStack() Final
 		Local widget:TUIPageStack = New TUIPageStack
+		Add(widget)
+		Return widget
+	End Method
+
+	Method Grid:TUIGrid(columns:Int = 0) Final
+		Local widget:TUIGrid = New TUIGrid
+		widget.SetColumns(columns)
+		Add(widget)
+		Return widget
+	End Method
+
+	Method Card:TUICard(title:String = "") Final
+		Local widget:TUICard = New TUICard
+		widget.SetTitle(title)
+		Add(widget)
+		Return widget
+	End Method
+
+	Method Header:TUIHeader(title:String = "", showBack:Int = False) Final
+		Local widget:TUIHeader = New TUIHeader
+		widget.SetTitle(title)
+		widget.SetBackVisible(showBack)
+		Add(widget)
+		Return widget
+	End Method
+
+	Method NavigationBar:TUINavigationBar() Final
+		Local widget:TUINavigationBar = New TUINavigationBar
 		Add(widget)
 		Return widget
 	End Method
@@ -895,6 +965,304 @@ End Type
 Type TUIStack Extends TUIContainer Final
 	Method New()
 		layoutDirection = 0
+	End Method
+End Type
+
+Rem
+bbdoc: Responsive equal-cell layout for dashboard tiles and compact control groups.
+about: Set a fixed column count, or leave it at zero and use the minimum column
+width to derive the count from the available space. Children may span columns.
+End Rem
+Type TUIGrid Extends TUIContainer Final
+	Private
+	Field configuredColumns:Int
+	Field minimumColumnWidth:Int = 120
+	Field configuredRowHeight:Int
+
+	Public
+	Method New()
+		layoutDirection = 0
+	End Method
+
+	Method SetColumns(columns:Int)
+		If columns < 0 Then columns = 0
+		If columns > UIGridMaximumColumns Then columns = UIGridMaximumColumns
+		If configuredColumns = columns Then Return
+		configuredColumns = columns
+		_RequestLayout()
+	End Method
+
+	Method Columns:Int()
+		Return configuredColumns
+	End Method
+
+	Method SetMinimumColumnWidth(width:Int)
+		If width < 1 Then width = 1
+		If minimumColumnWidth = width Then Return
+		minimumColumnWidth = width
+		_RequestLayout()
+	End Method
+
+	Method MinimumColumnWidth:Int()
+		Return minimumColumnWidth
+	End Method
+
+	Method SetRowHeight(height:Int)
+		If height < 0 Then height = 0
+		If configuredRowHeight = height Then Return
+		configuredRowHeight = height
+		_RequestLayout()
+	End Method
+
+	Method RowHeight:Int()
+		Return configuredRowHeight
+	End Method
+
+	Method PreferredSize(availableWidth:Int, availableHeight:Int, width:Int Var, height:Int Var) Override
+		Local contentWidth:Int = Max(availableWidth - paddingLeft - paddingRight, 0)
+		Local columns:Int = _ResolvedColumns(contentWidth)
+		Local columnWidth:Int = _ColumnWidth(contentWidth, columns)
+		Local rowHeight:Int = _ResolvedRowHeight(columnWidth, availableHeight)
+		Local rows:Int = _RowCount(columns)
+		width = contentWidth + paddingLeft + paddingRight
+		height = rows * rowHeight + Max(rows - 1, 0) * gap + paddingTop + paddingBottom
+		If requestedWidth >= 0 Then width = requestedWidth
+		If requestedHeight >= 0 Then height = requestedHeight
+	End Method
+
+	Method _LayoutChildren() Override
+		Local contentX:Int = X() + paddingLeft
+		Local contentY:Int = Y() + paddingTop
+		Local contentWidth:Int = Max(Width() - paddingLeft - paddingRight, 0)
+		Local contentHeight:Int = Max(Height() - paddingTop - paddingBottom, 0)
+		Local columns:Int = _ResolvedColumns(contentWidth)
+		Local columnWidth:Int = _ColumnWidth(contentWidth, columns)
+		Local rowHeight:Int = _ResolvedRowHeight(columnWidth, contentHeight)
+		Local column:Int
+		Local row:Int
+		For Local child:TUIWidget = EachIn uiChildren
+			If Not child.Visible() Then Continue
+			Local span:Int = Min(Max(child.gridColumnSpan, 1), columns)
+			If column > 0 And column + span > columns Then
+				row :+ 1
+				column = 0
+			End If
+			Local cellX:Int = contentX + column * (columnWidth + gap)
+			Local cellY:Int = contentY + row * (rowHeight + gap)
+			Local cellWidth:Int = columnWidth * span + gap * (span - 1)
+			If column + span = columns Then cellWidth = Max(contentX + contentWidth - cellX, 0)
+			Local childWidth:Int = Max(cellWidth - child.marginLeft - child.marginRight, 0)
+			Local childHeight:Int = Max(rowHeight - child.marginTop - child.marginBottom, 0)
+			child._SetBounds(cellX + child.marginLeft, cellY + child.marginTop, childWidth, childHeight)
+			Local container:TUIContainer = TUIContainer(child)
+			If container Then container._LayoutChildren()
+			column :+ span
+			If column >= columns Then
+				row :+ 1
+				column = 0
+			End If
+		Next
+	End Method
+
+	Private
+	Method _ResolvedColumns:Int(contentWidth:Int)
+		If configuredColumns > 0 Then Return configuredColumns
+		Return Min(Max((contentWidth + gap) / Max(minimumColumnWidth + gap, 1), 1), ..
+			UIGridMaximumColumns)
+	End Method
+
+	Method _ColumnWidth:Int(contentWidth:Int, columns:Int)
+		Return Max((contentWidth - gap * Max(columns - 1, 0)) / Max(columns, 1), 0)
+	End Method
+
+	Method _ResolvedRowHeight:Int(columnWidth:Int, availableHeight:Int)
+		If configuredRowHeight > 0 Then Return configuredRowHeight
+		Local height:Int
+		For Local child:TUIWidget = EachIn uiChildren
+			If Not child.Visible() Then Continue
+			Local preferredWidth:Int
+			Local preferredHeight:Int
+			child.PreferredSize(columnWidth * Max(child.gridColumnSpan, 1), availableHeight, ..
+				preferredWidth, preferredHeight)
+			height = Max(height, preferredHeight + child.marginTop + child.marginBottom)
+		Next
+		Return height
+	End Method
+
+	Method _RowCount:Int(columns:Int)
+		Local rows:Int
+		Local column:Int
+		For Local child:TUIWidget = EachIn uiChildren
+			If Not child.Visible() Then Continue
+			Local span:Int = Min(Max(child.gridColumnSpan, 1), columns)
+			If column > 0 And column + span > columns Then
+				rows :+ 1
+				column = 0
+			End If
+			column :+ span
+			If column >= columns Then
+				rows :+ 1
+				column = 0
+			End If
+		Next
+		If column > 0 Then rows :+ 1
+		Return rows
+	End Method
+End Type
+
+Rem
+bbdoc: Optional styled content container for dashboard cards and tiles.
+End Rem
+Type TUICard Extends TUIContainer Final
+	Private
+	Field titleLabel:TUILabel
+
+	Public
+	Method New()
+		layoutDirection = 2
+		gap = 6
+		paddingLeft = 12
+		paddingTop = 10
+		paddingRight = 12
+		paddingBottom = 10
+		drawBackground = True
+		titleLabel = New TUILabel
+		titleLabel.SetVisible(False)
+		Add(titleLabel)
+	End Method
+
+	Method SetTitle(title:String)
+		If Not title Then title = ""
+		titleLabel.SetText(title)
+		titleLabel.SetVisible(title.Length > 0)
+	End Method
+
+	Method Title:String()
+		Return titleLabel.Text()
+	End Method
+
+	Method TitleLabel:TUILabel()
+		Return titleLabel
+	End Method
+
+	Method DefaultStyle:TUIStyle() Override
+		If Context() And Context().Theme() Then Return Context().Theme().card
+		Return Super.DefaultStyle()
+	End Method
+
+	Method ClipsChildren:Int() Override
+		Return True
+	End Method
+
+	Method Draw(graphics:TEmbedded2DContext) Override
+		Super.Draw(graphics)
+		Local style:TUIStyle = DefaultStyle()
+		If uiStyle Then style = uiStyle
+		If style.borderWidth > 0 Then
+			graphics.SetColorValue(style.border)
+			For Local edge:Int = 0 Until style.borderWidth
+				graphics.DrawRoundRect(X() + edge, Y() + edge, Width() - edge * 2, ..
+					Height() - edge * 2, Max(style.cornerRadius - edge, 0))
+			Next
+		End If
+	End Method
+End Type
+
+Function _UIHeaderBack(button:TUIButton)
+	Local header:TUIHeader = TUIHeader(button.Parent())
+	If header And header.Context() Then header.Context().Back()
+End Function
+
+Rem
+bbdoc: Optional page header with a title, Back action and trailing actions.
+End Rem
+Type TUIHeader Extends TUIContainer Final
+	Private
+	Field backButton:TUIButton
+	Field titleLabel:TUILabel
+
+	Public
+	Method New()
+		layoutDirection = 1
+		gap = 10
+		backButton = New TUIButton
+		backButton.SetText("< Back")
+		backButton.SetVisible(False)
+		backButton.OnClick(_UIHeaderBack)
+		Add(backButton)
+		titleLabel = New TUILabel
+		titleLabel.SetGrow(1)
+		titleLabel.SetAlign(UIAlignCenter)
+		Add(titleLabel)
+	End Method
+
+	Method SetTitle(title:String)
+		titleLabel.SetText(title)
+	End Method
+
+	Method Title:String()
+		Return titleLabel.Text()
+	End Method
+
+	Method TitleLabel:TUILabel()
+		Return titleLabel
+	End Method
+
+	Method SetBackVisible(value:Int)
+		backButton.SetVisible(value)
+	End Method
+
+	Method BackButton:TUIButton()
+		Return backButton
+	End Method
+
+	Method Action:TUIButton(text:String, handler(button:TUIButton) = Null)
+		Local button:TUIButton = Button(text)
+		If handler Then button.OnClick(handler)
+		Return button
+	End Method
+
+	Method DefaultStyle:TUIStyle() Override
+		If Context() And Context().Theme() Then Return Context().Theme().header
+		Return Super.DefaultStyle()
+	End Method
+End Type
+
+Rem
+bbdoc: Optional equal-width action bar suitable for page-level navigation.
+End Rem
+Type TUINavigationBar Extends TUIContainer Final
+	Public
+	Method New()
+		layoutDirection = 1
+		gap = 8
+		paddingLeft = 8
+		paddingTop = 8
+		paddingRight = 8
+		paddingBottom = 8
+		drawBackground = True
+	End Method
+
+	Method Action:TUIButton(text:String, handler(button:TUIButton) = Null)
+		Local button:TUIButton = Button(text)
+		button.SetGrow(1)
+		If handler Then button.OnClick(handler)
+		Return button
+	End Method
+
+	Method DefaultStyle:TUIStyle() Override
+		If Context() And Context().Theme() Then Return Context().Theme().navigation
+		Return Super.DefaultStyle()
+	End Method
+
+	Method Draw(graphics:TEmbedded2DContext) Override
+		Super.Draw(graphics)
+		Local style:TUIStyle = DefaultStyle()
+		If uiStyle Then style = uiStyle
+		If style.borderWidth > 0 Then
+			graphics.SetColorValue(style.border)
+			graphics.DrawRoundRect(X(), Y(), Width(), Height(), style.cornerRadius)
+		End If
 	End Method
 End Type
 
@@ -1280,6 +1648,9 @@ Type TUIListItem Extends TUIWidget Final
 		End If
 		width = textWidth + style.paddingLeft + style.paddingRight
 		height = lineHeight + style.paddingTop + style.paddingBottom
+		If Context() And Context().Theme() Then
+			height = Max(height, Context().Theme().selectionMinimumHeight)
+		End If
 		If requestedWidth >= 0 Then width = requestedWidth
 		If requestedHeight >= 0 Then height = requestedHeight
 	End Method
@@ -1416,6 +1787,9 @@ Type TUIComboBox Extends TUIWidget Final
 		End If
 		width = textWidth + lineHeight + style.paddingLeft + style.paddingRight
 		height = lineHeight + style.paddingTop + style.paddingBottom
+		If Context() And Context().Theme() Then
+			height = Max(height, Context().Theme().selectionMinimumHeight)
+		End If
 		If requestedWidth >= 0 Then width = requestedWidth
 		If requestedHeight >= 0 Then height = requestedHeight
 	End Method
@@ -1649,7 +2023,11 @@ Type TUIPageStack Extends TUIContainer Final
 	End Method
 
 	Method _NotifyChanged()
-		_Invalidate()
+		' A page transition can replace every pixel in the stack. Invalidate the
+		' complete output rather than relying on the outgoing page's retained
+		' bounds: the incoming page may request a different layout and buffered
+		' displays must receive one authoritative replacement frame.
+		If Context() Then Context().InvalidateAll() Else _Invalidate()
 		If changeHandler Then changeHandler(Self)
 		EmitEvent(CreateEvent(EVENT_UIPAGECHANGED, Self, Depth()))
 	End Method
@@ -2068,6 +2446,9 @@ Type TUIButton Extends TUIWidget
 		End If
 		width :+ style.paddingLeft + style.paddingRight
 		height :+ style.paddingTop + style.paddingBottom
+		If Context() And Context().Theme() Then
+			height = Max(height, Context().Theme().buttonMinimumHeight)
+		End If
 		If requestedWidth >= 0 Then width = requestedWidth
 		If requestedHeight >= 0 Then height = requestedHeight
 	End Method
@@ -3620,29 +4001,35 @@ Type TUIToast Extends TUIContainer Final
 	End Method
 End Type
 
+Rem
+bbdoc: Optional input binding owned by a UI context.
+about: Input adapters live in separate modules. A context closes its binding
+automatically, allowing Embedded.UI itself to remain display-only.
+End Rem
+Type TUIInputBinding
+	Method Close()
+	End Method
+
+	Method UpdatesScrollMomentum:Int()
+		Return False
+	End Method
+End Type
+
 Type TUIContext
 	Public
 	Field display:TDisplay
 	Field frame:TDisplayBuffer
 	Field graphics:TEmbedded2DContext
-	Field touch:TTouchDevice
+	Field inputBinding:TUIInputBinding
 	Field rootWidget:TUIColumn
 	Field overlayWidget:TUIContainer
 	Field overlayPreviousFocus:TUIWidget
 	Field overlayDismissOutside:Int = True
 	Field themeValue:TUITheme
 	Field layoutPending:Int = True
-	Field contextSlot:Int = -1
-	Field pressedWidget:TUIWidget
 	Field focusedWidget:TUIWidget
 	Field deferredFocus:TUIWidget
 	Field deferredFocusPending:Int
-	Field pressedContact:Int = -1
-	Field pressedArmed:Int
-	Field touchScroll:TUIScrollView
-	Field touchStartY:Int
-	Field touchLastY:Int
-	Field touchScrolled:Int
 	Field invalidCount:Int
 	Field invalidX0:Int[UIInvalidRegionMaximum]
 	Field invalidY0:Int[UIInvalidRegionMaximum]
@@ -3656,44 +4043,52 @@ Type TUIContext
 	Field toastMargin:Int = 12
 
 	Public
-	Function Create:TUIContext(display:TDisplay, touch:TTouchDevice = Null, theme:TUITheme = Null)
+	Function Create:TUIContext(display:TDisplay, theme:TUITheme = Null)
 		If Not display Then Return Null
 		Local frame:TDisplayBuffer = display.CreateBuffer()
 		If Not frame Then Return Null
-		Return CreateWithBuffer(frame, display, touch, theme)
+		Return CreateWithBuffer(frame, display, theme)
+	End Function
+
+	Rem
+	bbdoc: Creates a display-only UI context without touch input processing.
+	about: Read-only widgets, programmatic page changes, and value updates remain
+	available. The context does not occupy a touch-event slot or perform
+	touch-scroll momentum work during presentation.
+	End Rem
+	Function CreateDisplayOnly:TUIContext(display:TDisplay, theme:TUITheme = Null)
+		Return Create(display, theme)
 	End Function
 
 	Function CreateWithBuffer:TUIContext(frame:TDisplayBuffer, display:TDisplay = Null, ..
-			touch:TTouchDevice = Null, theme:TUITheme = Null)
+			theme:TUITheme = Null)
 		If Not frame Then Return Null
 		Local result:TUIContext = New TUIContext
 		result.display = display
 		result.frame = frame
 		result.graphics = TEmbedded2DContext.Create(frame, display)
 		result.graphics.SetDirtyTracking(True)
-		result.touch = touch
 		If theme Then result.themeValue = theme Else result.themeValue = TUITheme.Dark()
 		result.rootWidget = New TUIColumn
 		result.rootWidget._Attach(result, Null)
 		result.rootWidget.uiStyle = result.themeValue.screen
 		result.rootWidget.drawBackground = True
-		For Local slot:Int = 0 Until UIContextMaximum
-			If Not _uiContexts[slot] Then
-				_uiContexts[slot] = result
-				result.contextSlot = slot
-				Exit
-			End If
-		Next
-		If result.contextSlot < 0 Then Return Null
 		result.InvalidateAll()
 		Return result
 	End Function
 
+	Rem
+	bbdoc: Creates a display-only UI context over an existing framebuffer.
+	End Rem
+	Function CreateDisplayOnlyWithBuffer:TUIContext(frame:TDisplayBuffer, ..
+			display:TDisplay = Null, theme:TUITheme = Null)
+		Return CreateWithBuffer(frame, display, theme)
+	End Function
+
 	Method Close()
-		If contextSlot >= 0 And contextSlot < UIContextMaximum And _uiContexts[contextSlot] = Self Then ..
-			_uiContexts[contextSlot] = Null
-		contextSlot = -1
-		pressedWidget = Null
+		Local binding:TUIInputBinding = inputBinding
+		inputBinding = Null
+		If binding Then binding.Close()
 		focusedWidget = Null
 		deferredFocus = Null
 		deferredFocusPending = False
@@ -3701,8 +4096,16 @@ Type TUIContext
 		overlayPreviousFocus = Null
 		visibleToasts = New TUIToast[0]
 		toastQueue = New TUIToast[0]
-		touchScroll = Null
-		pressedContact = -1
+	End Method
+
+	Method BindInput:Int(binding:TUIInputBinding)
+		If Not binding Or inputBinding Then Return False
+		inputBinding = binding
+		Return True
+	End Method
+
+	Method UnbindInput(binding:TUIInputBinding)
+		If inputBinding = binding Then inputBinding = Null
 	End Method
 
 	Method Root:TUIColumn()
@@ -3901,8 +4304,14 @@ Type TUIContext
 		Local list:TUIList = TUIList(widget)
 		If list Then first = list.SelectedItem()
 		If Not first Then
-			Local cursor:Int
-			first = _FocusableAt(widget, 0, cursor)
+			Local current:TUIWidget = widget
+			While current
+				If current.Focusable() Then
+					first = current
+					Exit
+				End If
+				current = _NextTreeWidget(current, widget, True)
+			Wend
 		End If
 		If first Then SetFocus(first) Else ClearFocus()
 		Return True
@@ -3952,27 +4361,33 @@ Type TUIContext
 	Method FocusNext:Int()
 		Local focusRoot:TUIWidget = rootWidget
 		If overlayWidget Then focusRoot = overlayWidget
-		Local count:Int = _CountFocusable(focusRoot)
-		If count <= 0 Then Return False
-		Local cursor:Int
-		Local index:Int = _FocusableIndex(focusRoot, focusedWidget, cursor)
-		Local nextIndex:Int
-		If index < 0 Then nextIndex = 0 Else nextIndex = (index + 1) Mod count
-		cursor = 0
-		Return SetFocus(_FocusableAt(focusRoot, nextIndex, cursor))
+		Local first:TUIWidget
+		Local selectNext:Int = focusedWidget = Null
+		Local current:TUIWidget = focusRoot
+		While current
+			If current.Focusable() Then
+				If Not first Then first = current
+				If selectNext And current <> focusedWidget Then Return SetFocus(current)
+				If current = focusedWidget Then selectNext = True
+			End If
+			current = _NextTreeWidget(current, focusRoot, True)
+		Wend
+		Return SetFocus(first)
 	End Method
 
 	Method FocusPrevious:Int()
 		Local focusRoot:TUIWidget = rootWidget
 		If overlayWidget Then focusRoot = overlayWidget
-		Local count:Int = _CountFocusable(focusRoot)
-		If count <= 0 Then Return False
-		Local cursor:Int
-		Local index:Int = _FocusableIndex(focusRoot, focusedWidget, cursor)
-		Local previousIndex:Int
-		If index < 0 Then previousIndex = count - 1 Else previousIndex = (index + count - 1) Mod count
-		cursor = 0
-		Return SetFocus(_FocusableAt(focusRoot, previousIndex, cursor))
+		Local previous:TUIWidget
+		Local current:TUIWidget = focusRoot
+		While current
+			If current.Focusable() Then
+				If current = focusedWidget And previous Then Return SetFocus(previous)
+				previous = current
+			End If
+			current = _NextTreeWidget(current, focusRoot, True)
+		Wend
+		Return SetFocus(previous)
 	End Method
 
 	Method ActivateFocused:Int()
@@ -4188,8 +4603,10 @@ Type TUIContext
 
 	Method Present:Int()
 		Local now:UInt = UInt(MilliSecs())
-		_UpdateScrollMomentum(rootWidget, now)
-		If overlayWidget Then _UpdateScrollMomentum(overlayWidget, now)
+		If inputBinding And inputBinding.UpdatesScrollMomentum() Then
+			_UpdateScrollMomentum(rootWidget, now)
+			If overlayWidget Then _UpdateScrollMomentum(overlayWidget, now)
+		End If
 		_UpdateToast(now)
 		If deferredFocusPending Then
 			Local restore:TUIWidget = deferredFocus
@@ -4210,149 +4627,6 @@ Type TUIContext
 			Return _HitTest(overlayWidget, x, y)
 		End If
 		Return _HitTest(rootWidget, x, y)
-	End Method
-
-	Method _HandleTouchEvent(event:TEvent)
-		If touch And event.source <> touch Then Return
-		Local x:Int
-		Local y:Int
-		If frame.Width() > 1 Then x = Int((Long(event.x) * (frame.Width() - 1) + 5000) / 10000)
-		If frame.Height() > 1 Then y = Int((Long(event.y) * (frame.Height() - 1) + 5000) / 10000)
-		Select event.id
-			Case EVENT_TOUCHDOWN
-				If pressedContact >= 0 Or Not event.source Then Return
-				If overlayWidget And Not overlayWidget.Contains(x, y) Then
-					If overlayDismissOutside Then DismissOverlay()
-					pressedContact = event.data
-					Return
-				End If
-				Local target:TUIWidget = HitTest(x, y)
-				touchScroll = _ContainingScroll(target)
-				If Not touchScroll Then
-					If overlayWidget Then
-						touchScroll = _ScrollAt(overlayWidget, x, y)
-					Else
-						touchScroll = _ScrollAt(rootWidget, x, y)
-					End If
-				End If
-				If Not target And Not touchScroll Then Return
-				pressedContact = event.data
-				touchStartY = y
-				touchLastY = y
-				touchScrolled = False
-				If touchScroll Then touchScroll._BeginDrag(UInt(MilliSecs()))
-				If target And target.Enabled() Then
-					SetFocus(target)
-					pressedWidget = target
-					pressedArmed = True
-					target._SetPressed(True)
-					Local slider:TUISlider = TUISlider(target)
-					If slider Then
-						slider._TrackPointer(x)
-					Else
-						Local dial:TUIRotaryDial = TUIRotaryDial(target)
-						If dial Then dial._BeginPointer(x, y)
-					End If
-				End If
-			Case EVENT_TOUCHMOVE
-				If pressedContact = event.data Then
-					If touchScroll And (touchScrolled Or Abs(y - touchStartY) >= UIScrollDragThreshold) Then
-						If Not touchScrolled Then
-							touchScrolled = True
-							pressedArmed = False
-							If pressedWidget Then pressedWidget._SetPressed(False)
-						End If
-						Local now:UInt = UInt(MilliSecs())
-						touchScroll._DragBy(touchLastY - y, now)
-						touchLastY = y
-					Else If pressedWidget Then
-						Local slider:TUISlider = TUISlider(pressedWidget)
-						If slider Then
-							slider._TrackPointer(x)
-						Else
-							Local dial:TUIRotaryDial = TUIRotaryDial(pressedWidget)
-							If dial Then
-								dial._TrackPointer(x, y)
-							Else
-								pressedArmed = pressedWidget.Contains(x, y)
-								pressedWidget._SetPressed(pressedArmed)
-							End If
-						End If
-					End If
-				End If
-			Case EVENT_TOUCHUP
-				If pressedContact = event.data Then
-					If touchScroll Then touchScroll._EndDrag(UInt(MilliSecs()))
-					Local target:TUIWidget = pressedWidget
-					Local activate:Int
-					If target Then
-						Local slider:TUISlider = TUISlider(target)
-						If slider And Not touchScrolled Then slider._TrackPointer(x)
-						Local dial:TUIRotaryDial = TUIRotaryDial(target)
-						If dial Then
-							If Not touchScrolled Then dial._TrackPointer(x, y)
-							dial._EndPointer()
-						End If
-						activate = Not touchScrolled And pressedArmed And target.Contains(x, y) And target.Enabled()
-						target._SetPressed(False)
-					End If
-					pressedWidget = Null
-					pressedContact = -1
-					pressedArmed = False
-					touchScroll = Null
-					touchScrolled = False
-					If activate Then
-						Local dialogAction:TUIDialogAction = TUIDialogAction(target)
-						If dialogAction Then
-							dialogAction._Activate()
-						Else
-							Local button:TUIButton = TUIButton(target)
-							If button Then
-								button._Activate()
-								EmitEvent(CreateEvent(EVENT_UIACTION, target, 0, 0, x, y))
-							Else
-								Local checkBox:TUICheckBox = TUICheckBox(target)
-								If checkBox Then
-									checkBox._Activate()
-								Else
-									Local radioButton:TUIRadioButton = TUIRadioButton(target)
-									If radioButton Then
-										radioButton._Activate()
-									Else
-										Local switchControl:TUISwitch = TUISwitch(target)
-										If switchControl Then
-											switchControl._Activate()
-										Else
-											Local listItem:TUIListItem = TUIListItem(target)
-											If listItem Then
-												listItem._Activate()
-											Else
-												Local combo:TUIComboBox = TUIComboBox(target)
-												If combo Then
-													combo._Activate()
-												Else
-													Local tabButton:TUITabButton = TUITabButton(target)
-													If tabButton Then
-														tabButton._Activate()
-													Else
-														Local stepper:TUIStepper = TUIStepper(target)
-														If stepper Then
-															stepper._ActivateAt(x)
-														Else
-															Local segmented:TUISegmentedControl = TUISegmentedControl(target)
-															If segmented Then segmented._ActivateAt(x)
-														End If
-													End If
-												End If
-											End If
-										End If
-									End If
-								End If
-							End If
-						End If
-					End If
-				End If
-		End Select
 	End Method
 
 	Public
@@ -4511,11 +4785,50 @@ Type TUIContext
 
 	Method _BackInWidget:Int(widget:TUIWidget)
 		If Not widget Or Not widget.Visible() Then Return False
-		For Local index:Int = widget.uiChildren.Length - 1 To 0 Step -1
-			If _BackInWidget(widget.uiChildren[index]) Then Return True
-		Next
-		Local stack:TUIPageStack = TUIPageStack(widget)
-		If stack And stack.CanPop() Then Return stack.Pop()
+		' Walk the tree in reverse post-order without recursion. Embedded entry
+		' points carry precise-GC root frames, so a deeply composed page can
+		' otherwise exhaust the small native task stack while handling Back.
+		Local current:TUIWidget = widget
+		While current
+			' Descend through the last visible child until reaching a leaf.
+			Local child:TUIWidget
+			For Local index:Int = current.uiChildren.Length - 1 To 0 Step -1
+				If current.uiChildren[index].Visible() Then
+					child = current.uiChildren[index]
+					Exit
+				End If
+			Next
+			If child Then
+				current = child
+				Continue
+			End If
+
+			While current
+				Local stack:TUIPageStack = TUIPageStack(current)
+				If stack And stack.CanPop() Then Return stack.Pop()
+				If current = widget Then Return False
+
+				Local parent:TUIContainer = current.Parent()
+				If Not parent Then Return False
+				Local sibling:TUIWidget
+				For Local index:Int = parent.uiChildren.Length - 1 To 0 Step -1
+					If parent.uiChildren[index] = current Then
+						For Local siblingIndex:Int = index - 1 To 0 Step -1
+							If parent.uiChildren[siblingIndex].Visible() Then
+								sibling = parent.uiChildren[siblingIndex]
+								Exit
+							End If
+						Next
+						Exit
+					End If
+				Next
+				If sibling Then
+					current = sibling
+					Exit
+				End If
+				current = parent
+			Wend
+		Wend
 		Return False
 	End Method
 
@@ -4551,40 +4864,28 @@ Type TUIContext
 		Wend
 	End Method
 
-	Method _CountFocusable:Int(widget:TUIWidget)
-		If Not widget Or Not widget.Visible() Or Not widget.Enabled() Then Return 0
-		Local count:Int
-		If widget.Focusable() Then count = 1
+	' Returns the next widget in pre-order without recursion. When enabledOnly
+	' is true, disabled subtrees are skipped for focus traversal.
+	Method _NextTreeWidget:TUIWidget(widget:TUIWidget, root:TUIWidget, enabledOnly:Int = False)
+		If Not widget Or Not root Then Return Null
 		For Local child:TUIWidget = EachIn widget.uiChildren
-			count :+ _CountFocusable(child)
+			If child.Visible() And (Not enabledOnly Or child.Enabled()) Then Return child
 		Next
-		Return count
-	End Method
-
-	Method _FocusableAt:TUIWidget(widget:TUIWidget, targetIndex:Int, cursor:Int Var)
-		If Not widget Or Not widget.Visible() Or Not widget.Enabled() Then Return Null
-		If widget.Focusable() Then
-			If cursor = targetIndex Then Return widget
-			cursor :+ 1
-		End If
-		For Local child:TUIWidget = EachIn widget.uiChildren
-			Local found:TUIWidget = _FocusableAt(child, targetIndex, cursor)
-			If found Then Return found
-		Next
+		Local current:TUIWidget = widget
+		While current And current <> root
+			Local parent:TUIContainer = current.Parent()
+			If Not parent Then Return Null
+			Local foundCurrent:Int
+			For Local sibling:TUIWidget = EachIn parent.uiChildren
+				If foundCurrent Then
+					If sibling.Visible() And (Not enabledOnly Or sibling.Enabled()) Then Return sibling
+				Else If sibling = current Then
+					foundCurrent = True
+				End If
+			Next
+			current = parent
+		Wend
 		Return Null
-	End Method
-
-	Method _FocusableIndex:Int(widget:TUIWidget, target:TUIWidget, cursor:Int Var)
-		If Not widget Or Not widget.Visible() Or Not widget.Enabled() Then Return -1
-		If widget.Focusable() Then
-			If widget = target Then Return cursor
-			cursor :+ 1
-		End If
-		For Local child:TUIWidget = EachIn widget.uiChildren
-			Local found:Int = _FocusableIndex(child, target, cursor)
-			If found >= 0 Then Return found
-		Next
-		Return -1
 	End Method
 
 	Method _HitTest:TUIWidget(widget:TUIWidget, x:Int, y:Int)
@@ -4603,5 +4904,4 @@ Type TUIContext
 	End Method
 End Type
 
-AddHook EmitEventHook, _UIEventHook
 ?

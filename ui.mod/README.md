@@ -1,9 +1,10 @@
 # Embedded.UI
 
 `Embedded.UI` is a small retained user-interface layer for embedded displays.
-It provides rows, columns and stacks, styled controls, focus navigation, touch
-handling, semantic events, scrolling, selectable lists, tabs and popup
-overlays, dialogs and queued notifications. Rendering uses
+It provides rows, columns and stacks, styled controls, focus navigation,
+semantic events, scrolling, selectable lists, tabs and popup overlays, dialogs
+and queued notifications. Optional touch handling lives in
+`Embedded.UI.Interactive`. Rendering uses
 `Embedded.Graphics2D`, so the same widget code can sit over mono or colour
 display drivers.
 
@@ -16,8 +17,9 @@ SuperStrict
 
 Import BRL.Event
 Import Embedded.UI
+Import Embedded.UI.Interactive
 
-Local ui:TUIContext = TUIContext.Create(display, touch)
+Local ui:TUIContext = TUITouchInput.CreateContext(display, touch)
 Local page:TUIColumn = ui.Root()
 
 page.SetPadding(12)
@@ -35,7 +37,40 @@ Wend
 
 The application retains its widget references and updates them directly.
 `Present()` lays out invalid widgets, draws their dirty regions, advances any
-active scroll momentum, and presents the changed display area.
+active touch-scroll momentum when touch is configured, and presents the changed
+display area.
+
+### Display-only dashboards
+
+A touch screen is optional. Sensor panels and other read-only dashboards can
+use the same cards, labels, images, gauges, progress bars, status indicators
+and sparklines without installing a touch device:
+
+```blitzmax
+Local ui:TUIContext = TUIContext.CreateDisplayOnly(display, theme)
+Local page:TUIColumn = ui.Root()
+
+Local temperature:TUIArcGauge = page.ArcGauge(-20, 60, 21)
+Local history:TUISparkline = page.Sparkline(60)
+
+While True
+    temperature.SetValue(ReadTemperature())
+    history.AddValue(temperature.Value())
+    ui.Present()
+Wend
+```
+
+A display-only context does not register for touch events, perform hit-testing,
+or traverse the widget tree for touch-scroll momentum. Programmatic updates and
+page changes still work, as do explicit focus operations if physical buttons,
+an encoder or another application input source needs them.
+
+Only import `Embedded.UI.Interactive` when touch is required. It owns the touch
+driver dependency, global event hook, contact adapter and pointer/drag state
+machine; these are absent from a firmware image which imports only
+`Embedded.UI`. `TUITouchInput.Attach()` can also add touch to an existing
+context, while `CreateContext()` and `CreateContextWithBuffer()` provide
+one-step construction.
 
 ## Layout and controls
 
@@ -151,6 +186,41 @@ deepest visible page stack. It returns false at the root so an application can
 handle an otherwise unconsumed system Back action. Navigation invokes the
 optional `OnPageChanged()` callback and emits `EVENT_UIPAGECHANGED`; the event
 data contains the new stack depth.
+
+## Cards, grids and optional page chrome
+
+Dashboard structure is composable rather than mandatory. `TUICard` is a
+styled vertical container, while `TUIGrid` places ordinary widgets into equal
+cells. A grid can use a fixed number of columns or derive a responsive count
+from `SetMinimumColumnWidth()`. A child may occupy more than one column with
+`SetGridSpan()`:
+
+```blitzmax
+Local header:TUIHeader = page.Header("Device dashboard")
+header.Action("Settings", OpenSettings)
+
+Local grid:TUIGrid = page.Grid(3)
+grid.SetGap(10)
+grid.SetRowHeight(96)
+
+Local status:TUICard = grid.Card("System")
+status.StatusIndicator("Online", True)
+
+Local activity:TUICard = grid.Card("Activity")
+activity.SetGridSpan(2)
+activity.ProgressBar(0, 100, 68)
+
+Local navigation:TUINavigationBar = page.NavigationBar()
+navigation.Action("Home")
+navigation.Action("Settings", OpenSettings)
+```
+
+`TUIHeader` provides an optional Back button, a growing title and trailing
+action buttons. Its built-in Back action calls `TUIContext.Back()`. A
+`TUINavigationBar` gives each action equal width. Headers, navigation bars,
+cards and grids are independent widgets: applications may use any combination,
+style them through the theme or omit them entirely. They do not require a page
+stack and remain usable in tabs, dialogs and ordinary container trees.
 
 A combo box owns a persistent popup and reports user selections through the
 same selection event:
@@ -325,7 +395,13 @@ for monochrome displays.
 
 `TUITheme.Dark()` supplies a complete default theme and can use any imported
 bitmap font. Individual widget styles may override font scale, colours, border,
-corner radius and padding.
+corner radius and padding. `SetButtonMinimumHeight()` keeps button touch targets
+independent of bitmap-font dimensions. `SetSelectionMinimumHeight()` does the
+same for combo boxes and their selectable dropdown rows. An explicit widget
+height still wins.
+
+The implementation's scope, bounded-runtime rules and acceptance criteria are
+recorded in [DESIGN.md](DESIGN.md).
 
 Scrolling invalidates the scroll viewport because its children move. Keep list
 viewports and item decoration proportionate to the display and update rate.

@@ -1,5 +1,8 @@
 SuperStrict
 
+' This broad suite retains many independent UI fixtures. On ESP32, build with:
+' bmk makeapp -a -r -board <profile> -heap 128k -x embedded_ui_conformance.bmx
+
 Framework BRL.StandardIO
 Import BRL.Event
 Import BRL.System
@@ -8,6 +11,7 @@ Import Embedded.Drivers.Display
 Import Embedded.Drivers.Display.Fonts.Spleen.Size5x8
 Import Embedded.Drivers.Touch
 Import Embedded.UI
+Import Embedded.UI.Interactive
 
 Type TFakeTouch Extends TTouchDevice
 	Field count:Int
@@ -138,7 +142,7 @@ End Function
 
 Function RunTabTests(touch:TFakeTouch)
 	Local navigationFrame:TDisplayBuffer = TDisplayBuffer.Create(240, 180, DisplayPixelFormatMono1)
-	Local navigationUI:TUIContext = TUIContext.CreateWithBuffer(navigationFrame, Null, touch, ..
+	Local navigationUI:TUIContext = TUITouchInput.CreateContextWithBuffer(navigationFrame, Null, touch, ..
 		TUITheme.Dark(Spleen5x8Font()))
 	Check(navigationUI <> Null, "could not create tab UI")
 	navigationUI.Theme().screen.background = 0
@@ -171,9 +175,10 @@ Function RunComboTests(touch:TFakeTouch)
 	' Combo boxes use a focus-trapping popup and outside dismissal must not leak
 	' the same touch sequence to a control underneath.
 	Local navigationFrame:TDisplayBuffer = TDisplayBuffer.Create(240, 180, DisplayPixelFormatMono1)
-	Local navigationUI:TUIContext = TUIContext.CreateWithBuffer(navigationFrame, Null, touch, ..
+	Local navigationUI:TUIContext = TUITouchInput.CreateContextWithBuffer(navigationFrame, Null, touch, ..
 		TUITheme.Dark(Spleen5x8Font()))
 	Check(navigationUI <> Null, "could not create combo UI")
+	navigationUI.Theme().SetSelectionMinimumHeight(30)
 	Local navigationPage:TUIColumn = navigationUI.Root()
 	navigationPage.SetPadding(4)
 	navigationPage.SetGap(4)
@@ -185,12 +190,15 @@ Function RunComboTests(touch:TFakeTouch)
 	combo.SetSelectedIndex(1)
 	Local navigationSelectionStart:Int = selectionChangeCount
 	Check(navigationUI.Render(), "combo UI did not render")
+	Check(combo.Height() >= 30, "combo minimum touch height was not applied")
 	Check(navigationUI.SetFocus(combo), "combo box could not receive focus")
 	Check(navigationUI.ActivateFocused() And navigationUI.OverlayVisible(), ..
 		"combo box did not open its popup")
 	Local comboPopup:TUIPopupMenu = combo.ActivePopup()
 	Check(comboPopup And navigationUI.ActiveOverlay() = comboPopup, ..
 		"combo popup was not installed as the active overlay")
+	Check(comboPopup.ItemAt(0).Height() >= 30 And comboPopup.ItemAt(2).Height() >= 30, ..
+		"combo popup row minimum touch height was not applied")
 	Check(navigationUI.FocusedWidget() = comboPopup.ItemAt(1), ..
 		"combo popup did not focus its current selection")
 	Check(navigationUI.FocusNext() And navigationUI.FocusedWidget() = comboPopup.ItemAt(2), ..
@@ -220,7 +228,7 @@ End Function
 
 Function RunPopupMenuTests(touch:TFakeTouch)
 	Local navigationFrame:TDisplayBuffer = TDisplayBuffer.Create(240, 180, DisplayPixelFormatMono1)
-	Local navigationUI:TUIContext = TUIContext.CreateWithBuffer(navigationFrame, Null, touch, ..
+	Local navigationUI:TUIContext = TUITouchInput.CreateContextWithBuffer(navigationFrame, Null, touch, ..
 		TUITheme.Dark(Spleen5x8Font()))
 	Check(navigationUI <> Null, "could not create popup menu UI")
 	Local menu:TUIPopupMenu = navigationUI.PopupMenu()
@@ -240,7 +248,7 @@ End Function
 
 Function RunChoiceWidgetTests(touch:TFakeTouch)
 	Local choiceFrame:TDisplayBuffer = TDisplayBuffer.Create(240, 180, DisplayPixelFormatMono1)
-	Local choiceUI:TUIContext = TUIContext.CreateWithBuffer(choiceFrame, Null, touch, ..
+	Local choiceUI:TUIContext = TUITouchInput.CreateContextWithBuffer(choiceFrame, Null, touch, ..
 		TUITheme.Dark(Spleen5x8Font()))
 	Check(choiceUI <> Null, "could not create choice widget UI")
 	Local page:TUIColumn = choiceUI.Root()
@@ -286,7 +294,7 @@ End Function
 
 Function RunDialogTests(touch:TFakeTouch)
 	Local dialogFrame:TDisplayBuffer = TDisplayBuffer.Create(240, 180, DisplayPixelFormatMono1)
-	Local dialogUI:TUIContext = TUIContext.CreateWithBuffer(dialogFrame, Null, touch, ..
+	Local dialogUI:TUIContext = TUITouchInput.CreateContextWithBuffer(dialogFrame, Null, touch, ..
 		TUITheme.Dark(Spleen5x8Font()))
 	Check(dialogUI <> Null, "could not create dialog UI")
 	Local opener:TUIButton = dialogUI.Root().Button("Open")
@@ -309,7 +317,7 @@ End Function
 
 Function RunWrappedLabelTests(touch:TFakeTouch)
 	Local textFrame:TDisplayBuffer = TDisplayBuffer.Create(120, 80, DisplayPixelFormatMono1)
-	Local textUI:TUIContext = TUIContext.CreateWithBuffer(textFrame, Null, touch, ..
+	Local textUI:TUIContext = TUITouchInput.CreateContextWithBuffer(textFrame, Null, touch, ..
 		TUITheme.Dark(Spleen5x8Font()))
 	Check(textUI <> Null, "could not create wrapped label UI")
 	Local label:TUILabel = textUI.Root().Label("A retained label wraps at available words")
@@ -321,7 +329,7 @@ End Function
 
 Function RunDecimalStepperTests(touch:TFakeTouch)
 	Local decimalFrame:TDisplayBuffer = TDisplayBuffer.Create(160, 60, DisplayPixelFormatMono1)
-	Local decimalUI:TUIContext = TUIContext.CreateWithBuffer(decimalFrame, Null, touch, ..
+	Local decimalUI:TUIContext = TUITouchInput.CreateContextWithBuffer(decimalFrame, Null, touch, ..
 		TUITheme.Dark(Spleen5x8Font()))
 	Check(decimalUI <> Null, "could not create decimal stepper UI")
 	Local stepper:TUIStepper = decimalUI.Root().DecimalStepper(-1.0, 1.0, 0.0, 0.25, 2)
@@ -365,14 +373,22 @@ Function RunPageStackTests(ui:TUIContext, page:TUIColumn)
 	Check(navigation.Push(details) And navigation.Replace(replacement) And ..
 		navigation.Depth() = 2 And navigation.CurrentPage() = replacement And ..
 		Not details.Visible() And replacement.Visible(), "page replacement did not preserve stack depth")
-	ui.Render()
+	Check(ui.Render(), "replacement page did not render")
 	Check(ui.Back() And navigation.CurrentPage() = home, "replacement page did not pop to its predecessor")
 	Check(ui.Present(), "replacement page pop did not present its predecessor")
-	For Local cycle:Int = 0 Until 256
-		Check(navigation.Push(details) And navigation.Pop() And ui.Present(), ..
-			"page stack failed during repeated bounded navigation")
-		If cycle Mod 4 = 3 Then Delay(10)
+	Check(home.Visible() And Not details.Visible() And Not replacement.Visible() And ..
+		ui.FocusedWidget() = homeButton, "replacement page pop did not fully restore its root page")
+	For Local replacementCycle:Int = 0 Until 64
+		Check(navigation.Push(details) And navigation.Replace(replacement) And ui.Back(), ..
+			"repeated replace/pop navigation failed")
 	Next
+	Check(ui.Present(), "repeated replacement navigation did not present its final state")
+	For Local cycle:Int = 0 Until 256
+		Check(navigation.Push(details) And navigation.Pop(), ..
+			"page stack failed during repeated bounded navigation")
+		If cycle Mod 32 = 31 Then Delay(1)
+	Next
+	Check(ui.Present(), "repeated page navigation did not present its final state")
 	Check(navigation.Depth() = 1 And navigation.CurrentPage() = home, ..
 		"repeated navigation did not return to the root page")
 End Function
@@ -444,6 +460,7 @@ Function RunToastTests(toastUI:TUIContext, toastFrame:TDisplayBuffer, focused:TU
 		"timed toast did not advance its queue")
 	toastUI._UpdateToast(UInt(MilliSecs()) + 10000)
 	Check(toastUI.ActiveToast() = second, "persistent toast expired")
+	Delay(1)
 
 	Local queued:TUIToast = toastUI.Toast("Queued", 100, UIToastInfo)
 	Check(toastUI.DismissToast(queued) And toastUI.PendingToastCount() = 0, ..
@@ -458,6 +475,7 @@ Function RunToastTests(toastUI:TUIContext, toastFrame:TDisplayBuffer, focused:TU
 	toastUI.ClearToasts()
 	Check(toastUI.ActiveToast() = Null And toastUI.PendingToastCount() = 0, ..
 		"toast queue did not clear")
+	Delay(1)
 
 	toastUI.SetToastVisibleLimit(3)
 	toastUI.SetToastPlacement(UIToastBottomRight)
@@ -477,6 +495,7 @@ Function RunToastTests(toastUI:TUIContext, toastFrame:TDisplayBuffer, focused:TU
 	Check(stackFirst.Y() > firstYBefore And stackFirst.Y() < stackThird.Y(), ..
 		"toast stack did not reflow after dismissal")
 	toastUI.ClearToasts()
+	Delay(1)
 
 	Local overlayToast:TUIToast = toastUI.Toast("Visible over dialog", 0, UIToastInfo)
 	Local dialog:TUIDialog = toastUI.Dialog("Modal", "Toast remains independent")
@@ -486,16 +505,18 @@ Function RunToastTests(toastUI:TUIContext, toastFrame:TDisplayBuffer, focused:TU
 	Check(toastUI.Render(), "toast and modal overlay did not render together")
 	dialog.Close()
 	toastUI.ClearToasts()
+	Delay(1)
 End Function
 
 AddHook EmitEventHook, CaptureAction
 Local frame:TDisplayBuffer = TDisplayBuffer.Create(240, 180, DisplayPixelFormatMono1)
 Local touch:TFakeTouch = New TFakeTouch
 Check(touch.StartEvents(), "could not start fake touch")
-Local ui:TUIContext = TUIContext.CreateWithBuffer(frame, Null, touch, ..
+Local ui:TUIContext = TUITouchInput.CreateContextWithBuffer(frame, Null, touch, ..
 	TUITheme.Dark(Spleen5x8Font()))
 Check(ui <> Null, "could not create UI")
 ui.Theme().screen.background = 0
+ui.Theme().SetButtonMinimumHeight(30)
 
 Local page:TUIColumn = ui.Root()
 page.SetPadding(6)
@@ -521,11 +542,14 @@ Local progress:TUIProgressBar = page.ProgressBar(0, 200, 50)
 Local multiline:TUILabel = page.Label("First~nSecond")
 
 Check(ui.Render(), "initial UI did not render")
+Print "embedded UI conformance: base layout"
 Check(multiline.Height() = multiline.DefaultStyle().font.LineHeight() * ..
 	multiline.DefaultStyle().fontScale * 2, "multiline label did not reserve both lines")
 Check(title.X() = 6 And title.Y() = 6, "column padding was not applied")
 Check(row.X() = 6 And row.Width() = 228, "row did not stretch")
 Check(cancel.Width() > 0 And Abs(connect.Width() - cancel.Width() * 2) <= 1, "weighted row growth failed")
+Check(cancel.Height() >= 30 And connect.Height() >= 30, ..
+	"theme button minimum height was coupled to the bitmap font height")
 Local checkStyle:TUIStyle = checkBox.DefaultStyle()
 Local checkGap:Int = Max(checkStyle.fontScale * 4, 6)
 Local checkContentRight:Int = checkBox.X() + checkStyle.paddingLeft + ..
@@ -645,16 +669,22 @@ Check(progress.Value() = 80, "range change did not clamp the progress value")
 Check(ui.Render(), "value control changes were not invalidated")
 
 RunDashboardTests(ui, page)
+Print "embedded UI conformance: dashboard"
+Delay(1)
 RunPageStackTests(ui, page)
+Print "embedded UI conformance: page stacks"
+Delay(1)
 
 RunToastTests(ui, frame, cancel)
+Print "embedded UI conformance: toasts"
+Delay(1)
 
 ui.Close()
 
 ' Scrolling clips a natural-height child list into a fixed viewport. Selection
 ' remains semantic and focus traversal keeps off-screen items visible.
 Local scrollFrame:TDisplayBuffer = TDisplayBuffer.Create(160, 100, DisplayPixelFormatMono1)
-Local scrollUI:TUIContext = TUIContext.CreateWithBuffer(scrollFrame, Null, touch, ..
+Local scrollUI:TUIContext = TUITouchInput.CreateContextWithBuffer(scrollFrame, Null, touch, ..
 	TUITheme.Dark(Spleen5x8Font()))
 Check(scrollUI <> Null, "could not create scrolling UI")
 scrollUI.Theme().screen.background = 0
@@ -668,6 +698,7 @@ For Local itemIndex:Int = 0 Until 8
 Next
 list.SetSelectedIndex(1)
 Check(scrollUI.Render(), "scrolling UI did not render")
+Delay(1)
 Check(list.ContentHeight() > list.Height() And list.MaxScrollY() > 0, ..
 	"list content did not overflow its viewport")
 Check(list.SelectedIndex() = 1 And selectionChangeCount = 0, ..
@@ -675,9 +706,11 @@ Check(list.SelectedIndex() = 1 And selectionChangeCount = 0, ..
 
 list.SetScrollY(10000)
 scrollUI.Render()
+Delay(1)
 Check(list.ScrollY() = list.MaxScrollY(), "list scroll position was not clamped")
 list.SetScrollY(0)
 scrollUI.Render()
+Delay(1)
 Local lastItem:TUIListItem = list.ItemAt(7)
 Check(scrollUI.SetFocus(lastItem), "off-screen list item could not receive focus")
 Check(list.ScrollY() > 0 And lastItem.Y() + lastItem.Height() <= list.Y() + list.Height(), ..
@@ -705,6 +738,7 @@ Check(Not list.MoveSelection(1) And scrollUI.FocusedWidget() = list.ItemAt(7), .
 ' requiring floating-point arithmetic.
 list.SetScrollY(0)
 scrollUI.Render()
+Delay(1)
 Check(Not list.MomentumEnabled(), "list momentum was not disabled by default")
 list.SetMomentumEnabled(True)
 Check(list.MomentumEnabled(), "list momentum could not be enabled")
@@ -734,12 +768,61 @@ PollSystem()
 Check(list.SelectedIndex() = selectionBeforeDrag, "scroll gesture activated a list item")
 
 scrollUI.Close()
+Print "embedded UI conformance: scrolling"
+Delay(1)
 RunTabTests(touch)
+Print "embedded UI conformance: tabs"
+Delay(1)
 RunComboTests(touch)
+Print "embedded UI conformance: combo"
+Delay(1)
 RunPopupMenuTests(touch)
+Print "embedded UI conformance: popup"
+Delay(1)
 RunChoiceWidgetTests(touch)
+Print "embedded UI conformance: choices"
+Delay(1)
 RunDialogTests(touch)
+Print "embedded UI conformance: dialogs"
+Delay(1)
 RunWrappedLabelTests(touch)
+Print "embedded UI conformance: wrapped labels"
+Delay(1)
 RunDecimalStepperTests(touch)
+Print "embedded UI conformance: decimal stepper"
+Delay(1)
+
+' Display-only contexts do not consume the bounded touch-context registry.
+' Keep more than UITouchContextMaximum alive together and verify that touch events
+' from another device do not activate their controls.
+Local passiveContexts:TUIContext[UITouchContextMaximum + 2]
+Local passiveButton:TUIButton
+For Local passiveIndex:Int = 0 Until passiveContexts.Length
+	Local passiveFrame:TDisplayBuffer = TDisplayBuffer.Create(48, 32, DisplayPixelFormatMono1)
+	passiveContexts[passiveIndex] = TUIContext.CreateDisplayOnlyWithBuffer(passiveFrame, Null, ..
+		TUITheme.Dark(Spleen5x8Font()))
+	Check(passiveContexts[passiveIndex] <> Null, ..
+		"display-only context consumed a touch-event slot")
+	Local passivePage:TUIColumn = passiveContexts[passiveIndex].Root()
+	passivePage.Label("Sensor dashboard")
+	Local button:TUIButton = passivePage.Button("No touch")
+	button.OnClick(Clicked)
+	If passiveIndex = 0 Then passiveButton = button
+	Check(passiveContexts[passiveIndex].Render(), "display-only UI did not render")
+	Delay(1)
+Next
+Local passiveCallbackStart:Int = callbackCount
+touch.x = passiveButton.X() + passiveButton.Width() / 2
+touch.y = passiveButton.Y() + passiveButton.Height() / 2
+touch.count = 1
+PollSystem()
+touch.count = 0
+PollSystem()
+Check(callbackCount = passiveCallbackStart And Not passiveButton.Pressed(), ..
+	"display-only UI processed a touch event")
+For Local passiveContext:TUIContext = EachIn passiveContexts
+	passiveContext.Close()
+Next
+Print "embedded UI conformance: display-only"
 touch.StopEvents()
 Print "embedded UI conformance: PASS"
