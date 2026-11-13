@@ -3,8 +3,9 @@
 `Embedded.UI` is a small retained user-interface layer for embedded displays.
 It provides rows, columns and stacks, styled controls, focus navigation, touch
 handling, semantic events, scrolling, selectable lists, tabs and popup
-overlays. Rendering uses `Embedded.Graphics2D`, so the same widget code can sit
-over mono or colour display drivers.
+overlays, dialogs and queued notifications. Rendering uses
+`Embedded.Graphics2D`, so the same widget code can sit over mono or colour
+display drivers.
 
 ## Basic structure
 
@@ -206,6 +207,43 @@ close.
 Labels can opt into width-aware word wrapping with `SetWordWrap(True)`.
 Dialog messages enable this automatically and their height is calculated from
 the width passed to `Show()`.
+
+## Toast notifications
+
+Toasts are non-modal messages drawn above both normal content and overlays.
+They never take focus and do not intercept touch input:
+
+```blitzmax
+ui.Toast("Settings saved", 2500, UIToastSuccess)
+ui.Toast("Signal is weak", 3500, UIToastWarning)
+```
+
+Kinds are `UIToastInfo`, `UIToastSuccess`, `UIToastWarning` and
+`UIToastError`. The duration is in milliseconds; use zero for a persistent
+notification which must be closed explicitly:
+
+```blitzmax
+Local offline:TUIToast = ui.Toast("Offline mode is active", 0, UIToastWarning)
+' Later:
+offline.Close()
+```
+
+Up to three toasts are visible by default. New bottom-anchored messages push
+older messages upward; top-anchored messages push them downward. The stack
+closes its gaps whenever a notification expires or is dismissed. Configure it
+with `SetToastVisibleLimit()`, `SetToastGap()` and `SetToastMargin()`. A visible
+limit of one provides strictly sequential FIFO presentation.
+
+`SetToastPlacement()` selects the context default from nine anchors ranging
+from `UIToastTopLeft` to `UIToastBottomRight`. The optional fourth `Toast()`
+argument or `TUIToast.SetPlacement()` can override it for one message.
+
+Messages beyond the visible limit are retained in FIFO order, up to
+`UIToastQueueMaximum` pending messages. `Toast()` returns `Null` when that
+bound is reached. `DismissToast()` closes the newest visible toast and advances
+the queue, while `DismissToast(toast)` can dismiss a specific visible toast or
+cancel a queued message. `ClearToasts()` removes every visible and pending
+notification. Messages wrap automatically to the available display width.
 
 ## Themes and rendering cost
 

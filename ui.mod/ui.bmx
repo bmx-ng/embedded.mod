@@ -34,6 +34,21 @@ Const UIScrollDragThreshold:Int = 4
 Const UIScrollMinimumMomentum:Int = 60
 Const UIScrollMaximumMomentum:Int = 2400
 Const UIScrollMomentumDeceleration:Int = 1800
+Const UIToastInfo:Int = 0
+Const UIToastSuccess:Int = 1
+Const UIToastWarning:Int = 2
+Const UIToastError:Int = 3
+Const UIToastDefaultDuration:Int = 2500
+Const UIToastQueueMaximum:Int = 8
+Const UIToastTopLeft:Int = 0
+Const UIToastTopCenter:Int = 1
+Const UIToastTopRight:Int = 2
+Const UIToastCenterLeft:Int = 3
+Const UIToastCenter:Int = 4
+Const UIToastCenterRight:Int = 5
+Const UIToastBottomLeft:Int = 6
+Const UIToastBottomCenter:Int = 7
+Const UIToastBottomRight:Int = 8
 
 Global EVENT_UIACTION:Int = AllocUserEventId("UIAction")
 Global EVENT_UIVALUECHANGED:Int = AllocUserEventId("UIValueChanged")
@@ -2715,6 +2730,119 @@ Type TUIDialog Extends TUIContainer Final
 	End Method
 End Type
 
+Rem
+bbdoc: A transient or persistent non-modal notification.
+about: Toasts are owned by a TUIContext and are displayed above normal content
+and modal overlays without taking focus or participating in touch hit-testing.
+End Rem
+Type TUIToast Extends TUIContainer Final
+	Private
+	Field messageLabel:TUILabel
+	Field toastKind:Int
+	Field toastDuration:Int = UIToastDefaultDuration
+	Field toastPlacement:Int = UIToastBottomCenter
+	Field toastShownAt:UInt
+
+	Public
+	Method New()
+		layoutDirection = 2
+		SetPaddingEdges(14, 10, 14, 10)
+		drawBackground = True
+		messageLabel = Label()
+		messageLabel.SetWordWrap(True)
+	End Method
+
+	Method Message:String()
+		Return messageLabel.Text()
+	End Method
+
+	Method Kind:Int()
+		Return toastKind
+	End Method
+
+	Method Duration:Int()
+		Return toastDuration
+	End Method
+
+	Method Persistent:Int()
+		Return toastDuration = 0
+	End Method
+
+	Method Placement:Int()
+		Return toastPlacement
+	End Method
+
+	Method SetPlacement(value:Int)
+		If value < UIToastTopLeft Or value > UIToastBottomRight Then value = UIToastBottomCenter
+		If toastPlacement = value Then Return
+		toastPlacement = value
+		If Context() Then Context().RequestLayout()
+	End Method
+
+	Method Close:Int()
+		If Not Context() Then Return False
+		Return Context().DismissToast(Self)
+	End Method
+
+	Public
+	Method _Configure(message:String, duration:Int, kind:Int, placement:Int)
+		If duration < 0 Then duration = 0
+		If kind < UIToastInfo Or kind > UIToastError Then kind = UIToastInfo
+		toastDuration = duration
+		toastKind = kind
+		If placement < UIToastTopLeft Or placement > UIToastBottomRight Then placement = UIToastBottomCenter
+		toastPlacement = placement
+		messageLabel.SetText(message)
+
+		Local style:TUIStyle = TUIStyle.Create($ffffff, $245d86, True)
+		style.border = $80c9f4
+		Select toastKind
+			Case UIToastSuccess
+				style.background = $24633f
+				style.border = $75d59b
+			Case UIToastWarning
+				style.foreground = $fff8df
+				style.background = $795b17
+				style.border = $ffd86a
+			Case UIToastError
+				style.background = $842f38
+				style.border = $ff929b
+		End Select
+		style.borderWidth = 1
+		style.cornerRadius = 6
+		If Context() And Context().Theme() Then
+			style.font = Context().Theme().label.font
+			style.fontScale = Context().Theme().label.fontScale
+		End If
+		SetStyle(style)
+		Local labelStyle:TUIStyle = style.Copy()
+		labelStyle.backgroundVisible = False
+		labelStyle.borderWidth = 0
+		labelStyle.paddingLeft = 0
+		labelStyle.paddingTop = 0
+		labelStyle.paddingRight = 0
+		labelStyle.paddingBottom = 0
+		messageLabel.SetStyle(labelStyle)
+	End Method
+
+	Method _Show(now:UInt)
+		toastShownAt = now
+	End Method
+
+	Method _ShownAt:UInt()
+		Return toastShownAt
+	End Method
+
+	Method Draw(graphics:TEmbedded2DContext) Override
+		Super.Draw(graphics)
+		Local style:TUIStyle = Style()
+		If style.borderWidth > 0 Then
+			graphics.SetColorValue(style.border)
+			graphics.DrawRoundRect(X(), Y(), Width(), Height(), style.cornerRadius)
+		End If
+	End Method
+End Type
+
 Type TUIContext
 	Public
 	Field display:TDisplay
@@ -2741,6 +2869,12 @@ Type TUIContext
 	Field invalidY0:Int[UIInvalidRegionMaximum]
 	Field invalidX1:Int[UIInvalidRegionMaximum]
 	Field invalidY1:Int[UIInvalidRegionMaximum]
+	Field visibleToasts:TUIToast[] = New TUIToast[0]
+	Field toastQueue:TUIToast[] = New TUIToast[0]
+	Field toastPlacement:Int = UIToastBottomCenter
+	Field toastVisibleLimit:Int = 3
+	Field toastGap:Int = 8
+	Field toastMargin:Int = 12
 
 	Public
 	Function Create:TUIContext(display:TDisplay, touch:TTouchDevice = Null, theme:TUITheme = Null)
@@ -2784,6 +2918,8 @@ Type TUIContext
 		focusedWidget = Null
 		overlayWidget = Null
 		overlayPreviousFocus = Null
+		visibleToasts = New TUIToast[0]
+		toastQueue = New TUIToast[0]
 		touchScroll = Null
 		pressedContact = -1
 	End Method
@@ -2816,6 +2952,143 @@ Type TUIContext
 		dialog.SetMessage(message)
 		dialog._Attach(Self, Null)
 		Return dialog
+	End Method
+
+	Method Toast:TUIToast(message:String, duration:Int = UIToastDefaultDuration, ..
+			kind:Int = UIToastInfo, placement:Int = -1)
+		If toastQueue.Length >= UIToastQueueMaximum Then Return Null
+		If placement < UIToastTopLeft Or placement > UIToastBottomRight Then placement = toastPlacement
+		Local toast:TUIToast = New TUIToast
+		toast._Attach(Self, Null)
+		toast._Configure(message, duration, kind, placement)
+		If visibleToasts.Length >= toastVisibleLimit Then
+			toastQueue = toastQueue[..toastQueue.Length + 1]
+			toastQueue[toastQueue.Length - 1] = toast
+		Else
+			_ActivateToast(toast, UInt(MilliSecs()))
+		End If
+		Return toast
+	End Method
+
+	Method ActiveToast:TUIToast()
+		If visibleToasts.Length = 0 Then Return Null
+		Return visibleToasts[visibleToasts.Length - 1]
+	End Method
+
+	Method VisibleToastCount:Int()
+		Return visibleToasts.Length
+	End Method
+
+	Method PendingToastCount:Int()
+		Return toastQueue.Length
+	End Method
+
+	Method SetToastPlacement(value:Int)
+		If value < UIToastTopLeft Or value > UIToastBottomRight Then value = UIToastBottomCenter
+		toastPlacement = value
+	End Method
+
+	Method ToastPlacement:Int()
+		Return toastPlacement
+	End Method
+
+	Method SetToastVisibleLimit(value:Int)
+		If value < 1 Then value = 1
+		If value > UIToastQueueMaximum Then value = UIToastQueueMaximum
+		toastVisibleLimit = value
+		While visibleToasts.Length > toastVisibleLimit
+			Local toast:TUIToast = visibleToasts[visibleToasts.Length - 1]
+			visibleToasts = visibleToasts[..visibleToasts.Length - 1]
+			toastQueue = toastQueue[..toastQueue.Length + 1]
+			For Local move:Int = toastQueue.Length - 1 Until 0 Step -1
+				toastQueue[move] = toastQueue[move - 1]
+			Next
+			toastQueue[0] = toast
+		Wend
+		While visibleToasts.Length < toastVisibleLimit And toastQueue.Length
+			Local nextToast:TUIToast = toastQueue[0]
+			For Local index:Int = 0 Until toastQueue.Length - 1
+				toastQueue[index] = toastQueue[index + 1]
+			Next
+			toastQueue = toastQueue[..toastQueue.Length - 1]
+			_ActivateToast(nextToast, UInt(MilliSecs()))
+		Wend
+		RequestLayout()
+	End Method
+
+	Method ToastVisibleLimit:Int()
+		Return toastVisibleLimit
+	End Method
+
+	Method SetToastGap(value:Int)
+		If value < 0 Then value = 0
+		toastGap = value
+		RequestLayout()
+	End Method
+
+	Method ToastGap:Int()
+		Return toastGap
+	End Method
+
+	Method SetToastMargin(value:Int)
+		If value < 0 Then value = 0
+		toastMargin = value
+		RequestLayout()
+	End Method
+
+	Method ToastMargin:Int()
+		Return toastMargin
+	End Method
+
+	Method DismissToast:Int(toast:TUIToast = Null)
+		If toast Then
+			For Local index:Int = 0 Until toastQueue.Length
+				If toastQueue[index] = toast Then
+					For Local move:Int = index Until toastQueue.Length - 1
+						toastQueue[move] = toastQueue[move + 1]
+					Next
+					toastQueue = toastQueue[..toastQueue.Length - 1]
+					Return True
+				End If
+			Next
+		End If
+		If visibleToasts.Length = 0 Then Return False
+		Local removeIndex:Int = visibleToasts.Length - 1
+		If toast Then
+			removeIndex = -1
+			For Local index:Int = 0 Until visibleToasts.Length
+				If visibleToasts[index] = toast Then
+					removeIndex = index
+					Exit
+				End If
+			Next
+			If removeIndex < 0 Then Return False
+		End If
+		Local old:TUIToast = visibleToasts[removeIndex]
+		InvalidateRect(old.X(), old.Y(), old.Width(), old.Height())
+		For Local index:Int = removeIndex Until visibleToasts.Length - 1
+			visibleToasts[index] = visibleToasts[index + 1]
+		Next
+		visibleToasts = visibleToasts[..visibleToasts.Length - 1]
+		If toastQueue.Length Then
+			Local nextToast:TUIToast = toastQueue[0]
+			For Local index:Int = 0 Until toastQueue.Length - 1
+				toastQueue[index] = toastQueue[index + 1]
+			Next
+			toastQueue = toastQueue[..toastQueue.Length - 1]
+			_ActivateToast(nextToast, UInt(MilliSecs()))
+		Else
+			RequestLayout()
+		End If
+		Return True
+	End Method
+
+	Method ClearToasts()
+		For Local toast:TUIToast = EachIn visibleToasts
+			InvalidateRect(toast.X(), toast.Y(), toast.Width(), toast.Height())
+		Next
+		visibleToasts = New TUIToast[0]
+		toastQueue = New TUIToast[0]
 	End Method
 
 	Method ShowOverlay:Int(widget:TUIContainer, x:Int, y:Int, width:Int = UILayoutAuto, ..
@@ -3078,6 +3351,7 @@ Type TUIContext
 		rootWidget._SetBounds(0, 0, graphics.Width(), graphics.Height())
 		rootWidget._LayoutChildren()
 		If overlayWidget Then overlayWidget._LayoutChildren()
+		If visibleToasts.Length Then _LayoutToasts()
 		layoutPending = False
 	End Method
 
@@ -3094,6 +3368,9 @@ Type TUIContext
 			graphics.SetViewport(x, y, width, height)
 			_DrawWidget(rootWidget, x, y, width, height)
 			If overlayWidget Then _DrawWidget(overlayWidget, x, y, width, height)
+			For Local toast:TUIToast = EachIn visibleToasts
+				_DrawWidget(toast, x, y, width, height)
+			Next
 			graphics.PopState()
 		Next
 		invalidCount = 0
@@ -3104,6 +3381,7 @@ Type TUIContext
 		Local now:UInt = UInt(MilliSecs())
 		_UpdateScrollMomentum(rootWidget, now)
 		If overlayWidget Then _UpdateScrollMomentum(overlayWidget, now)
+		_UpdateToast(now)
 		Render()
 		If display Then Return graphics.PresentDirty(display)
 		Return True
@@ -3247,6 +3525,81 @@ Type TUIContext
 	End Method
 
 	Public
+	Method _UpdateToast(now:UInt)
+		Local index:Int
+		While index < visibleToasts.Length
+			Local toast:TUIToast = visibleToasts[index]
+			If toast.Duration() > 0 And now - toast._ShownAt() >= UInt(toast.Duration()) Then
+				Local pendingBefore:Int = toastQueue.Length
+				DismissToast(toast)
+				If pendingBefore > 0 And visibleToasts.Length Then ..
+					visibleToasts[visibleToasts.Length - 1]._Show(now)
+			Else
+				index :+ 1
+			End If
+		Wend
+	End Method
+
+	Method _ActivateToast(toast:TUIToast, now:UInt)
+		visibleToasts = visibleToasts[..visibleToasts.Length + 1]
+		visibleToasts[visibleToasts.Length - 1] = toast
+		toast._Show(now)
+		RequestLayout()
+		_LayoutToasts()
+	End Method
+
+	Method _LayoutToasts()
+		Local maximumWidth:Int = Min(Max(frame.Width() - toastMargin * 2, 1), 420)
+		For Local toast:TUIToast = EachIn visibleToasts
+			InvalidateRect(toast.X(), toast.Y(), toast.Width(), toast.Height())
+			Local width:Int
+			Local height:Int
+			toast.PreferredSize(maximumWidth, frame.Height() - toastMargin * 2, width, height)
+			If width > maximumWidth Then width = maximumWidth
+			If width < 1 Then width = 1
+			toast.PreferredSize(width, frame.Height() - toastMargin * 2, width, height)
+			If height > frame.Height() - toastMargin * 2 Then height = frame.Height() - toastMargin * 2
+			If height < 1 Then height = 1
+			toast._SetBounds(0, 0, width, height)
+		Next
+
+		For Local index:Int = 0 Until visibleToasts.Length
+			Local toast:TUIToast = visibleToasts[index]
+			Local placement:Int = toast.Placement()
+			Local x:Int
+			Select placement Mod 3
+				Case 0
+					x = toastMargin
+				Case 1
+					x = (frame.Width() - toast.Width()) / 2
+				Case 2
+					x = frame.Width() - toastMargin - toast.Width()
+			End Select
+			Local stackHeight:Int = toast.Height()
+			For Local later:Int = index + 1 Until visibleToasts.Length
+				If visibleToasts[later].Placement() = placement Then ..
+					stackHeight :+ toastGap + visibleToasts[later].Height()
+			Next
+			Local y:Int
+			Select placement / 3
+				Case 0
+					y = toastMargin + stackHeight - toast.Height()
+				Case 1
+					Local totalHeight:Int = stackHeight
+					For Local earlier:Int = 0 Until index
+						If visibleToasts[earlier].Placement() = placement Then ..
+							totalHeight :+ toastGap + visibleToasts[earlier].Height()
+					Next
+					y = (frame.Height() - totalHeight) / 2 + stackHeight - toast.Height()
+				Case 2
+					y = frame.Height() - toastMargin - stackHeight
+			End Select
+			toast._SetBounds(x, y, toast.Width(), toast.Height())
+			toast._LayoutChildren()
+			InvalidateRect(toast.X(), toast.Y(), toast.Width(), toast.Height())
+		Next
+	End Method
+
 	Method _DrawWidget(widget:TUIWidget, clipX:Int, clipY:Int, clipWidth:Int, clipHeight:Int)
 		If Not widget Or Not widget.Visible() Or Not _Intersects(widget, clipX, clipY, clipWidth, clipHeight) Then Return
 		widget.Draw(graphics)

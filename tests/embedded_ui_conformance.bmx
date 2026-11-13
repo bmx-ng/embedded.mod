@@ -322,6 +322,72 @@ Function RunDecimalStepperTests(touch:TFakeTouch)
 	decimalUI.Close()
 End Function
 
+Function RunToastTests(toastUI:TUIContext, toastFrame:TDisplayBuffer, focused:TUIWidget)
+	' Reuse the primary fixture: the embedded collector deliberately retains
+	' closed fixtures until its next collection, while this suite uses a small
+	' 64 KiB heap to expose accidental allocation growth.
+	toastUI.SetToastVisibleLimit(1)
+	Check(toastUI.SetFocus(focused), "toast test control could not receive focus")
+
+	Local first:TUIToast = toastUI.Toast("Saved successfully", 100, UIToastSuccess)
+	Check(first <> Null And toastUI.ActiveToast() = first, "toast did not become active")
+	Check(first.Message() = "Saved successfully" And first.Kind() = UIToastSuccess And ..
+		Not first.Persistent(), "toast properties were not retained")
+	Check(toastUI.FocusedWidget() = focused And toastUI.HitTest(first.X() + 1, first.Y() + 1) <> first, ..
+		"toast stole focus or touch input")
+	Local second:TUIToast = toastUI.Toast("Check the network configuration before retrying", ..
+		0, UIToastWarning)
+	Check(second <> Null And second.Persistent() And toastUI.PendingToastCount() = 1, ..
+		"persistent toast was not queued")
+	toastUI._UpdateToast(UInt(MilliSecs()) + 200)
+	Check(toastUI.ActiveToast() = second And toastUI.PendingToastCount() = 0, ..
+		"timed toast did not advance its queue")
+	toastUI._UpdateToast(UInt(MilliSecs()) + 10000)
+	Check(toastUI.ActiveToast() = second, "persistent toast expired")
+
+	Local queued:TUIToast = toastUI.Toast("Queued", 100, UIToastInfo)
+	Check(toastUI.DismissToast(queued) And toastUI.PendingToastCount() = 0, ..
+		"specific queued toast could not be dismissed")
+	For Local index:Int = 0 Until UIToastQueueMaximum
+		Check(toastUI.Toast("Queue " + index, 100, UIToastInfo) <> Null, ..
+			"toast queue rejected an available slot")
+	Next
+	Check(toastUI.Toast("Overflow", 100, UIToastError) = Null, "toast queue exceeded its bound")
+	Check(toastUI.DismissToast() And toastUI.ActiveToast() <> second And ..
+		toastUI.PendingToastCount() = UIToastQueueMaximum - 1, "toast dismissal did not advance FIFO order")
+	toastUI.ClearToasts()
+	Check(toastUI.ActiveToast() = Null And toastUI.PendingToastCount() = 0, ..
+		"toast queue did not clear")
+
+	toastUI.SetToastVisibleLimit(3)
+	toastUI.SetToastPlacement(UIToastBottomRight)
+	toastUI.SetToastGap(5)
+	Local stackFirst:TUIToast = toastUI.Toast("First", 0, UIToastInfo)
+	Local stackSecond:TUIToast = toastUI.Toast("Second", 0, UIToastSuccess)
+	Local stackThird:TUIToast = toastUI.Toast("Third", 0, UIToastWarning)
+	Check(toastUI.VisibleToastCount() = 3 And toastUI.PendingToastCount() = 0, ..
+		"toast stack did not expose its configured visible count")
+	Check(stackFirst.Y() < stackSecond.Y() And stackSecond.Y() < stackThird.Y() And ..
+		stackThird.X() + stackThird.Width() = toastFrame.Width() - toastUI.ToastMargin(), ..
+		"bottom-right toast stack was not anchored or ordered correctly")
+	Local firstYBefore:Int = stackFirst.Y()
+	Check(toastUI.DismissToast(stackSecond) And toastUI.VisibleToastCount() = 2, ..
+		"toast stack did not dismiss a selected notification")
+	toastUI.Render()
+	Check(stackFirst.Y() > firstYBefore And stackFirst.Y() < stackThird.Y(), ..
+		"toast stack did not reflow after dismissal")
+	toastUI.ClearToasts()
+
+	Local overlayToast:TUIToast = toastUI.Toast("Visible over dialog", 0, UIToastInfo)
+	Local dialog:TUIDialog = toastUI.Dialog("Modal", "Toast remains independent")
+	dialog.Action("Close", 0)
+	Check(dialog.Show(140) And toastUI.ActiveOverlay() = dialog And ..
+		toastUI.ActiveToast() = overlayToast, "toast did not coexist with a modal overlay")
+	Check(toastUI.Render(), "toast and modal overlay did not render together")
+	dialog.Close()
+	toastUI.ClearToasts()
+End Function
+
 AddHook EmitEventHook, CaptureAction
 Local frame:TDisplayBuffer = TDisplayBuffer.Create(240, 180, DisplayPixelFormatMono1)
 Local touch:TFakeTouch = New TFakeTouch
@@ -477,6 +543,8 @@ Check(progress.Value() = 200, "progress value was not clamped to its range")
 progress.SetRange(20, 80)
 Check(progress.Value() = 80, "range change did not clamp the progress value")
 Check(ui.Render(), "value control changes were not invalidated")
+
+RunToastTests(ui, frame, cancel)
 
 ui.Close()
 
