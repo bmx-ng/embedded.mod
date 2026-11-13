@@ -43,6 +43,57 @@ Type TFakeTouch Extends TTouchDevice
 	End Method
 End Type
 
+' A control outside Embedded.UI's built-in type family. This verifies that
+' contexts and input adapters dispatch through widget hooks instead of a
+' closed list of concrete controls.
+Type TCustomInteractionWidget Extends TUIWidget
+	Field focusedActivations:Int
+	Field adjustments:Int
+	Field pointerBegins:Int
+	Field pointerTracks:Int
+	Field pointerEnds:Int
+	Field pointerActivations:Int
+
+	Method New()
+		SetFocusable(True)
+		clickable = True
+	End Method
+
+	Method PreferredSize(availableWidth:Int, availableHeight:Int, width:Int Var, height:Int Var) Override
+		width = 48
+		height = 28
+	End Method
+
+	Method _ActivateFocused:Int() Override
+		focusedActivations :+ 1
+		Return True
+	End Method
+
+	Method _AdjustFocused:Int(delta:Int) Override
+		adjustments :+ delta
+		Return True
+	End Method
+
+	Method _BeginPointer:Int(x:Int, y:Int) Override
+		pointerBegins :+ 1
+		Return True
+	End Method
+
+	Method _TrackPointer:Int(x:Int, y:Int) Override
+		pointerTracks :+ 1
+		Return True
+	End Method
+
+	Method _EndPointer() Override
+		pointerEnds :+ 1
+	End Method
+
+	Method _ActivatePointer:Int(x:Int, y:Int) Override
+		pointerActivations :+ 1
+		Return True
+	End Method
+End Type
+
 Global callbackCount:Int
 Global actionCount:Int
 Global actionSource:Object
@@ -138,6 +189,37 @@ End Function
 
 Function Check(condition:Int, message:String)
 	If Not condition Then RuntimeError message
+End Function
+
+Function RunCustomInteractionTests(touch:TFakeTouch)
+	Local customFrame:TDisplayBuffer = TDisplayBuffer.Create(120, 60, DisplayPixelFormatMono1)
+	Local customUI:TUIContext = TUITouchInput.CreateContextWithBuffer(customFrame, Null, touch, ..
+		TUITheme.Dark(Spleen5x8Font()))
+	Check(customUI <> Null, "could not create custom interaction UI")
+	Local custom:TCustomInteractionWidget = New TCustomInteractionWidget
+	customUI.Root().Add(custom)
+	Check(customUI.Render(), "custom interaction UI did not render")
+	Check(customUI.SetFocus(custom), "custom widget could not receive focus")
+	Check(customUI.ActivateFocused() And custom.focusedActivations = 1, ..
+		"custom widget did not receive focused activation")
+	Check(customUI.AdjustFocused(3) And custom.adjustments = 3, ..
+		"custom widget did not receive focused adjustment")
+
+	touch.x = custom.X() + custom.Width() / 2
+	touch.y = custom.Y() + custom.Height() / 2
+	touch.count = 1
+	PollSystem()
+	Check(custom.pointerBegins = 1 And custom.Pressed(), ..
+		"custom widget did not receive pointer capture")
+	touch.x :+ 2
+	PollSystem()
+	Check(custom.pointerTracks >= 1, "custom widget did not receive pointer tracking")
+	touch.count = 0
+	PollSystem()
+	PollSystem()
+	Check(custom.pointerEnds = 1 And custom.pointerActivations = 1 And Not custom.Pressed(), ..
+		"custom widget did not receive pointer release and activation")
+	customUI.Close()
 End Function
 
 Function RunTabTests(touch:TFakeTouch)
@@ -769,6 +851,9 @@ Check(list.SelectedIndex() = selectionBeforeDrag, "scroll gesture activated a li
 
 scrollUI.Close()
 Print "embedded UI conformance: scrolling"
+Delay(1)
+RunCustomInteractionTests(touch)
+Print "embedded UI conformance: custom interaction"
 Delay(1)
 RunTabTests(touch)
 Print "embedded UI conformance: tabs"
