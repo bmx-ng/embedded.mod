@@ -22,24 +22,94 @@ Import Embedded.Hardware.GPIO
 Import Embedded.Hardware.SPI
 Import Embedded.System.Time
 
+Rem
+bbdoc: Requests an ST7735 controller software reset.
+End Rem
 Const ST7735CommandSoftwareReset:Byte = $01
+
+Rem
+bbdoc: Places an ST7735 controller into its low-power sleep state.
+End Rem
 Const ST7735CommandSleepIn:Byte = $10
+
+Rem
+bbdoc: Wakes an ST7735 controller from its sleep state.
+End Rem
 Const ST7735CommandSleepOut:Byte = $11
+
+Rem
+bbdoc: Selects normal display mode on an ST7735 controller.
+End Rem
 Const ST7735CommandNormalOn:Byte = $13
+
+Rem
+bbdoc: Disables ST7735 display inversion.
+End Rem
 Const ST7735CommandDisplayInversionOff:Byte = $20
+
+Rem
+bbdoc: Enables ST7735 display inversion.
+End Rem
 Const ST7735CommandDisplayInversionOn:Byte = $21
+
+Rem
+bbdoc: Disables ST7735 display output without changing display RAM.
+End Rem
 Const ST7735CommandDisplayOff:Byte = $28
+
+Rem
+bbdoc: Enables ST7735 display output.
+End Rem
 Const ST7735CommandDisplayOn:Byte = $29
+
+Rem
+bbdoc: Selects the inclusive ST7735 display-RAM column range.
+End Rem
 Const ST7735CommandColumnAddress:Byte = $2a
+
+Rem
+bbdoc: Selects the inclusive ST7735 display-RAM row range.
+End Rem
 Const ST7735CommandRowAddress:Byte = $2b
+
+Rem
+bbdoc: Begins writing pixel data to ST7735 display RAM.
+End Rem
 Const ST7735CommandMemoryWrite:Byte = $2c
+
+Rem
+bbdoc: Configures ST7735 address order, axis exchange, refresh direction, and RGB order.
+End Rem
 Const ST7735CommandMemoryAccess:Byte = $36
+
+Rem
+bbdoc: Configures the ST7735 wire pixel format.
+End Rem
 Const ST7735CommandPixelFormat:Byte = $3a
 
+Rem
+bbdoc: Reverses ST7735 row address order in the memory-access register.
+End Rem
 Const ST7735MemoryAccessRowAddressOrder:Byte = $80
+
+Rem
+bbdoc: Reverses ST7735 column address order in the memory-access register.
+End Rem
 Const ST7735MemoryAccessColumnAddressOrder:Byte = $40
+
+Rem
+bbdoc: Exchanges ST7735 row and column addressing axes.
+End Rem
 Const ST7735MemoryAccessRowColumnExchange:Byte = $20
+
+Rem
+bbdoc: Reverses the ST7735 vertical refresh order.
+End Rem
 Const ST7735MemoryAccessVerticalRefreshOrder:Byte = $10
+
+Rem
+bbdoc: Selects BGR rather than RGB subpixel order on the ST7735 panel.
+End Rem
 Const ST7735MemoryAccessBGR:Byte = $08
 
 Rem
@@ -64,6 +134,18 @@ Type TST7735Display Extends TDisplay
 	Public
 	Rem
 	bbdoc: Creates a configurable ST7735 display description.
+	param: The initialized Embedded.Hardware.SPI controller index.
+	param: The output-capable GPIO used for active-low chip selection.
+	param: The output-capable GPIO selecting command or pixel data.
+	param: The output-capable GPIO connected to the panel reset input.
+	param: The visible portrait width in pixels.
+	param: The visible portrait height in pixels.
+	param: The visible raster's first column in the controller's display RAM.
+	param: The visible raster's first row in the controller's display RAM.
+	param: True when the panel uses BGR rather than RGB subpixel order.
+	param: True when the panel requires inverted display drive.
+	param: The clockwise orientation used as logical rotation zero.
+	returns: A display description, or Null when its dimensions, offsets, GPIOs, or orientation are invalid.
 	about: Width and height describe the visible portrait raster. Column and row
 	offsets locate it within the controller's 132x162 display RAM. The application
 	must configure and initialize the selected SPI controller before Initialize.
@@ -98,6 +180,14 @@ Type TST7735Display Extends TDisplay
 
 	Rem
 	bbdoc: Creates the common full-size 128x160 ST7735S panel configuration.
+	param: The initialized Embedded.Hardware.SPI controller index.
+	param: The output-capable GPIO used for active-low chip selection.
+	param: The output-capable GPIO selecting command or pixel data.
+	param: The output-capable GPIO connected to the panel reset input.
+	param: True when the panel uses BGR rather than RGB subpixel order.
+	param: True when the panel requires inverted display drive.
+	param: The clockwise orientation used as logical rotation zero.
+	returns: A 128x160 display description, or Null when its GPIOs or orientation are invalid.
 	End Rem
 	Function Create128x160:TST7735Display(controller:Int, chipSelectPin:UInt, ..
 			dataCommandPin:UInt, resetPin:UInt, bgrOrder:Int = True, ..
@@ -106,20 +196,35 @@ Type TST7735Display Extends TDisplay
 			128, 160, 0, 0, bgrOrder, inverted, orientation)
 	End Function
 
+	Rem
+	bbdoc: Returns the configured visible panel width.
+	returns: The native portrait width in pixels.
+	End Rem
 	Method Width:Int() Override
 		Return displayWidth
 	End Method
 
+	Rem
+	bbdoc: Returns the configured visible panel height.
+	returns: The native portrait height in pixels.
+	End Rem
 	Method Height:Int() Override
 		Return displayHeight
 	End Method
 
+	Rem
+	bbdoc: Returns the raster format accepted by this driver.
+	returns: DisplayPixelFormatRGB565.
+	End Rem
 	Method PreferredPixelFormat:Int() Override
 		Return DisplayPixelFormatRGB565
 	End Method
 
 	Rem
 	bbdoc: Resets and initializes the controller for 16-bit RGB565 transfers.
+	returns: True when GPIO, SPI format, and every controller command succeed.
+	about: The application must configure and initialize the selected SPI
+	controller and its clock and transmit pins before calling this method.
 	End Rem
 	Method Initialize:Int()
 		If Not GPIOInit(chipSelectPin) Or Not GPIOSetOutput(chipSelectPin) Or ..
@@ -188,16 +293,30 @@ Type TST7735Display Extends TDisplay
 		Return True
 	End Method
 
+	Rem
+	bbdoc: Reports whether controller initialization completed successfully.
+	returns: True after a successful Initialize call.
+	End Rem
 	Method IsInitialized:Int()
 		Return initialized
 	End Method
 
+	Rem
+	bbdoc: Enables or disables panel output while preserving display RAM.
+	param: True to turn the display on, or False to turn it off.
+	returns: True when the controller accepts the command.
+	End Rem
 	Method SetEnabled:Int(enabled:Int) Override
 		If Not initialized Then Return False
 		If enabled Then Return SendCommand(ST7735CommandDisplayOn, 0)
 		Return SendCommand(ST7735CommandDisplayOff, 0)
 	End Method
 
+	Rem
+	bbdoc: Enables or disables the controller's display-inversion mode.
+	param: True for inverted drive, or False for normal drive.
+	returns: True when the initialized controller accepts the command.
+	End Rem
 	Method SetInverted:Int(inverted:Int)
 		If Not initialized Then Return False
 		Self.inverted = inverted <> 0
@@ -205,6 +324,20 @@ Type TST7735Display Extends TDisplay
 		Return SendCommand(ST7735CommandDisplayInversionOff, 0)
 	End Method
 
+	Rem
+	bbdoc: Synchronously transfers a clipped RGB565 raster region over SPI.
+	param: A pointer to the first byte of the complete raster.
+	param: The number of bytes between adjacent raster rows.
+	param: The raster pixel format, which must be DisplayPixelFormatRGB565.
+	param: The requested physical left edge.
+	param: The requested physical top edge.
+	param: The requested region width in pixels.
+	param: The requested region height in pixels.
+	returns: True on success, or a DisplayError value on failure.
+	about: RGB565 pixels use the shared little-endian buffer representation and
+	are byte-swapped into the controller's most-significant-byte-first wire order
+	during transfer. The requested rectangle is clipped to the visible panel.
+	End Rem
 	Method PresentPixels:Int(pixels:Byte Ptr, stride:Int, format:Int, ..
 			x:Int, y:Int, width:Int, height:Int) Override
 		If Not initialized Or pixels = Null Then Return DisplayErrorInvalidArgument

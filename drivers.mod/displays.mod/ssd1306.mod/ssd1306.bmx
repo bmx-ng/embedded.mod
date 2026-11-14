@@ -19,6 +19,9 @@ ModuleInfo "License: zlib/libpng"
 Import Embedded.Drivers.Display
 Import Embedded.Hardware.I2C
 
+Rem
+bbdoc: The common seven-bit I2C address used by SSD1306 display modules.
+End Rem
 Const SSD1306DefaultAddress:UInt = $3c
 
 Rem
@@ -44,6 +47,14 @@ Type TSSD1306Display Extends TDisplay
 	Public
 	Rem
 	bbdoc: Creates a general SSD1306 display description.
+	param: The initialized Embedded.Hardware.I2C controller index.
+	param: The panel's seven-bit I2C address.
+	param: The visible width in pixels.
+	param: The visible height in pixels.
+	param: The visible raster's first column in the controller's display RAM.
+	param: The visible raster's first eight-pixel page in display RAM.
+	param: The clockwise orientation used as logical rotation zero.
+	returns: A display description, or Null when its dimensions, offsets, address, or orientation are invalid.
 	about: This does not configure or initialize the I2C controller. Width may be
 	up to 128 pixels and height up to 64 pixels.
 	End Rem
@@ -79,6 +90,10 @@ Type TSSD1306Display Extends TDisplay
 
 	Rem
 	bbdoc: Creates the common EastRising-compatible 72x40 SSD1306 configuration.
+	param: The initialized Embedded.Hardware.I2C controller index.
+	param: The panel's seven-bit I2C address.
+	param: The clockwise orientation used as logical rotation zero.
+	returns: A 72x40 display description, or Null when its address or orientation is invalid.
 	about: This preset uses a 28-column RAM offset and the panel-specific IREF,
 	contrast, precharge, and VCOMH settings used by 0.42-inch modules.
 	End Rem
@@ -97,20 +112,35 @@ Type TSSD1306Display Extends TDisplay
 		Return display
 	End Function
 
+	Rem
+	bbdoc: Returns the configured visible panel width.
+	returns: The native width in pixels.
+	End Rem
 	Method Width:Int() Override
 		Return displayWidth
 	End Method
 
+	Rem
+	bbdoc: Returns the configured visible panel height.
+	returns: The native height in pixels.
+	End Rem
 	Method Height:Int() Override
 		Return displayHeight
 	End Method
 
+	Rem
+	bbdoc: Returns the raster format accepted by this driver.
+	returns: DisplayPixelFormatMono1.
+	End Rem
 	Method PreferredPixelFormat:Int() Override
 		Return DisplayPixelFormatMono1
 	End Method
 
 	Rem
 	bbdoc: Initializes the panel and enables its output.
+	returns: True when every I2C controller command succeeds.
+	about: The application must configure and initialize the selected I2C
+	controller and its data and clock pins before calling this method.
 	End Rem
 	Method Initialize:Int()
 		Local first:Byte[] = [Byte($ae), Byte($d5), Byte($80), ..
@@ -135,10 +165,19 @@ Type TSSD1306Display Extends TDisplay
 		Return initialized
 	End Method
 
+	Rem
+	bbdoc: Reports whether controller initialization completed successfully.
+	returns: True after a successful Initialize call.
+	End Rem
 	Method IsInitialized:Int()
 		Return initialized
 	End Method
 
+	Rem
+	bbdoc: Enables or disables panel output while preserving display RAM.
+	param: True to turn the display on, or False to turn it off.
+	returns: True when the initialized controller accepts the command.
+	End Rem
 	Method SetEnabled:Int(enabled:Int) Override
 		If Not initialized Then
 			Return False
@@ -151,6 +190,11 @@ Type TSSD1306Display Extends TDisplay
 		Return SendCommand($ae)
 	End Method
 
+	Rem
+	bbdoc: Changes the SSD1306 segment-current contrast setting.
+	param: The controller contrast value from 0 through 255.
+	returns: True when the initialized controller accepts the command.
+	End Rem
 	Method SetContrast:Int(value:Byte)
 		If Not initialized Then
 			Return False
@@ -160,6 +204,11 @@ Type TSSD1306Display Extends TDisplay
 		Return SendPair($81, value)
 	End Method
 
+	Rem
+	bbdoc: Selects normal or inverted monochrome output.
+	param: True to exchange lit and unlit pixels, or False for normal output.
+	returns: True when the initialized controller accepts the command.
+	End Rem
 	Method SetInverted:Int(inverted:Int)
 		If Not initialized Then
 			Return False
@@ -172,6 +221,13 @@ Type TSSD1306Display Extends TDisplay
 		Return SendCommand($a6)
 	End Method
 
+	Rem
+	bbdoc: Reverses both scan axes to turn the physical panel upside down.
+	param: True for flipped scanning, or False for the preset's normal scanning.
+	returns: True when the initialized controller accepts both commands.
+	about: This is a controller scan setting independent of the logical display
+	orientation used by Graphics2D.
+	End Rem
 	Method SetFlipped:Int(flipped:Int)
 		If Not initialized Then
 			Return False
@@ -186,6 +242,21 @@ Type TSSD1306Display Extends TDisplay
 		Return SendCommands(commands)
 	End Method
 
+	Rem
+	bbdoc: Synchronously transfers a clipped Mono1 raster region over I2C.
+	param: A pointer to the first byte of the complete row-major raster.
+	param: The number of bytes between adjacent raster rows.
+	param: The raster pixel format, which must be DisplayPixelFormatMono1.
+	param: The requested physical left edge.
+	param: The requested physical top edge.
+	param: The requested region width in pixels.
+	param: The requested region height in pixels.
+	returns: True on success, or a DisplayError value on failure.
+	about: The shared row-major, most-significant-bit-first Mono1 raster is
+	converted during transfer to the SSD1306's vertical eight-pixel page layout.
+	The requested rectangle is clipped to the visible panel and expanded to the
+	controller pages intersecting its vertical extent.
+	End Rem
 	Method PresentPixels:Int(pixels:Byte Ptr, stride:Int, format:Int, ..
 			x:Int, y:Int, width:Int, height:Int) Override
 		If Not initialized Or pixels = Null Then
