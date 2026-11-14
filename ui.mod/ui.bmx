@@ -3804,8 +3804,14 @@ Type TUITabView Extends TUIContainer Final
 	End Method
 End Type
 
+Rem
+bbdoc: Display-only bitmap-font text widget with optional word wrapping.
+End Rem
 Type TUILabel Extends TUIWidget Final
 	Public
+	Rem
+	bbdoc: Text displayed by the label.
+	End Rem
 	Field labelText:String
 
 	Private
@@ -3816,6 +3822,10 @@ Type TUILabel Extends TUIWidget Final
 	Field wrappedScale:Int
 
 	Public
+	Rem
+	bbdoc: Sets the label text.
+	param: Text to display; Null is treated as an empty string.
+	End Rem
 	Method SetText(text:String)
 		If Not text Then text = ""
 		If labelText = text Then Return
@@ -3825,10 +3835,18 @@ Type TUILabel Extends TUIWidget Final
 		_RequestLayout()
 	End Method
 
+	Rem
+	bbdoc: Returns the current label text.
+	returns: Displayed text.
+	End Rem
 	Method Text:String()
 		Return labelText
 	End Method
 
+	Rem
+	bbdoc: Enables or disables wrapping at spaces and explicit line breaks.
+	param: True to wrap text to the available content width.
+	End Rem
 	Method SetWordWrap(value:Int)
 		value = value <> 0
 		If wordWrap = value Then Return
@@ -3838,6 +3856,10 @@ Type TUILabel Extends TUIWidget Final
 		_Invalidate()
 	End Method
 
+	Rem
+	bbdoc: Reports whether automatic word wrapping is enabled.
+	returns: True when text is wrapped to the available width.
+	End Rem
 	Method WordWrap:Int()
 		Return wordWrap
 	End Method
@@ -3938,21 +3960,51 @@ Type TUILabel Extends TUIWidget Final
 	End Method
 End Type
 
+Rem
+bbdoc: Focusable action control with optional state-specific artwork.
+about: Activation invokes OnClick and emits EVENT_UIACTION. Pointer activation
+also records its display coordinates in the event.
+End Rem
 Type TUIButton Extends TUIWidget
 	Public
+	Rem
+	bbdoc: Text drawn over the button chrome or artwork.
+	End Rem
 	Field buttonText:String
+	Rem
+	bbdoc: Optional callback invoked on activation.
+	End Rem
 	Field clickHandler(button:TUIButton)
+	Rem
+	bbdoc: Artwork used for the normal state.
+	End Rem
 	Field normalImage:TEmbeddedImage
+	Rem
+	bbdoc: Optional artwork used while pressed.
+	End Rem
 	Field pressedImage:TEmbeddedImage
+	Rem
+	bbdoc: Optional artwork used while disabled.
+	End Rem
 	Field disabledImage:TEmbeddedImage
+	Rem
+	bbdoc: True when state artwork replaces the themed background and border.
+	End Rem
 	Field imageReplacesChrome:Int
 
 	Public
+	Rem
+	bbdoc: Initializes a clickable and focusable button.
+	End Rem
 	Method New()
 		clickable = True
 		focusable = True
 	End Method
 
+	Rem
+	bbdoc: Sets the button label.
+	param: Text to display; Null is treated as an empty string.
+	End Rem
 	Method SetText(text:String)
 		If Not text Then text = ""
 		If buttonText = text Then Return
@@ -3961,16 +4013,28 @@ Type TUIButton Extends TUIWidget
 		_RequestLayout()
 	End Method
 
+	Rem
+	bbdoc: Returns the button label.
+	returns: Displayed text.
+	End Rem
 	Method Text:String()
 		Return buttonText
 	End Method
 
+	Rem
+	bbdoc: Registers the activation callback.
+	param: Callback receiving this button, or Null to remove it.
+	End Rem
 	Method OnClick(handler(button:TUIButton))
 		clickHandler = handler
 	End Method
 
 	Rem
 	bbdoc: Sets optional normal, pressed, and disabled button artwork.
+	param: Normal-state image, or Null to remove all state artwork.
+	param: Pressed-state image, or Null to reuse the normal image.
+	param: Disabled-state image, or Null to reuse the normal image.
+	param: True to replace the themed background and border with the artwork.
 	about: Missing state images fall back to the normal image. When replaceChrome
 	is true the image replaces the themed background and border; button text is
 	still drawn over it.
@@ -3985,6 +4049,10 @@ Type TUIButton Extends TUIWidget
 		_RequestLayout()
 	End Method
 
+	Rem
+	bbdoc: Returns the normal-state artwork.
+	returns: Configured image, or Null when the button uses only theme chrome.
+	End Rem
 	Method NormalImage:TEmbeddedImage()
 		Return normalImage
 	End Method
@@ -4077,18 +4145,39 @@ Type TUIButton Extends TUIWidget
 	End Method
 End Type
 
+Rem
+bbdoc: Labeled Boolean selection control.
+about: SetChecked changes state silently. User activation invokes OnChange and
+emits EVENT_UIVALUECHANGED with the new Boolean value in `data`.
+End Rem
 Type TUICheckBox Extends TUIWidget Final
 	Public
+	Rem
+	bbdoc: Text displayed beside the check mark.
+	End Rem
 	Field checkText:String
+	Rem
+	bbdoc: Current checked state.
+	End Rem
 	Field checked:Int
+	Rem
+	bbdoc: Optional callback invoked after user activation changes the state.
+	End Rem
 	Field changeHandler(checkBox:TUICheckBox)
 
 	Public
+	Rem
+	bbdoc: Initializes a clickable and focusable check box.
+	End Rem
 	Method New()
 		clickable = True
 		focusable = True
 	End Method
 
+	Rem
+	bbdoc: Sets the label displayed beside the check mark.
+	param: Label text; Null is treated as an empty string.
+	End Rem
 	Method SetText(text:String)
 		If Not text Then text = ""
 		If checkText = text Then Return
@@ -4097,10 +4186,18 @@ Type TUICheckBox Extends TUIWidget Final
 		_RequestLayout()
 	End Method
 
+	Rem
+	bbdoc: Returns the check-box label.
+	returns: Displayed text.
+	End Rem
 	Method Text:String()
 		Return checkText
 	End Method
 
+	Rem
+	bbdoc: Sets the checked state without notifying observers.
+	param: True to check the control.
+	End Rem
 	Method SetChecked(value:Int)
 		value = value <> 0
 		If checked = value Then Return
@@ -4108,10 +4205,18 @@ Type TUICheckBox Extends TUIWidget Final
 		_Invalidate()
 	End Method
 
+	Rem
+	bbdoc: Returns the checked state.
+	returns: True when checked.
+	End Rem
 	Method Checked:Int()
 		Return checked
 	End Method
 
+	Rem
+	bbdoc: Registers the user-generated value-change callback.
+	param: Callback receiving this check box, or Null to remove it.
+	End Rem
 	Method OnChange(handler(checkBox:TUICheckBox))
 		changeHandler = handler
 	End Method
@@ -4192,6 +4297,11 @@ Type TUICheckBox Extends TUIWidget Final
 	End Method
 End Type
 
+Rem
+bbdoc: Vertically arranged single-selection group of radio buttons.
+about: SetSelectedIndex changes selection silently. User selection invokes the
+callback and emits EVENT_UISELECTIONCHANGED.
+End Rem
 Type TUIRadioGroup Extends TUIContainer Final
 	Private
 	Field options:TUIRadioButton[] = New TUIRadioButton[0]
@@ -4199,11 +4309,19 @@ Type TUIRadioGroup Extends TUIContainer Final
 	Field selectionHandler(group:TUIRadioGroup)
 
 	Public
+	Rem
+	bbdoc: Initializes an empty vertical radio group.
+	End Rem
 	Method New()
 		layoutDirection = 2
 		gap = 2
 	End Method
 
+	Rem
+	bbdoc: Creates and appends one radio option.
+	param: Text displayed beside the option mark.
+	returns: The attached radio button.
+	End Rem
 	Method Option:TUIRadioButton(text:String = "")
 		Local option:TUIRadioButton = New TUIRadioButton
 		option._Configure(Self, options.Length)
@@ -4215,28 +4333,55 @@ Type TUIRadioGroup Extends TUIContainer Final
 		Return option
 	End Method
 
+	Rem
+	bbdoc: Returns the number of radio options.
+	returns: Option count.
+	End Rem
 	Method OptionCount:Int()
 		Return options.Length
 	End Method
 
+	Rem
+	bbdoc: Returns one radio option by index.
+	param: Zero-based option index.
+	returns: The option, or Null when the index is invalid.
+	End Rem
 	Method OptionAt:TUIRadioButton(index:Int)
 		If index < 0 Or index >= options.Length Then Return Null
 		Return options[index]
 	End Method
 
+	Rem
+	bbdoc: Returns the selected option index.
+	returns: Zero-based index, or -1 while empty or cleared.
+	End Rem
 	Method SelectedIndex:Int()
 		Return selectedIndex
 	End Method
 
+	Rem
+	bbdoc: Changes selection without invoking the callback or emitting an event.
+	param: Desired option index, clamped to the valid range.
+	End Rem
 	Method SetSelectedIndex(value:Int)
 		_SelectIndex(value, False)
 	End Method
 
+	Rem
+	bbdoc: Registers the user-generated selection-change callback.
+	param: Callback receiving this group, or Null to remove it.
+	End Rem
 	Method OnSelectionChanged(handler(group:TUIRadioGroup))
 		selectionHandler = handler
 	End Method
 
 	Public
+	Rem
+	bbdoc: Updates selection with optional observer notification.
+	param: Desired option index.
+	param: True to invoke the callback and emit EVENT_UISELECTIONCHANGED.
+	about: Intended for the group's radio buttons and input adapters.
+	End Rem
 	Method _SelectIndex(value:Int, notify:Int)
 		If options.Length = 0 Then value = -1
 		If value < -1 Then value = -1
@@ -4253,6 +4398,9 @@ Type TUIRadioGroup Extends TUIContainer Final
 	End Method
 End Type
 
+Rem
+bbdoc: One focusable labeled option owned by a TUIRadioGroup.
+End Rem
 Type TUIRadioButton Extends TUIWidget Final
 	Private
 	Field radioText:String
@@ -4260,16 +4408,29 @@ Type TUIRadioButton Extends TUIWidget Final
 	Field radioIndex:Int
 
 	Public
+	Rem
+	bbdoc: Associates this option with a group and logical index.
+	param: Owning radio group.
+	param: Zero-based option index.
+	about: Intended for TUIRadioGroup.
+	End Rem
 	Method _Configure(owner:TUIRadioGroup, index:Int)
 		radioOwner = owner
 		radioIndex = index
 	End Method
 
+	Rem
+	bbdoc: Initializes a clickable and focusable radio button.
+	End Rem
 	Method New()
 		clickable = True
 		focusable = True
 	End Method
 
+	Rem
+	bbdoc: Sets the option label.
+	param: Label text; Null is treated as an empty string.
+	End Rem
 	Method SetText(text:String)
 		If Not text Then text = ""
 		If radioText = text Then Return
@@ -4278,10 +4439,18 @@ Type TUIRadioButton Extends TUIWidget Final
 		_RequestLayout()
 	End Method
 
+	Rem
+	bbdoc: Returns the option label.
+	returns: Displayed text.
+	End Rem
 	Method Text:String()
 		Return radioText
 	End Method
 
+	Rem
+	bbdoc: Reports whether this option is selected by its group.
+	returns: True when selected.
+	End Rem
 	Method Selected:Int()
 		Return radioOwner And radioOwner.SelectedIndex() = radioIndex
 	End Method
@@ -4362,17 +4531,35 @@ Type TUIRadioButton Extends TUIWidget Final
 	End Method
 End Type
 
+Rem
+bbdoc: Compact Boolean toggle switch.
+about: SetValue changes state silently. User activation invokes OnChange and
+emits EVENT_UIVALUECHANGED with the new Boolean value in `data`.
+End Rem
 Type TUISwitch Extends TUIWidget Final
 	Public
+	Rem
+	bbdoc: Current on or off state.
+	End Rem
 	Field switchValue:Int
+	Rem
+	bbdoc: Optional callback invoked after user activation changes the state.
+	End Rem
 	Field changeHandler(switchControl:TUISwitch)
 
 	Public
+	Rem
+	bbdoc: Initializes a clickable and focusable switch.
+	End Rem
 	Method New()
 		clickable = True
 		focusable = True
 	End Method
 
+	Rem
+	bbdoc: Sets the switch state without notifying observers.
+	param: True for on, or False for off.
+	End Rem
 	Method SetValue(value:Int)
 		value = value <> 0
 		If switchValue = value Then Return
@@ -4380,10 +4567,18 @@ Type TUISwitch Extends TUIWidget Final
 		_Invalidate()
 	End Method
 
+	Rem
+	bbdoc: Returns the switch state.
+	returns: True when on.
+	End Rem
 	Method Value:Int()
 		Return switchValue
 	End Method
 
+	Rem
+	bbdoc: Registers the user-generated value-change callback.
+	param: Callback receiving this switch, or Null to remove it.
+	End Rem
 	Method OnChange(handler(switchControl:TUISwitch))
 		changeHandler = handler
 	End Method
