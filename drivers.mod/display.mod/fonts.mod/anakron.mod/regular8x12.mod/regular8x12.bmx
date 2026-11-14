@@ -24,6 +24,11 @@ Private
 Global cachedFont:TBitmapFont
 
 Public
+
+Rem
+bbdoc: Returns this module's shared bitmap-font instance.
+returns: The shared read-only bitmap font.
+End Rem
 Function Anakron8x12Font:TBitmapFont()
 	If Not cachedFont Then cachedFont = TBitmapFont.Create(IncbinPtr("anakron_regular8x12.ebf"), ..
 		IncbinLen("anakron_regular8x12.ebf"))

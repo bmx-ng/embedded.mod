@@ -24,6 +24,11 @@ Private
 Global cachedFont:TBitmapFont
 
 Public
+
+Rem
+bbdoc: Returns this module's shared bitmap-font instance.
+returns: The shared read-only bitmap font.
+End Rem
 Function Tamzen8x16Font:TBitmapFont()
 	If Not cachedFont Then cachedFont = TBitmapFont.Create(IncbinPtr("tamzen_regular8x16.ebf"), ..
 		IncbinLen("tamzen_regular8x16.ebf"))

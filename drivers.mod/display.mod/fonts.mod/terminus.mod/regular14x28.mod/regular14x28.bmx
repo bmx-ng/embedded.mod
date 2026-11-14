@@ -24,6 +24,11 @@ Private
 Global cachedFont:TBitmapFont
 
 Public
+
+Rem
+bbdoc: Returns this module's shared bitmap-font instance.
+returns: The shared read-only bitmap font.
+End Rem
 Function Terminus14x28Font:TBitmapFont()
 	If Not cachedFont Then cachedFont = TBitmapFont.Create(IncbinPtr("terminus_regular14x28.ebf"), ..
 		IncbinLen("terminus_regular14x28.ebf"))

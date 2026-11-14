@@ -29,6 +29,7 @@ Public
 
 Rem
 bbdoc: Returns the shared Spleen 5x8 font instance.
+returns: The shared read-only bitmap font.
 End Rem
 Function Spleen5x8Font:TBitmapFont()
 	If Not cachedFont Then
