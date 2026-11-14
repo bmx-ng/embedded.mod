@@ -274,6 +274,15 @@ The final two Boolean values in the example select BGR component order and
 inverted display drive, as required by the tested generic eight-pin module;
 other ST7796 panels may require different values.
 
+The Pico 2 W hardware examples include a full-panel colour-bar diagnostic and
+a Graphics2D animation. The animation keeps a complete framebuffer but presents
+only the previous and current sprite rectangles, clipping foreground
+recomposition to that same area. The tested Pico 2 W and generic eight-pin
+panel sustain approximately 46-48 frames per second at 12 MHz with that method.
+SPI limits are properties of the complete controller board, wiring, and panel
+combination rather than the ST7796 controller alone, so initial bring-up should
+use a conservative rate and secure, short connections.
+
 ## Touch input
 
 `Embedded.Drivers.Touch` is the controller-neutral touch boundary. A
