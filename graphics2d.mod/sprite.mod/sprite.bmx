@@ -39,6 +39,17 @@ Type TEmbeddedSpriteFrame Final
 	Public
 	Rem
 	bbdoc: Creates frame metadata; validation against an image occurs when a sheet is created.
+	param: Left coordinate of stored pixels within the source image.
+	param: Top coordinate of stored pixels within the source image.
+	param: Stored pixel width.
+	param: Stored pixel height.
+	param: Logical untrimmed width, or zero to use the stored width.
+	param: Logical untrimmed height, or zero to use the stored height.
+	param: Horizontal placement of stored pixels within the logical canvas.
+	param: Vertical placement of stored pixels within the logical canvas.
+	param: Horizontal drawing origin within the logical canvas.
+	param: Vertical drawing origin within the logical canvas.
+	returns: Immutable frame metadata, or Null when dimensions or offsets are invalid.
 	End Rem
 	Function Create:TEmbeddedSpriteFrame(sourceX:Int, sourceY:Int, width:Int, height:Int, ..
 			canvasWidth:Int = 0, canvasHeight:Int = 0, offsetX:Int = 0, offsetY:Int = 0, ..
@@ -62,42 +73,82 @@ Type TEmbeddedSpriteFrame Final
 		Return frame
 	End Function
 
+	Rem
+	bbdoc: Returns the stored rectangle's left source coordinate.
+	returns: Source x coordinate in pixels.
+	End Rem
 	Method SourceX:Int()
 		Return frameSourceX
 	End Method
 
+	Rem
+	bbdoc: Returns the stored rectangle's top source coordinate.
+	returns: Source y coordinate in pixels.
+	End Rem
 	Method SourceY:Int()
 		Return frameSourceY
 	End Method
 
+	Rem
+	bbdoc: Returns the width of the stored pixel rectangle.
+	returns: Stored width in pixels.
+	End Rem
 	Method StoredWidth:Int()
 		Return frameStoredWidth
 	End Method
 
+	Rem
+	bbdoc: Returns the height of the stored pixel rectangle.
+	returns: Stored height in pixels.
+	End Rem
 	Method StoredHeight:Int()
 		Return frameStoredHeight
 	End Method
 
+	Rem
+	bbdoc: Returns the logical untrimmed canvas width.
+	returns: Canvas width in pixels.
+	End Rem
 	Method Width:Int()
 		Return frameCanvasWidth
 	End Method
 
+	Rem
+	bbdoc: Returns the logical untrimmed canvas height.
+	returns: Canvas height in pixels.
+	End Rem
 	Method Height:Int()
 		Return frameCanvasHeight
 	End Method
 
+	Rem
+	bbdoc: Returns the stored pixels' horizontal offset within the logical canvas.
+	returns: Horizontal offset in pixels.
+	End Rem
 	Method OffsetX:Int()
 		Return frameOffsetX
 	End Method
 
+	Rem
+	bbdoc: Returns the stored pixels' vertical offset within the logical canvas.
+	returns: Vertical offset in pixels.
+	End Rem
 	Method OffsetY:Int()
 		Return frameOffsetY
 	End Method
 
+	Rem
+	bbdoc: Returns the drawing origin's horizontal position within the canvas.
+	returns: Handle x coordinate in pixels.
+	End Rem
 	Method HandleX:Int()
 		Return frameHandleX
 	End Method
 
+	Rem
+	bbdoc: Returns the drawing origin's vertical position within the canvas.
+	returns: Handle y coordinate in pixels.
+	End Rem
 	Method HandleY:Int()
 		Return frameHandleY
 	End Method
@@ -114,6 +165,9 @@ Type TEmbeddedSpriteSheet Final
 	Public
 	Rem
 	bbdoc: Creates a sheet from arbitrary validated frame rectangles.
+	param: Shared source image.
+	param: Non-empty frame metadata array, copied by the sheet.
+	returns: New sheet, or Null when a frame is invalid or outside the image.
 	End Rem
 	Function Create:TEmbeddedSpriteSheet(image:TEmbeddedImage, frames:TEmbeddedSpriteFrame[])
 		If Not image Or Not frames Or frames.Length = 0 Then Return Null
@@ -129,10 +183,16 @@ Type TEmbeddedSpriteSheet Final
 
 	Rem
 	bbdoc: Splits an image into row-major fixed-size cells.
+	param: Source image.
+	param: Cell width in pixels.
+	param: Cell height in pixels.
 	param: Zero-based first cell to retain.
 	param: Number of cells to retain; zero selects every remaining complete cell.
 	param: Empty pixels before the first cell at the left and top edges.
 	param: Empty pixels between adjacent cells.
+	param: Horizontal drawing origin within each cell.
+	param: Vertical drawing origin within each cell.
+	returns: New sheet, or Null when the grid parameters exceed the image.
 	End Rem
 	Function CreateGrid:TEmbeddedSpriteSheet(image:TEmbeddedImage, cellWidth:Int, cellHeight:Int, ..
 			firstCell:Int = 0, cellCount:Int = 0, margin:Int = 0, spacing:Int = 0, ..
@@ -164,14 +224,27 @@ Type TEmbeddedSpriteSheet Final
 		Return Create(image, frames)
 	End Function
 
+	Rem
+	bbdoc: Returns the source image shared by every frame.
+	returns: Source image.
+	End Rem
 	Method Image:TEmbeddedImage()
 		Return sourceImage
 	End Method
 
+	Rem
+	bbdoc: Returns the number of frames.
+	returns: Frame count.
+	End Rem
 	Method FrameCount:Int()
 		Return frames.Length
 	End Method
 
+	Rem
+	bbdoc: Returns one frame by index.
+	param: Zero-based frame index.
+	returns: Frame metadata, or Null when the index is invalid.
+	End Rem
 	Method Frame:TEmbeddedSpriteFrame(index:Int)
 		If index < 0 Or index >= frames.Length Then Return Null
 		Return frames[index]
@@ -179,6 +252,13 @@ Type TEmbeddedSpriteSheet Final
 
 	Rem
 	bbdoc: Draws one frame using the supplied context or the default context.
+	param: Drawing context, or Null to use the module-level Graphics2D context.
+	param: Zero-based frame index.
+	param: Destination handle x coordinate.
+	param: Destination handle y coordinate.
+	param: ImageFlipX, ImageFlipY, or combined drawing flags.
+	param: Opacity from zero through 255.
+	param: Optional RGB color key, or ImageColorKeyDisabled.
 	about: Coordinates locate the frame handle within its logical canvas.
 	End Rem
 	Method Draw(context:TEmbedded2DContext, index:Int, x:Int, y:Int, drawFlags:Int = 0, ..
@@ -210,6 +290,13 @@ Type TEmbeddedSpriteAnimation Final
 	Field totalDuration:Long
 
 	Public
+	Rem
+	bbdoc: Creates an animation from explicit sheet-frame indices and durations.
+	param: Sprite sheet containing every referenced frame.
+	param: Frame indices in playback order, copied by the animation.
+	param: Positive frame durations in milliseconds, copied by the animation.
+	returns: Immutable animation, or Null when arrays or entries are invalid.
+	End Rem
 	Function Create:TEmbeddedSpriteAnimation(sheet:TEmbeddedSpriteSheet, frameIndices:Int[], ..
 			durations:Int[])
 		If Not sheet Or Not frameIndices Or Not durations Or frameIndices.Length = 0 Or ..
@@ -231,6 +318,11 @@ Type TEmbeddedSpriteAnimation Final
 
 	Rem
 	bbdoc: Creates consecutive animation frames with one common duration.
+	param: Sprite sheet containing the frame range.
+	param: Zero-based first sheet frame.
+	param: Positive number of consecutive frames.
+	param: Positive duration of each frame in milliseconds.
+	returns: Immutable animation, or Null when the range is invalid.
 	End Rem
 	Function CreateRange:TEmbeddedSpriteAnimation(sheet:TEmbeddedSpriteSheet, firstFrame:Int, ..
 			frameCount:Int, frameDuration:Int)
@@ -245,18 +337,35 @@ Type TEmbeddedSpriteAnimation Final
 		Return Create(sheet, indices, durations)
 	End Function
 
+	Rem
+	bbdoc: Returns the shared sprite sheet.
+	returns: Animation sprite sheet.
+	End Rem
 	Method Sheet:TEmbeddedSpriteSheet()
 		Return spriteSheet
 	End Method
 
+	Rem
+	bbdoc: Returns the number of animation frames.
+	returns: Playback-frame count.
+	End Rem
 	Method FrameCount:Int()
 		Return frameIndices.Length
 	End Method
 
+	Rem
+	bbdoc: Returns the complete animation duration.
+	returns: Total duration in milliseconds.
+	End Rem
 	Method Duration:Long()
 		Return totalDuration
 	End Method
 
+	Rem
+	bbdoc: Maps an animation-frame index to its sprite-sheet frame.
+	param: Zero-based animation-frame index.
+	returns: Sheet-frame index, or -1 when invalid.
+	End Rem
 	Method SheetFrame:Int(animationFrame:Int)
 		If animationFrame < 0 Or animationFrame >= frameIndices.Length Then Return -1
 		Return frameIndices[animationFrame]
@@ -264,6 +373,9 @@ Type TEmbeddedSpriteAnimation Final
 
 	Rem
 	bbdoc: Selects a zero-based animation frame for elapsed milliseconds.
+	param: Elapsed playback time in milliseconds.
+	param: True to wrap at the animation duration; False to hold the final frame.
+	returns: Zero-based animation-frame index.
 	about: Negative time is treated as zero. Non-looping playback holds its last frame.
 	End Rem
 	Method FrameAtTime:Int(elapsed:Long, loop:Int = True)
@@ -280,6 +392,16 @@ Type TEmbeddedSpriteAnimation Final
 		Return frameIndices.Length - 1
 	End Method
 
+	Rem
+	bbdoc: Draws one animation frame through its sprite sheet.
+	param: Drawing context, or Null to use the module-level Graphics2D context.
+	param: Zero-based animation-frame index.
+	param: Destination handle x coordinate.
+	param: Destination handle y coordinate.
+	param: Image drawing flags.
+	param: Opacity from zero through 255.
+	param: Optional RGB color key, or ImageColorKeyDisabled.
+	End Rem
 	Method Draw(context:TEmbedded2DContext, animationFrame:Int, x:Int, y:Int, ..
 			drawFlags:Int = 0, opacity:Int = 255, colorKey:UInt = ImageColorKeyDisabled)
 		Local sheetFrame:Int = SheetFrame(animationFrame)
@@ -299,6 +421,12 @@ Type TEmbeddedSpritePlayer Final
 	Field finished:Int
 
 	Public
+	Rem
+	bbdoc: Creates independent playback state for an animation.
+	param: Shared immutable animation definition.
+	param: True to loop at the end.
+	returns: New player, or Null when the animation is invalid.
+	End Rem
 	Function Create:TEmbeddedSpritePlayer(animation:TEmbeddedSpriteAnimation, loop:Int = True)
 		If Not animation Then Return Null
 		Local player:TEmbeddedSpritePlayer = New TEmbeddedSpritePlayer
@@ -307,10 +435,19 @@ Type TEmbeddedSpritePlayer Final
 		Return player
 	End Function
 
+	Rem
+	bbdoc: Returns the current animation definition.
+	returns: Shared animation.
+	End Rem
 	Method Animation:TEmbeddedSpriteAnimation()
 		Return animationDefinition
 	End Method
 
+	Rem
+	bbdoc: Replaces the animation and resets playback to its first frame.
+	param: New shared animation; Null is ignored.
+	param: True to loop at the end.
+	End Rem
 	Method SetAnimation(animation:TEmbeddedSpriteAnimation, loop:Int = True)
 		If Not animation Then Return
 		animationDefinition = animation
@@ -318,32 +455,57 @@ Type TEmbeddedSpritePlayer Final
 		Reset()
 	End Method
 
+	Rem
+	bbdoc: Returns to the first frame and resumes playback.
+	End Rem
 	Method Reset()
 		elapsed = 0
 		finished = False
 		playing = True
 	End Method
 
+	Rem
+	bbdoc: Resumes a paused player that has not finished.
+	End Rem
 	Method Play()
 		If animationDefinition And Not finished Then playing = True
 	End Method
 
+	Rem
+	bbdoc: Pauses playback without changing elapsed time.
+	End Rem
 	Method Pause()
 		playing = False
 	End Method
 
+	Rem
+	bbdoc: Reports whether Advance currently changes playback time.
+	returns: True while playing.
+	End Rem
 	Method IsPlaying:Int()
 		Return playing
 	End Method
 
+	Rem
+	bbdoc: Reports whether non-looping playback reached its end.
+	returns: True after the final frame duration has elapsed.
+	End Rem
 	Method IsFinished:Int()
 		Return finished
 	End Method
 
+	Rem
+	bbdoc: Returns the current animation clock.
+	returns: Elapsed time in milliseconds.
+	End Rem
 	Method ElapsedTime:Long()
 		Return elapsed
 	End Method
 
+	Rem
+	bbdoc: Returns the animation frame selected by the current clock.
+	returns: Zero-based animation-frame index, or -1 without an animation.
+	End Rem
 	Method CurrentFrame:Int()
 		If Not animationDefinition Then Return -1
 		Return animationDefinition.FrameAtTime(elapsed, looping)
@@ -351,6 +513,7 @@ Type TEmbeddedSpritePlayer Final
 
 	Rem
 	bbdoc: Advances playback by a nonnegative elapsed-time delta in milliseconds.
+	param: Time delta in milliseconds; non-positive values are ignored.
 	End Rem
 	Method Advance(deltaMilliseconds:Int)
 		If Not animationDefinition Or Not playing Or deltaMilliseconds <= 0 Then Return
@@ -366,6 +529,15 @@ Type TEmbeddedSpritePlayer Final
 		End If
 	End Method
 
+	Rem
+	bbdoc: Draws the player's current animation frame.
+	param: Drawing context, or Null to use the module-level Graphics2D context.
+	param: Destination handle x coordinate.
+	param: Destination handle y coordinate.
+	param: Image drawing flags.
+	param: Opacity from zero through 255.
+	param: Optional RGB color key, or ImageColorKeyDisabled.
+	End Rem
 	Method Draw(context:TEmbedded2DContext, x:Int, y:Int, drawFlags:Int = 0, ..
 			opacity:Int = 255, colorKey:UInt = ImageColorKeyDisabled)
 		If animationDefinition Then animationDefinition.Draw(context, CurrentFrame(), x, y, drawFlags, opacity, colorKey)
