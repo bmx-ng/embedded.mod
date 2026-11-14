@@ -2234,10 +2234,14 @@ Type TUICard Extends TUIContainer Final
 	End Method
 End Type
 
+Private
+
 Function _UIHeaderBack(button:TUIButton)
 	Local header:TUIHeader = TUIHeader(button.Parent())
 	If header And header.Context() Then header.Context().Back()
 End Function
+
+Public
 
 Rem
 bbdoc: Optional page header with a title, Back action and trailing actions.
@@ -3249,10 +3253,20 @@ Type TUIComboBox Extends TUIWidget Final
 		End If
 	End Method
 
+	Rem
+	bbdoc: Applies a popup selection as a user-generated combo-box change.
+	param: Selected popup item index.
+	about: Intended for the combo box's owned TUIPopupMenu.
+	End Rem
 	Method _SelectFromPopup(index:Int)
 		_SetSelectedIndex(index, True)
 	End Method
 
+	Rem
+	bbdoc: Updates combo-box selection with optional observer notification.
+	param: Desired choice index.
+	param: True to invoke the callback and emit EVENT_UISELECTIONCHANGED.
+	End Rem
 	Method _SetSelectedIndex(value:Int, notify:Int)
 		If itemNames.Length = 0 Then value = -1
 		If value < -1 Then value = -1
@@ -5921,10 +5935,18 @@ Type TUIRotaryDial Extends TUIRangeWidget Final
 		Return True
 	End Method
 
+	Rem
+	bbdoc: Applies a signed number of configured dial steps.
+	param: Signed step count.
+	End Rem
 	Method _Adjust(delta:Int)
 		_SetUserValue(Value() + delta * stepValue)
 	End Method
 
+	Rem
+	bbdoc: Clamps a user-generated dial value and notifies observers on change.
+	param: Desired value.
+	End Rem
 	Method _SetUserValue(value:Int)
 		If value < Minimum() Then value = Minimum()
 		If value > Maximum() Then value = Maximum()
@@ -6840,10 +6862,21 @@ overlay and the previous focused widget is retained for dismissal.
 		Return True
 	End Method
 
+	Rem
+	bbdoc: Returns the widget currently holding context focus.
+	returns: Focused widget, or Null when focus is clear.
+	End Rem
 	Method FocusedWidget:TUIWidget()
 		Return focusedWidget
 	End Method
 
+	Rem
+	bbdoc: Assigns focus to an eligible widget or clears it.
+	param: Widget owned by this context, or Null to clear focus.
+	returns: True when the request is valid and focus was assigned.
+	about: The focused widget is revealed inside ancestor scroll views and
+EVENT_UIFOCUSCHANGED is emitted with the previous widget in `extra`.
+	End Rem
 	Method SetFocus:Int(widget:TUIWidget)
 		If widget And (widget.Context() <> Self Or Not _CanFocus(widget)) Then Return False
 		If focusedWidget = widget Then Return True
@@ -6858,6 +6891,7 @@ overlay and the previous focused widget is retained for dismissal.
 
 	Rem
 	bbdoc: Restores focus during the next presentation after pending layout has completed.
+	param: Widget to focus when presentation next processes deferred work.
 	about: Navigation uses this to keep layout and framebuffer submission out of
 	the input callback which changed the visible page.
 	End Rem
@@ -6866,10 +6900,17 @@ overlay and the previous focused widget is retained for dismissal.
 		deferredFocusPending = True
 	End Method
 
+	Rem
+	bbdoc: Clears context focus and emits EVENT_UIFOCUSCHANGED when necessary.
+	End Rem
 	Method ClearFocus()
 		SetFocus(Null)
 	End Method
 
+	Rem
+	bbdoc: Moves focus to the next eligible widget in retained-tree order.
+	returns: True when focus was assigned; traversal wraps to the first widget.
+	End Rem
 	Method FocusNext:Int()
 		Local focusRoot:TUIWidget = rootWidget
 		If overlayWidget Then focusRoot = overlayWidget
@@ -6887,6 +6928,10 @@ overlay and the previous focused widget is retained for dismissal.
 		Return SetFocus(first)
 	End Method
 
+	Rem
+	bbdoc: Moves focus to the previous eligible widget in retained-tree order.
+	returns: True when focus was assigned; traversal wraps to the last widget.
+	End Rem
 	Method FocusPrevious:Int()
 		Local focusRoot:TUIWidget = rootWidget
 		If overlayWidget Then focusRoot = overlayWidget
@@ -6902,12 +6947,21 @@ overlay and the previous focused widget is retained for dismissal.
 		Return SetFocus(previous)
 	End Method
 
+	Rem
+	bbdoc: Activates the currently focused widget.
+	returns: True when the widget handled focused activation.
+	End Rem
 	Method ActivateFocused:Int()
 		Local target:TUIWidget = focusedWidget
 		If Not _CanFocus(target) Then Return False
 		Return target._ActivateFocused()
 	End Method
 
+	Rem
+	bbdoc: Adjusts the currently focused value or selection control.
+	param: Signed adjustment amount interpreted by the focused widget.
+	returns: True when the widget handled the adjustment.
+	End Rem
 	Method AdjustFocused:Int(delta:Int)
 		If delta = 0 Or Not _CanFocus(focusedWidget) Then Return False
 		Return focusedWidget._AdjustFocused(delta)
@@ -6915,6 +6969,7 @@ overlay and the previous focused widget is retained for dismissal.
 
 	Rem
 	bbdoc: Handles one application-level back action.
+	returns: True when an overlay was dismissed or a page stack was popped.
 	about: An active overlay is dismissed first. Otherwise the deepest visible
 	page stack is popped. Returns false when there is nowhere to go back to.
 	End Rem
@@ -6926,6 +6981,10 @@ overlay and the previous focused widget is retained for dismissal.
 		Return _BackInWidget(rootWidget)
 	End Method
 
+	Rem
+	bbdoc: Replaces the inherited context theme and schedules complete relayout.
+	param: Fully initialized theme; Null is ignored.
+	End Rem
 	Method SetTheme(theme:TUITheme)
 		If Not theme Then Return
 		themeValue = theme
@@ -6934,18 +6993,32 @@ overlay and the previous focused widget is retained for dismissal.
 		RequestLayout()
 	End Method
 
+	Rem
+	bbdoc: Returns the Graphics2D context used for UI rendering.
+	returns: Context drawing into Frame.
+	End Rem
 	Method Graphics:TEmbedded2DContext()
 		Return graphics
 	End Method
 
+	Rem
+	bbdoc: Returns the framebuffer containing retained UI output.
+	returns: Context framebuffer.
+	End Rem
 	Method Frame:TDisplayBuffer()
 		Return frame
 	End Method
 
+	Rem
+	bbdoc: Schedules measurement and layout before the next render or hit test.
+	End Rem
 	Method RequestLayout()
 		layoutPending = True
 	End Method
 
+	Rem
+	bbdoc: Marks the complete framebuffer for redrawing.
+	End Rem
 	Method InvalidateAll()
 		invalidCount = 1
 		invalidX0[0] = 0
@@ -6954,6 +7027,15 @@ overlay and the previous focused widget is retained for dismissal.
 		invalidY1[0] = frame.Height()
 	End Method
 
+	Rem
+	bbdoc: Adds a clipped dirty rectangle, merging overlapping regions.
+	param: Left coordinate in framebuffer pixels.
+	param: Top coordinate in framebuffer pixels.
+	param: Width in pixels.
+	param: Height in pixels.
+	about: When the bounded region list is exhausted, the context falls back to a
+single full-frame invalidation.
+	End Rem
 	Method InvalidateRect(x:Int, y:Int, width:Int, height:Int)
 		If width <= 0 Or height <= 0 Then Return
 		Local x1:Int = x + width
@@ -6992,6 +7074,11 @@ overlay and the previous focused widget is retained for dismissal.
 		invalidCount :+ 1
 	End Method
 
+	Rem
+	bbdoc: Immediately measures and assigns bounds to root, overlay, and toast trees.
+	about: Applications normally use RequestLayout and allow Render or HitTest to
+perform this work when required.
+	End Rem
 	Method Layout()
 		rootWidget._SetBounds(0, 0, graphics.Width(), graphics.Height())
 		rootWidget._LayoutChildren()
@@ -7000,6 +7087,12 @@ overlay and the previous focused widget is retained for dismissal.
 		layoutPending = False
 	End Method
 
+	Rem
+	bbdoc: Redraws all invalid regions into the context framebuffer.
+	returns: True when at least one dirty region was rendered.
+	about: Render updates pixels but does not submit them to the display. Use
+Present for the normal render-and-submit path.
+	End Rem
 	Method Render:Int()
 		If layoutPending Then Layout()
 		If invalidCount = 0 Then Return False
@@ -7022,6 +7115,13 @@ overlay and the previous focused widget is retained for dismissal.
 		Return True
 	End Method
 
+	Rem
+	bbdoc: Advances deferred UI work, renders dirty regions, and presents them.
+	returns: Display presentation result, or True for a buffer-only context.
+	about: Present advances touch-scroll momentum when requested by the input
+binding, expires timed toasts, restores deferred focus after layout, and uses
+Graphics2D dirty-region presentation when a display is attached.
+	End Rem
 	Method Present:Int()
 		Local now:UInt = UInt(MilliSecs())
 		If inputBinding And inputBinding.UpdatesScrollMomentum() Then
@@ -7041,6 +7141,13 @@ overlay and the previous focused widget is retained for dismissal.
 		Return True
 	End Method
 
+	Rem
+	bbdoc: Finds the topmost clickable widget at a framebuffer coordinate.
+	param: Display x coordinate in pixels.
+	param: Display y coordinate in pixels.
+	returns: Clickable widget, or Null when none is hit.
+	about: An active overlay confines hit testing to its own bounds and tree.
+	End Rem
 	Method HitTest:TUIWidget(x:Int, y:Int)
 		If layoutPending Then Layout()
 		If overlayWidget Then
@@ -7051,6 +7158,11 @@ overlay and the previous focused widget is retained for dismissal.
 	End Method
 
 	Public
+	Rem
+	bbdoc: Expires visible timed toasts at the supplied monotonic time.
+	param: Current time in milliseconds.
+	about: Called by Present and exposed for specialized presentation loops.
+	End Rem
 	Method _UpdateToast(now:UInt)
 		Local index:Int
 		While index < visibleToasts.Length
@@ -7066,6 +7178,12 @@ overlay and the previous focused widget is retained for dismissal.
 		Wend
 	End Method
 
+	Rem
+	bbdoc: Moves a prepared toast into the visible stack.
+	param: Toast attached to this context.
+	param: Current monotonic time in milliseconds.
+	about: Intended for the context's bounded toast scheduler.
+	End Rem
 	Method _ActivateToast(toast:TUIToast, now:UInt)
 		visibleToasts = visibleToasts[..visibleToasts.Length + 1]
 		visibleToasts[visibleToasts.Length - 1] = toast
@@ -7074,6 +7192,11 @@ overlay and the previous focused widget is retained for dismissal.
 		_LayoutToasts()
 	End Method
 
+	Rem
+	bbdoc: Measures and positions all visible toast placement stacks.
+	about: Toast width is bounded by the display margin and an upper width of 420
+pixels. Stacks grow inward from their configured edge or around the center.
+	End Rem
 	Method _LayoutToasts()
 		Local maximumWidth:Int = Min(Max(frame.Width() - toastMargin * 2, 1), 420)
 		For Local toast:TUIToast = EachIn visibleToasts
@@ -7126,6 +7249,16 @@ overlay and the previous focused widget is retained for dismissal.
 		Next
 	End Method
 
+	Rem
+	bbdoc: Draws one visible widget subtree intersecting a dirty clip rectangle.
+	param: Root of the subtree to draw.
+	param: Clip left coordinate in pixels.
+	param: Clip top coordinate in pixels.
+	param: Clip width in pixels.
+	param: Clip height in pixels.
+	about: Children are drawn in insertion order, followed by the widget overlay
+and focus indicator. Clipping containers narrow the Graphics2D viewport.
+	End Rem
 	Method _DrawWidget(widget:TUIWidget, clipX:Int, clipY:Int, clipWidth:Int, clipHeight:Int)
 		If Not widget Or Not widget.Visible() Or Not _Intersects(widget, clipX, clipY, clipWidth, clipHeight) Then Return
 		widget.Draw(graphics)
@@ -7151,6 +7284,10 @@ overlay and the previous focused widget is retained for dismissal.
 		If widget = focusedWidget Then _DrawFocus(widget)
 	End Method
 
+	Rem
+	bbdoc: Reveals a widget within every ancestor scroll view.
+	param: Widget owned by this context.
+	End Rem
 	Method _EnsureWidgetVisible(widget:TUIWidget)
 		If Not widget Then Return
 		If layoutPending Then Layout()
@@ -7162,6 +7299,12 @@ overlay and the previous focused widget is retained for dismissal.
 		Wend
 	End Method
 
+	Rem
+	bbdoc: Finds the nearest scroll view containing a widget.
+	param: Widget from which to begin ancestor traversal.
+	returns: Nearest scroll view, or Null.
+	about: Intended for input adapters.
+	End Rem
 	Method _ContainingScroll:TUIScrollView(widget:TUIWidget)
 		Local current:TUIWidget = widget
 		While current
@@ -7172,6 +7315,14 @@ overlay and the previous focused widget is retained for dismissal.
 		Return Null
 	End Method
 
+	Rem
+	bbdoc: Finds the deepest visible scroll view containing a coordinate.
+	param: Root widget of the subtree to search.
+	param: Display x coordinate in pixels.
+	param: Display y coordinate in pixels.
+	returns: Scroll view, or Null.
+	about: Intended for input adapters beginning a drag on non-clickable content.
+	End Rem
 	Method _ScrollAt:TUIScrollView(widget:TUIWidget, x:Int, y:Int)
 		If Not widget Or Not widget.Visible() Or Not widget.Contains(x, y) Then Return Null
 		For Local index:Int = widget.uiChildren.Length - 1 To 0 Step -1
@@ -7181,6 +7332,11 @@ overlay and the previous focused widget is retained for dismissal.
 		Return TUIScrollView(widget)
 	End Method
 
+	Rem
+	bbdoc: Advances momentum in every visible scroll view in a subtree.
+	param: Root widget of the subtree to update.
+	param: Current monotonic time in milliseconds.
+	End Rem
 	Method _UpdateScrollMomentum(widget:TUIWidget, now:UInt)
 		If Not widget Or Not widget.Visible() Then Return
 		Local scroll:TUIScrollView = TUIScrollView(widget)
@@ -7190,6 +7346,10 @@ overlay and the previous focused widget is retained for dismissal.
 		Next
 	End Method
 
+	Rem
+	bbdoc: Draws the active theme focus indicator around one widget.
+	param: Focused widget.
+	End Rem
 	Method _DrawFocus(widget:TUIWidget)
 		If Not themeValue Or themeValue.focusWidth <= 0 Or Not widget.FocusIndicatorVisible() Then Return
 		Local inset:Int = Max(themeValue.focusInset, 0)
@@ -7204,6 +7364,12 @@ overlay and the previous focused widget is retained for dismissal.
 		Next
 	End Method
 
+	Rem
+	bbdoc: Pops the deepest visible page stack in a widget subtree.
+	param: Root widget to search.
+	returns: True when a stack was popped.
+	about: Traversal is iterative to keep embedded native stack use bounded.
+	End Rem
 	Method _BackInWidget:Int(widget:TUIWidget)
 		If Not widget Or Not widget.Visible() Then Return False
 		' Walk the tree in reverse post-order without recursion. Embedded entry
@@ -7253,6 +7419,12 @@ overlay and the previous focused widget is retained for dismissal.
 		Return False
 	End Method
 
+	Rem
+	bbdoc: Tests whether a widget is eligible for focus in the current UI state.
+	param: Candidate widget.
+	returns: True when it and all ancestors are visible and enabled, and it lies
+inside the active overlay when one is present.
+	End Rem
 	Method _CanFocus:Int(widget:TUIWidget)
 		If Not widget Or Not widget.Focusable() Or Not widget.Enabled() Or Not widget.Visible() Then Return False
 		If overlayWidget And Not _IsDescendant(widget, overlayWidget) Then Return False
@@ -7264,6 +7436,12 @@ overlay and the previous focused widget is retained for dismissal.
 		Return True
 	End Method
 
+	Rem
+	bbdoc: Tests whether a widget is contained by an ancestor, including itself.
+	param: Candidate descendant.
+	param: Candidate ancestor.
+	returns: True when the ancestor is found in the parent chain.
+	End Rem
 	Method _IsDescendant:Int(widget:TUIWidget, ancestor:TUIWidget)
 		Local current:TUIWidget = widget
 		While current
@@ -7273,6 +7451,10 @@ overlay and the previous focused widget is retained for dismissal.
 		Return False
 	End Method
 
+	Rem
+	bbdoc: Clears focus when the focused widget lies in a supplied subtree.
+	param: Subtree root being hidden, disabled, or detached.
+	End Rem
 	Method _ReleaseFocus(widget:TUIWidget)
 		If Not focusedWidget Or Not widget Then Return
 		Local current:TUIWidget = focusedWidget
@@ -7287,6 +7469,13 @@ overlay and the previous focused widget is retained for dismissal.
 
 	' Returns the next widget in pre-order without recursion. When enabledOnly
 	' is true, disabled subtrees are skipped for focus traversal.
+	Rem
+	bbdoc: Returns the next visible widget in iterative pre-order traversal.
+	param: Current widget.
+	param: Traversal root which must not be crossed.
+	param: True to skip disabled subtrees.
+	returns: Next widget, or Null at the end of the subtree.
+	End Rem
 	Method _NextTreeWidget:TUIWidget(widget:TUIWidget, root:TUIWidget, enabledOnly:Int = False)
 		If Not widget Or Not root Then Return Null
 		For Local child:TUIWidget = EachIn widget.uiChildren
@@ -7309,6 +7498,13 @@ overlay and the previous focused widget is retained for dismissal.
 		Return Null
 	End Method
 
+	Rem
+	bbdoc: Recursively finds the topmost clickable widget in a subtree.
+	param: Root widget to search.
+	param: Display x coordinate in pixels.
+	param: Display y coordinate in pixels.
+	returns: Clickable widget, or Null.
+	End Rem
 	Method _HitTest:TUIWidget(widget:TUIWidget, x:Int, y:Int)
 		If Not widget Or Not widget.Contains(x, y) Then Return Null
 		For Local index:Int = widget.uiChildren.Length - 1 To 0 Step -1
@@ -7319,6 +7515,15 @@ overlay and the previous focused widget is retained for dismissal.
 		Return Null
 	End Method
 
+	Rem
+	bbdoc: Tests widget bounds against a rectangle.
+	param: Widget to test.
+	param: Rectangle left coordinate.
+	param: Rectangle top coordinate.
+	param: Rectangle width.
+	param: Rectangle height.
+	returns: True when the bounds overlap.
+	End Rem
 	Method _Intersects:Int(widget:TUIWidget, x:Int, y:Int, width:Int, height:Int)
 		Return widget.X() < x + width And widget.X() + widget.Width() > x And ..
 			widget.Y() < y + height And widget.Y() + widget.Height() > y
