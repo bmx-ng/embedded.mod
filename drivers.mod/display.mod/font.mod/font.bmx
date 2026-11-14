@@ -17,9 +17,24 @@ ModuleInfo "License: zlib/libpng"
 
 Import Embedded.Drivers.Display
 
+Rem
+bbdoc: The Embedded Bitmap Font data-format version accepted by TBitmapFont.
+End Rem
 Const EmbeddedBitmapFontVersion:Int = 1
+
+Rem
+bbdoc: Aligns wrapped text against the left edge of its text box.
+End Rem
 Const EmbeddedTextAlignLeft:Int = 0
+
+Rem
+bbdoc: Centers each wrapped line within its text box.
+End Rem
 Const EmbeddedTextAlignCenter:Int = 1
+
+Rem
+bbdoc: Aligns wrapped text against the right edge of its text box.
+End Rem
 Const EmbeddedTextAlignRight:Int = 2
 
 Private
@@ -86,6 +101,9 @@ Type TBitmapFont
 	Public
 	Rem
 	bbdoc: Opens an Embedded Bitmap Font image held in persistent memory.
+	param: A pointer to the first byte of EBF1 font data.
+	param: The available data length in bytes.
+	returns: A validated read-only font, or Null when the data is invalid.
 	End Rem
 	Function Create:TBitmapFont(data:Byte Ptr, length:Int)
 		If data = Null Or length < 32 Then Return Null
@@ -113,28 +131,52 @@ Type TBitmapFont
 		Return result
 	End Function
 
+	Rem
+	bbdoc: Returns the number of glyph records stored in this font.
+	returns: The glyph count.
+	End Rem
 	Method GlyphCount:Int()
 		Return glyphCount
 	End Method
 
+	Rem
+	bbdoc: Returns the font ascent above its baseline.
+	returns: The ascent in unscaled pixels.
+	End Rem
 	Method Ascent:Int()
 		Return fontAscent
 	End Method
 
+	Rem
+	bbdoc: Returns the font descent below its baseline.
+	returns: The descent in unscaled pixels.
+	End Rem
 	Method Descent:Int()
 		Return fontDescent
 	End Method
 
+	Rem
+	bbdoc: Returns the distance between adjacent text lines.
+	returns: The line height in unscaled pixels.
+	End Rem
 	Method LineHeight:Int()
 		Return fontLineHeight
 	End Method
 
+	Rem
+	bbdoc: Tests whether the font contains an exact Unicode glyph.
+	param: The Unicode code point to locate.
+	returns: True when an exact glyph exists; the default fallback is not considered.
+	End Rem
 	Method HasGlyph:Int(codePoint:UInt)
 		Return FindGlyph(codePoint, False) >= 0
 	End Method
 
 	Rem
 	bbdoc: Returns the maximum line width in pixels for text at an integer scale.
+	param: The UTF-8 text to measure.
+	param: The positive integer pixel scale.
+	returns: The width of the widest line, or zero for an invalid scale.
 	End Rem
 	Method TextWidth:Int(text:String, scale:Int = 1)
 		If scale <= 0 Then Return 0
@@ -158,6 +200,13 @@ Type TBitmapFont
 
 	Rem
 	bbdoc: Draws text into a display buffer and returns the final pen x position.
+	param: The destination raster buffer.
+	param: The UTF-8 text to draw.
+	param: The left coordinate of the first line.
+	param: The top coordinate of the first line.
+	param: The $RRGGBB glyph color.
+	param: The positive integer pixel scale.
+	returns: The x coordinate immediately following the final glyph.
 	about: Rendering is transparent. Missing code points use the BDF default glyph
 	when one is available. Carriage returns are ignored and newlines reset the pen
 	to x and advance one scaled line.
@@ -171,6 +220,17 @@ Type TBitmapFont
 
 	Rem
 	bbdoc: Draws text while restricting changed pixels to the supplied rectangle.
+	param: The destination raster buffer.
+	param: The UTF-8 text to draw.
+	param: The left coordinate of the first line.
+	param: The top coordinate of the first line.
+	param: The $RRGGBB glyph color.
+	param: The positive integer pixel scale.
+	param: The clipping rectangle's left edge.
+	param: The clipping rectangle's top edge.
+	param: The clipping rectangle's width.
+	param: The clipping rectangle's height.
+	returns: The x coordinate immediately following the final glyph.
 	about: The clipping rectangle is expressed in target-buffer coordinates and
 	does not affect text measurement or the returned final pen position.
 	End Rem
@@ -207,6 +267,11 @@ Type TBitmapFont
 
 	Rem
 	bbdoc: Measures word-wrapped text without allocating temporary strings.
+	param: The UTF-8 text to measure.
+	param: The maximum line width in pixels.
+	param: Receives the widest resulting line.
+	param: Receives the total height of the resulting lines.
+	param: The positive integer pixel scale.
 	returns: The number of resulting lines.
 	End Rem
 	Method TextBoxSize:Int(text:String, width:Int, measuredWidth:Int Var, ..
@@ -230,6 +295,20 @@ Type TBitmapFont
 
 	Rem
 	bbdoc: Draws aligned, word-wrapped text inside a fixed rectangle.
+	param: The destination raster buffer.
+	param: The UTF-8 text to draw.
+	param: The text-box left coordinate.
+	param: The text-box top coordinate.
+	param: The text-box width in pixels.
+	param: The text-box height in pixels.
+	param: The $RRGGBB glyph color.
+	param: An EmbeddedTextAlign value.
+	param: The positive integer pixel scale.
+	param: True to add an ellipsis when text exceeds the available lines.
+	param: The clipping rectangle's left edge.
+	param: The clipping rectangle's top edge.
+	param: The clipping rectangle's width.
+	param: The clipping rectangle's height.
 	about: When ellipsis is true and more text remains after the last visible
 	line, that line is shortened as required and three dots are appended. The
 	operation scans the original string directly and does not allocate substrings.

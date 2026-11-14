@@ -18,11 +18,15 @@ ModuleInfo "License: zlib/libpng"
 
 Import "native/embedded_display_raster.c"
 
+Private
+
 Extern "C"
 	Function _DisplayFillRGB565(pixels:Byte Ptr, stride:Int, bufferWidth:Int, ..
 		bufferHeight:Int, x:Int, y:Int, width:Int, height:Int, color:UInt) = ..
 		"bmx_embedded_display_fill_rgb565"
 End Extern
+
+Public
 
 Rem
 bbdoc: One bit per pixel, rows stored top-to-bottom and most-significant bit first.
@@ -39,8 +43,19 @@ bbdoc: 24-bit pixels stored as red, green, then blue bytes.
 End Rem
 Const DisplayPixelFormatRGB888:Int = 3
 
+Rem
+bbdoc: A generic display operation failure.
+End Rem
 Const DisplayErrorGeneric:Int = -1
+
+Rem
+bbdoc: The display does not accept the requested pixel format.
+End Rem
 Const DisplayErrorUnsupportedFormat:Int = -2
+
+Rem
+bbdoc: One or more display operation arguments are invalid.
+End Rem
 Const DisplayErrorInvalidArgument:Int = -5
 
 Rem
@@ -78,13 +93,30 @@ bbdoc: Compatible image copies and scaling may use a target-specific hardware en
 End Rem
 Const DisplayCapabilityAcceleratedBlit:Int = 64
 
+Rem
+bbdoc: Uses the display's unrotated native orientation.
+End Rem
 Const DisplayOrientation0:Int = 0
+
+Rem
+bbdoc: Rotates the logical display orientation 90 degrees clockwise.
+End Rem
 Const DisplayOrientation90:Int = 90
+
+Rem
+bbdoc: Rotates the logical display orientation 180 degrees clockwise.
+End Rem
 Const DisplayOrientation180:Int = 180
+
+Rem
+bbdoc: Rotates the logical display orientation 270 degrees clockwise.
+End Rem
 Const DisplayOrientation270:Int = 270
 
 Rem
 bbdoc: Normalizes a supported clockwise display orientation, or returns -1.
+param: An orientation in degrees; values outside one turn are wrapped.
+returns: One of the DisplayOrientation constants, or -1 when the wrapped angle is not a quarter-turn.
 End Rem
 Function NormalizeDisplayOrientation:Int(degrees:Int)
 	degrees :Mod 360
@@ -96,6 +128,8 @@ End Function
 
 Rem
 bbdoc: Returns the number of bits used by one pixel, or zero for an unknown format.
+param: A DisplayPixelFormat value.
+returns: The number of bits per pixel, or zero when the format is unknown.
 End Rem
 Function DisplayPixelFormatBits:Int(format:Int)
 	Select format
@@ -112,6 +146,9 @@ End Function
 
 Rem
 bbdoc: Returns the minimum byte stride for a raster row.
+param: The raster width in pixels.
+param: A DisplayPixelFormat value.
+returns: The minimum number of bytes per row, or zero for invalid dimensions or an unknown format.
 End Rem
 Function DisplayMinimumStride:Int(width:Int, format:Int)
 	If width <= 0 Then
@@ -147,6 +184,13 @@ Type TDisplayBuffer
 	Field bufferSize:Int
 
 	Public
+	Rem
+	bbdoc: Creates a managed raster buffer using the minimum stride for its format.
+	param: The buffer width in pixels.
+	param: The buffer height in pixels.
+	param: A DisplayPixelFormat value.
+	returns: A new zero-filled buffer, or Null when the dimensions or format are invalid.
+	End Rem
 	Function Create:TDisplayBuffer(width:Int, height:Int, format:Int)
 		Local stride:Int = DisplayMinimumStride(width, format)
 		If stride <= 0 Or height <= 0 Then
@@ -165,6 +209,12 @@ Type TDisplayBuffer
 
 	Rem
 	bbdoc: Wraps a caller-owned raster without allocating its pixel storage.
+	param: The buffer width in pixels.
+	param: The buffer height in pixels.
+	param: A DisplayPixelFormat value.
+	param: A pointer to the first byte of caller-owned pixel storage.
+	param: The number of bytes between rows, or zero to use the minimum stride.
+	returns: A buffer view, or Null when the arguments are invalid.
 	about: The memory must remain valid for the lifetime of the buffer. Bytes returns
 	Null for an external raster; use Pixels and Size for storage-independent access.
 	End Rem
@@ -186,30 +236,58 @@ Type TDisplayBuffer
 		Return result
 	End Function
 
+	Rem
+	bbdoc: Returns the physical raster width in pixels.
+	returns: The buffer width.
+	End Rem
 	Method Width:Int()
 		Return bufferWidth
 	End Method
 
+	Rem
+	bbdoc: Returns the physical raster height in pixels.
+	returns: The buffer height.
+	End Rem
 	Method Height:Int()
 		Return bufferHeight
 	End Method
 
+	Rem
+	bbdoc: Returns the distance in bytes between adjacent raster rows.
+	returns: The row stride.
+	End Rem
 	Method Stride:Int()
 		Return bufferStride
 	End Method
 
+	Rem
+	bbdoc: Returns the raster pixel format.
+	returns: A DisplayPixelFormat value.
+	End Rem
 	Method Format:Int()
 		Return bufferFormat
 	End Method
 
+	Rem
+	bbdoc: Returns the total size of the raster storage in bytes.
+	returns: The byte size including any row padding.
+	End Rem
 	Method Size:Int()
 		Return bufferSize
 	End Method
 
+	Rem
+	bbdoc: Returns the managed byte array owned by this buffer.
+	returns: The managed storage, or Null when the buffer wraps external memory.
+	End Rem
 	Method Bytes:Byte[]()
 		Return storage
 	End Method
 
+	Rem
+	bbdoc: Returns a pointer to the first byte of raster storage.
+	returns: The pixel pointer, or Null when no storage is available.
+	End Rem
 	Method Pixels:Byte Ptr()
 		If externalStorage Then Return externalStorage
 		If storage.length = 0 Then
@@ -221,6 +299,8 @@ Type TDisplayBuffer
 
 	Rem
 	bbdoc: Retargets a buffer created by CreateExternal to equally sized storage.
+	param: A pointer to replacement storage with the same size and layout.
+	returns: True when the external buffer was retargeted successfully.
 	about: This supports driver-owned buffer exchange while keeping the
 	TDisplayBuffer identity stable for renderers. Managed buffers cannot be
 	retargeted.
@@ -231,6 +311,10 @@ Type TDisplayBuffer
 		Return True
 	End Method
 
+	Rem
+	bbdoc: Fills the complete raster with one color.
+	param: An $RRGGBB color; Mono1 treats zero as off and any non-zero value as on.
+	End Rem
 	Method Clear(color:UInt = 0)
 		Local pixels:Byte Ptr = Pixels()
 		If Not pixels Then Return
@@ -250,6 +334,12 @@ Type TDisplayBuffer
 		FillRect(0, 0, bufferWidth, bufferHeight, color)
 	End Method
 
+	Rem
+	bbdoc: Writes one pixel, silently clipping coordinates outside the raster.
+	param: The physical x coordinate.
+	param: The physical y coordinate.
+	param: An $RRGGBB color; Mono1 treats zero as off and any non-zero value as on.
+	End Rem
 	Method SetPixel(x:Int, y:Int, color:UInt = $ffffff)
 		If x < 0 Or y < 0 Or x >= bufferWidth Or y >= bufferHeight Then
 			Return
@@ -283,6 +373,12 @@ Type TDisplayBuffer
 		End Select
 	End Method
 
+	Rem
+	bbdoc: Reads one pixel as an $RRGGBB color.
+	param: The physical x coordinate.
+	param: The physical y coordinate.
+	returns: The expanded pixel color, or zero when the coordinates or storage are invalid.
+	End Rem
 	Method Pixel:UInt(x:Int, y:Int)
 		If x < 0 Or y < 0 Or x >= bufferWidth Or y >= bufferHeight Then
 			Return 0
@@ -313,6 +409,14 @@ Type TDisplayBuffer
 		Return 0
 	End Method
 
+	Rem
+	bbdoc: Fills a clipped physical raster rectangle.
+	param: The left coordinate.
+	param: The top coordinate.
+	param: The rectangle width in pixels.
+	param: The rectangle height in pixels.
+	param: An $RRGGBB color; Mono1 treats zero as off and any non-zero value as on.
+	End Rem
 	Method FillRect(x:Int, y:Int, width:Int, height:Int, color:UInt = $ffffff)
 		If width <= 0 Or height <= 0 Then
 			Return
@@ -369,6 +473,14 @@ Type TDisplayBuffer
 		Next
 	End Method
 
+	Rem
+	bbdoc: Draws the one-pixel outline of a clipped physical raster rectangle.
+	param: The left coordinate.
+	param: The top coordinate.
+	param: The rectangle width in pixels.
+	param: The rectangle height in pixels.
+	param: An $RRGGBB color; Mono1 treats zero as off and any non-zero value as on.
+	End Rem
 	Method DrawRect(x:Int, y:Int, width:Int, height:Int, color:UInt = $ffffff)
 		If width <= 0 Or height <= 0 Then
 			Return
@@ -380,6 +492,14 @@ Type TDisplayBuffer
 		DrawLine(x + width - 1, y, x + width - 1, y + height - 1, color)
 	End Method
 
+	Rem
+	bbdoc: Draws a clipped one-pixel line including both endpoints.
+	param: The starting x coordinate.
+	param: The starting y coordinate.
+	param: The ending x coordinate.
+	param: The ending y coordinate.
+	param: An $RRGGBB color; Mono1 treats zero as off and any non-zero value as on.
+	End Rem
 	Method DrawLine(x0:Int, y0:Int, x1:Int, y1:Int, color:UInt = $ffffff)
 		Local dx:Int = x1 - x0
 		If dx < 0 Then
@@ -435,14 +555,27 @@ Type TDisplay Abstract
 	Field configuredOrientation:Int
 
 	Public
+	Rem
+	bbdoc: Returns the display's native physical width in pixels.
+	returns: The physical width.
+	End Rem
 	Method Width:Int() Abstract
 
+	Rem
+	bbdoc: Returns the display's native physical height in pixels.
+	returns: The physical height.
+	End Rem
 	Method Height:Int() Abstract
 
+	Rem
+	bbdoc: Returns the raster format preferred by this display driver.
+	returns: A DisplayPixelFormat value.
+	End Rem
 	Method PreferredPixelFormat:Int() Abstract
 
 	Rem
 	bbdoc: Reports optional presentation behavior supported by this display.
+	returns: A bitwise combination of DisplayCapability constants.
 	about: Drivers which do not override this retain the original synchronous
 	partial-presentation contract.
 	End Rem
@@ -450,15 +583,38 @@ Type TDisplay Abstract
 		Return DisplayCapabilityPartialPresent
 	End Method
 
+	Rem
+	bbdoc: Tests whether every requested display capability is available.
+	param: A bitwise combination of DisplayCapability constants.
+	returns: True when all requested capability bits are present.
+	End Rem
 	Method HasCapability:Int(capability:Int)
 		Return (Capabilities() & capability) = capability
 	End Method
 
+	Rem
+	bbdoc: Synchronously presents a rectangular region from a complete raster.
+	param: A pointer to the first byte of the complete raster.
+	param: The number of bytes between adjacent raster rows.
+	param: A DisplayPixelFormat value describing the raster.
+	param: The left edge of the region in physical display coordinates.
+	param: The top edge of the region in physical display coordinates.
+	param: The region width in pixels.
+	param: The region height in pixels.
+	returns: A positive value on success, or a DisplayError value on failure.
+	about: The source pointer always addresses the full raster origin, not the
+	first pixel of the requested region. The caller may reuse the memory after
+	the method returns.
+	End Rem
 	Method PresentPixels:Int(pixels:Byte Ptr, stride:Int, format:Int, ..
 	x:Int, y:Int, width:Int, height:Int) Abstract
 
 	Rem
 	bbdoc: Presents a complete raster without requiring its contents to remain available for the next frame.
+	param: A pointer to the first byte of the complete raster.
+	param: The number of bytes between adjacent raster rows.
+	param: A DisplayPixelFormat value describing the raster.
+	returns: A positive value on success, or a DisplayError value on failure.
 	about: Drivers without a discard path safely retain the normal PresentPixels
 	behavior. Callers must completely redraw the buffer before presenting it again.
 	End Rem
@@ -466,10 +622,16 @@ Type TDisplay Abstract
 		Return PresentPixels(pixels, stride, format, 0, 0, Width(), Height())
 	End Method
 
+	Rem
+	bbdoc: Enables or disables the physical display output.
+	param: True to enable output, or False to disable it.
+	returns: True on success, or False when the operation fails or is unsupported.
+	End Rem
 	Method SetEnabled:Int(enabled:Int) Abstract
 
 	Rem
 	bbdoc: Configures the clockwise orientation used as rotation zero by drawing and input APIs.
+	param: The clockwise orientation in degrees.
 	returns: True for a supported quarter-turn orientation.
 	End Rem
 	Method SetOrientation:Int(degrees:Int)
@@ -479,12 +641,17 @@ Type TDisplay Abstract
 		Return True
 	End Method
 
+	Rem
+	bbdoc: Returns the configured clockwise display orientation.
+	returns: One of the DisplayOrientation constants.
+	End Rem
 	Method Orientation:Int()
 		Return configuredOrientation
 	End Method
 
 	Rem
 	bbdoc: Returns the width visible to orientation-aware drawing APIs.
+	returns: The oriented logical width in pixels.
 	End Rem
 	Method LogicalWidth:Int()
 		If configuredOrientation = DisplayOrientation90 Or ..
@@ -494,6 +661,7 @@ Type TDisplay Abstract
 
 	Rem
 	bbdoc: Returns the height visible to orientation-aware drawing APIs.
+	returns: The oriented logical height in pixels.
 	End Rem
 	Method LogicalHeight:Int()
 		If configuredOrientation = DisplayOrientation90 Or ..
@@ -501,10 +669,19 @@ Type TDisplay Abstract
 		Return Height()
 	End Method
 
+	Rem
+	bbdoc: Creates a managed full-screen buffer in the preferred pixel format.
+	returns: A new zero-filled buffer, or Null when allocation or configuration fails.
+	End Rem
 	Method CreateBuffer:TDisplayBuffer()
 		Return TDisplayBuffer.Create(Width(), Height(), PreferredPixelFormat())
 	End Method
 
+	Rem
+	bbdoc: Presents the complete display area from a buffer.
+	param: A raster at least as large as the physical display.
+	returns: A positive value on success, or a DisplayError value on failure.
+	End Rem
 	Method Present:Int(buffer:TDisplayBuffer)
 		If Not buffer Then
 			Return DisplayErrorInvalidArgument
@@ -513,6 +690,12 @@ Type TDisplay Abstract
 		Return PresentRegion(buffer, 0, 0, Width(), Height())
 	End Method
 
+	Rem
+	bbdoc: Presents a complete buffer whose contents may then be discarded.
+	param: A raster at least as large as the physical display.
+	returns: A positive value on success, or a DisplayError value on failure.
+	about: The caller must redraw the complete buffer before its next presentation.
+	End Rem
 	Method PresentDiscard:Int(buffer:TDisplayBuffer)
 		If Not buffer Or buffer.Width() < Width() Or buffer.Height() < Height() Then ..
 			Return DisplayErrorInvalidArgument
@@ -520,6 +703,15 @@ Type TDisplay Abstract
 		Return PresentPixelsDiscard(buffer.Pixels(), buffer.Stride(), buffer.Format())
 	End Method
 
+	Rem
+	bbdoc: Presents one physical display rectangle from a complete buffer.
+	param: A raster at least as large as the physical display.
+	param: The left edge of the region.
+	param: The top edge of the region.
+	param: The region width in pixels.
+	param: The region height in pixels.
+	returns: A positive value on success, or a DisplayError value on failure.
+	End Rem
 	Method PresentRegion:Int(buffer:TDisplayBuffer, x:Int, y:Int, width:Int, height:Int)
 		If Not buffer Or buffer.Width() < Width() Or buffer.Height() < Height() Then ..
 			Return DisplayErrorInvalidArgument
@@ -530,6 +722,13 @@ Type TDisplay Abstract
 
 	Rem
 	bbdoc: Presents several independent dirty rectangles from one raster.
+	param: A raster at least as large as the physical display.
+	param: A pointer to an array of left coordinates.
+	param: A pointer to an array of top coordinates.
+	param: A pointer to an array of rectangle widths.
+	param: A pointer to an array of rectangle heights.
+	param: The number of rectangles in each array.
+	returns: A positive value on success, or a DisplayError value on failure.
 	about: The default synchronous implementation submits each rectangle in order.
 	Framebuffer-swap drivers should override this method so the complete list is
 	presented as one frame. Rectangle arrays must each contain at least count items.

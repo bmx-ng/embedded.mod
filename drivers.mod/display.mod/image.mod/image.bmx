@@ -18,6 +18,8 @@ ModuleInfo "License: zlib/libpng"
 Import Embedded.Drivers.Display
 Import "native/embedded_display_image_raster.c"
 
+Private
+
 Extern "C"
 	Function _DisplayBlitRGB565:Int(targetPixels:Byte Ptr, targetStride:Int, ..
 		targetWidth:Int, targetHeight:Int, sourcePixels:Byte Ptr, sourceStride:Int, ..
@@ -33,16 +35,61 @@ Extern "C"
 		"bmx_embedded_display_blit_masked_rgb565"
 End Extern
 
+Public
+
+Rem
+bbdoc: The Embedded Bitmap Image data-format version accepted by TEmbeddedImage.
+End Rem
 Const EmbeddedImageVersion:Int = 1
+
+Rem
+bbdoc: Identifies image pixels stored directly in packed raster rows.
+End Rem
 Const EmbeddedImageEncodingRaw:Int = 0
+
+Rem
+bbdoc: Identifies indexed image pixels stored as row-based run-length pairs.
+End Rem
 Const EmbeddedImageEncodingRLE:Int = 1
+
+Rem
+bbdoc: Indicates that an EBI1 image contains a one-bit transparency mask.
+End Rem
 Const EmbeddedImageFlagMask:Int = 1
+
+Rem
+bbdoc: Identifies one-bit indexed pixels with up to two palette entries.
+End Rem
 Const EmbeddedImageFormatIndexed1:Int = $101
+
+Rem
+bbdoc: Identifies two-bit indexed pixels with up to four palette entries.
+End Rem
 Const EmbeddedImageFormatIndexed2:Int = $102
+
+Rem
+bbdoc: Identifies four-bit indexed pixels with up to sixteen palette entries.
+End Rem
 Const EmbeddedImageFormatIndexed4:Int = $104
+
+Rem
+bbdoc: Identifies eight-bit indexed pixels with up to 256 palette entries.
+End Rem
 Const EmbeddedImageFormatIndexed8:Int = $108
+
+Rem
+bbdoc: Mirrors image pixels horizontally while drawing.
+End Rem
 Const EmbeddedImageDrawFlipX:Int = 1
+
+Rem
+bbdoc: Mirrors image pixels vertically while drawing.
+End Rem
 Const EmbeddedImageDrawFlipY:Int = 2
+
+Rem
+bbdoc: Disables source color-key transparency.
+End Rem
 Const EmbeddedImageColorKeyDisabled:UInt = $ffffffff:UInt
 
 Private
@@ -104,6 +151,8 @@ Type TEmbeddedImage Final
 	Public
 	Rem
 	bbdoc: Opens an EBI1 image held in persistent memory.
+	param: A pointer to the first byte of EBI1 image data.
+	param: The available data length in bytes.
 	returns: Null when the header, dimensions, format, offsets, or lengths are invalid.
 	End Rem
 	Function Create:TEmbeddedImage(data:Byte Ptr, length:Int)
@@ -205,36 +254,71 @@ Type TEmbeddedImage Final
 		Return image
 	End Function
 
+	Rem
+	bbdoc: Returns the image width in pixels.
+	returns: The native width.
+	End Rem
 	Method Width:Int()
 		Return imageWidth
 	End Method
 
+	Rem
+	bbdoc: Returns the image height in pixels.
+	returns: The native height.
+	End Rem
 	Method Height:Int()
 		Return imageHeight
 	End Method
 
+	Rem
+	bbdoc: Returns the stored pixel format.
+	returns: A DisplayPixelFormat or EmbeddedImageFormatIndexed value.
+	End Rem
 	Method Format:Int()
 		Return imageFormat
 	End Method
 
+	Rem
+	bbdoc: Reports whether the image contains a one-bit transparency mask.
+	returns: True when masked pixels are present.
+	End Rem
 	Method HasMask:Int()
 		Return (imageFlags & EmbeddedImageFlagMask) <> 0
 	End Method
 
+	Rem
+	bbdoc: Reports whether pixels refer to a stored RGB palette.
+	returns: True for an indexed image.
+	End Rem
 	Method IsIndexed:Int()
 		Return paletteEntries > 0
 	End Method
 
+	Rem
+	bbdoc: Returns the number of RGB colors in an indexed image's palette.
+	returns: The palette entry count, or zero for a direct-color image.
+	End Rem
 	Method PaletteSize:Int()
 		Return paletteEntries
 	End Method
 
+	Rem
+	bbdoc: Returns the image's pixel encoding.
+	returns: EmbeddedImageEncodingRaw or EmbeddedImageEncodingRLE.
+	End Rem
 	Method Encoding:Int()
 		Return imageEncoding
 	End Method
 
 	Rem
 	bbdoc: Draws the complete image at its native size.
+	param: The destination raster buffer.
+	param: The destination left coordinate.
+	param: The destination top coordinate.
+	param: An $RRGGBB tint multiplied with each source pixel.
+	param: A bitwise combination of EmbeddedImageDrawFlip values.
+	param: Source opacity from 0 through 255.
+	param: An $RRGGBB transparent source color, or EmbeddedImageColorKeyDisabled.
 	End Rem
 	Method Draw(target:TDisplayBuffer, x:Int, y:Int, tint:UInt = $ffffff, ..
 			drawFlags:Int = 0, opacity:Int = 255, ..
@@ -246,6 +330,17 @@ Type TEmbeddedImage Final
 
 	Rem
 	bbdoc: Draws an unscaled source region at the destination position.
+	param: The destination raster buffer.
+	param: The destination left coordinate.
+	param: The destination top coordinate.
+	param: The source-region left coordinate.
+	param: The source-region top coordinate.
+	param: The region width in pixels.
+	param: The region height in pixels.
+	param: An $RRGGBB tint multiplied with each source pixel.
+	param: A bitwise combination of EmbeddedImageDrawFlip values.
+	param: Source opacity from 0 through 255.
+	param: An $RRGGBB transparent source color, or EmbeddedImageColorKeyDisabled.
 	End Rem
 	Method DrawRegion(target:TDisplayBuffer, x:Int, y:Int, sourceX:Int, sourceY:Int, ..
 			width:Int, height:Int, tint:UInt = $ffffff, drawFlags:Int = 0, ..
@@ -257,6 +352,15 @@ Type TEmbeddedImage Final
 
 	Rem
 	bbdoc: Draws the complete image scaled to a destination rectangle.
+	param: The destination raster buffer.
+	param: The destination left coordinate.
+	param: The destination top coordinate.
+	param: The destination width in pixels.
+	param: The destination height in pixels.
+	param: An $RRGGBB tint multiplied with each source pixel.
+	param: A bitwise combination of EmbeddedImageDrawFlip values.
+	param: Source opacity from 0 through 255.
+	param: An $RRGGBB transparent source color, or EmbeddedImageColorKeyDisabled.
 	about: Scaling uses deterministic nearest-neighbour sampling and allocates no memory.
 	End Rem
 	Method DrawRect(target:TDisplayBuffer, x:Int, y:Int, width:Int, height:Int, ..
@@ -269,6 +373,21 @@ Type TEmbeddedImage Final
 
 	Rem
 	bbdoc: Draws a source region while restricting changed pixels to a target rectangle.
+	param: The destination raster buffer.
+	param: The destination left coordinate.
+	param: The destination top coordinate.
+	param: The source-region left coordinate.
+	param: The source-region top coordinate.
+	param: The region width in pixels.
+	param: The region height in pixels.
+	param: An $RRGGBB tint multiplied with each source pixel.
+	param: The clipping rectangle's left edge.
+	param: The clipping rectangle's top edge.
+	param: The clipping rectangle's width.
+	param: The clipping rectangle's height.
+	param: A bitwise combination of EmbeddedImageDrawFlip values.
+	param: Source opacity from 0 through 255.
+	param: An $RRGGBB transparent source color, or EmbeddedImageColorKeyDisabled.
 	End Rem
 	Method DrawRegionClipped(target:TDisplayBuffer, x:Int, y:Int, sourceX:Int, sourceY:Int, ..
 			width:Int, height:Int, tint:UInt, clipX:Int, clipY:Int, clipWidth:Int, clipHeight:Int, ..
@@ -370,6 +489,19 @@ Type TEmbeddedImage Final
 
 	Rem
 	bbdoc: Draws and scales the complete image while clipping changed pixels.
+	param: The destination raster buffer.
+	param: The destination left coordinate.
+	param: The destination top coordinate.
+	param: The destination width in pixels.
+	param: The destination height in pixels.
+	param: An $RRGGBB tint multiplied with each source pixel.
+	param: The clipping rectangle's left edge.
+	param: The clipping rectangle's top edge.
+	param: The clipping rectangle's width.
+	param: The clipping rectangle's height.
+	param: A bitwise combination of EmbeddedImageDrawFlip values.
+	param: Source opacity from 0 through 255.
+	param: An $RRGGBB transparent source color, or EmbeddedImageColorKeyDisabled.
 	End Rem
 	Method DrawRectClipped(target:TDisplayBuffer, x:Int, y:Int, width:Int, height:Int, ..
 			tint:UInt, clipX:Int, clipY:Int, clipWidth:Int, clipHeight:Int, ..
