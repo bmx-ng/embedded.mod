@@ -3225,6 +3225,10 @@ Type TUIComboBox Extends TUIWidget Final
 		Return True
 	End Method
 
+	Rem
+	bbdoc: Opens or closes this combo box's popup choice list.
+	about: Intended for focus and pointer activation hooks.
+	End Rem
 	Method _Activate()
 		If Not Context() Or itemNames.Length = 0 Then Return
 		If popup And Context().ActiveOverlay() = popup Then
@@ -3590,6 +3594,10 @@ Type TUITabButton Extends TUIWidget Final
 		End If
 	End Method
 
+	Rem
+	bbdoc: Selects this tab and notifies the owning tab view.
+	about: Intended for focus and pointer activation hooks.
+	End Rem
 	Method _Activate()
 		If tabOwner Then tabOwner._SelectIndex(tabIndex, True)
 	End Method
@@ -4140,6 +4148,11 @@ Type TUIButton Extends TUIWidget
 		Return True
 	End Method
 
+	Rem
+	bbdoc: Invokes this button's registered callback.
+	about: Input adapters call the activation hooks rather than this helper so an
+	EVENT_UIACTION is also emitted.
+	End Rem
 	Method _Activate()
 		If clickHandler Then clickHandler(Self)
 	End Method
@@ -4290,6 +4303,10 @@ Type TUICheckBox Extends TUIWidget Final
 		Return True
 	End Method
 
+	Rem
+	bbdoc: Toggles the checked state and notifies observers.
+	about: Intended for focus and pointer activation hooks.
+	End Rem
 	Method _Activate()
 		SetChecked(Not checked)
 		If changeHandler Then changeHandler(Self)
@@ -4517,10 +4534,19 @@ Type TUIRadioButton Extends TUIWidget Final
 		Return True
 	End Method
 
+	Rem
+	bbdoc: Selects this radio option and notifies the owning group.
+	about: Intended for focus and pointer activation hooks.
+	End Rem
 	Method _Activate()
 		If radioOwner Then radioOwner._SelectIndex(radioIndex, True)
 	End Method
 
+	Rem
+	bbdoc: Moves group selection relative to this option and updates focus.
+	param: Signed option-index delta.
+	about: Intended for focused input adapters.
+	End Rem
 	Method _Move(delta:Int)
 		If Not radioOwner Or delta = 0 Then Return
 		Local nextIndex:Int = radioOwner.SelectedIndex() + delta
@@ -4630,6 +4656,10 @@ Type TUISwitch Extends TUIWidget Final
 		Return True
 	End Method
 
+	Rem
+	bbdoc: Toggles the switch and notifies observers.
+	about: Intended for focus and pointer activation hooks.
+	End Rem
 	Method _Activate()
 		SetValue(Not switchValue)
 		If changeHandler Then changeHandler(Self)
@@ -4637,13 +4667,30 @@ Type TUISwitch Extends TUIWidget Final
 	End Method
 End Type
 
+Rem
+bbdoc: Base widget for controls and indicators that represent a bounded integer value.
+End Rem
 Type TUIRangeWidget Extends TUIWidget
 	Public
+	Rem
+	bbdoc: Inclusive minimum represented value.
+	End Rem
 	Field minimumValue:Int
+	Rem
+	bbdoc: Inclusive maximum represented value.
+	End Rem
 	Field maximumValue:Int = 100
+	Rem
+	bbdoc: Current value, clamped to the inclusive range.
+	End Rem
 	Field currentValue:Int
 
 	Public
+	Rem
+	bbdoc: Sets the inclusive value range and clamps the current value.
+	param: Minimum value.
+	param: Maximum value; values below the minimum collapse the range.
+	End Rem
 	Method SetRange(minimum:Int, maximum:Int)
 		If maximum < minimum Then maximum = minimum
 		If minimumValue = minimum And maximumValue = maximum Then Return
@@ -4654,14 +4701,26 @@ Type TUIRangeWidget Extends TUIWidget
 		_Invalidate()
 	End Method
 
+	Rem
+	bbdoc: Returns the inclusive minimum value.
+	returns: Current range minimum.
+	End Rem
 	Method Minimum:Int()
 		Return minimumValue
 	End Method
 
+	Rem
+	bbdoc: Returns the inclusive maximum value.
+	returns: Current range maximum.
+	End Rem
 	Method Maximum:Int()
 		Return maximumValue
 	End Method
 
+	Rem
+	bbdoc: Sets and clamps the value without notifying observers.
+	param: Desired value.
+	End Rem
 	Method SetValue(value:Int)
 		If value < minimumValue Then value = minimumValue
 		If value > maximumValue Then value = maximumValue
@@ -4670,16 +4729,31 @@ Type TUIRangeWidget Extends TUIWidget
 		_Invalidate()
 	End Method
 
+	Rem
+	bbdoc: Returns the current value.
+	returns: Value within the inclusive range.
+	End Rem
 	Method Value:Int()
 		Return currentValue
 	End Method
 
+	Rem
+	bbdoc: Maps the current value proportionally onto an integer scale.
+	param: Output value representing the maximum end of the range.
+	returns: Scaled position, or zero for a collapsed range.
+	End Rem
 	Method Fraction:Int(scale:Int)
 		If maximumValue <= minimumValue Then Return 0
 		Return Int(Long(currentValue - minimumValue) * scale / Long(maximumValue - minimumValue))
 	End Method
 End Type
 
+Rem
+bbdoc: Three-part numeric control for decrementing or incrementing a bounded value.
+about: Integer values are native. Decimal mode stores fixed-point scaled integers
+and formats them with a configured number of decimal places. Programmatic setters
+are silent; user changes invoke OnChange and emit EVENT_UIVALUECHANGED.
+End Rem
 Type TUIStepper Extends TUIRangeWidget Final
 	Private
 	Field stepValue:Int = 1
@@ -4688,20 +4762,39 @@ Type TUIStepper Extends TUIRangeWidget Final
 	Field changeHandler(stepper:TUIStepper)
 
 	Public
+	Rem
+	bbdoc: Initializes a clickable and focusable integer stepper.
+	End Rem
 	Method New()
 		clickable = True
 		focusable = True
 	End Method
 
+	Rem
+	bbdoc: Sets the positive integer increment.
+	param: Increment, clamped to at least one.
+	End Rem
 	Method SetStep(value:Int)
 		If value < 1 Then value = 1
 		stepValue = value
 	End Method
 
+	Rem
+	bbdoc: Returns the stored integer or fixed-point increment.
+	returns: Positive increment in the stepper's internal units.
+	End Rem
 	Method Step:Int()
 		Return stepValue
 	End Method
 
+	Rem
+	bbdoc: Configures the range, value, increment, and precision for decimal mode.
+	param: Minimum decimal value.
+	param: Maximum decimal value.
+	param: Initial decimal value.
+	param: Decimal increment; its absolute value is used.
+	param: Decimal places, clamped from one through six.
+	End Rem
 	Method ConfigureDecimal(minimum:Double, maximum:Double, value:Double, step:Double, places:Int = 1)
 		If places < 1 Then places = 1
 		If places > 6 Then places = 6
@@ -4715,30 +4808,59 @@ Type TUIStepper Extends TUIRangeWidget Final
 		SetValue(_DecimalUnits(value))
 	End Method
 
+	Rem
+	bbdoc: Sets the decimal range using the configured precision.
+	param: Minimum decimal value.
+	param: Maximum decimal value.
+	End Rem
 	Method SetDecimalRange(minimum:Double, maximum:Double)
 		SetRange(_DecimalUnits(minimum), _DecimalUnits(maximum))
 	End Method
 
+	Rem
+	bbdoc: Sets the decimal value without notifying observers.
+	param: Desired decimal value, rounded and clamped at configured precision.
+	End Rem
 	Method SetDecimalValue(value:Double)
 		SetValue(_DecimalUnits(value))
 	End Method
 
+	Rem
+	bbdoc: Returns the current value converted from fixed-point storage.
+	returns: Current decimal value.
+	End Rem
 	Method DecimalValue:Double()
 		Return Double(currentValue) / Double(decimalScale)
 	End Method
 
+	Rem
+	bbdoc: Sets the decimal increment using the configured precision.
+	param: Increment; its absolute value is rounded to fixed-point units.
+	End Rem
 	Method SetDecimalStep(value:Double)
 		stepValue = Max(Abs(_DecimalUnits(value)), 1)
 	End Method
 
+	Rem
+	bbdoc: Returns the configured decimal precision.
+	returns: Decimal places, or zero in integer mode.
+	End Rem
 	Method DecimalPlaces:Int()
 		Return decimalPlaces
 	End Method
 
+	Rem
+	bbdoc: Formats the current integer or fixed-point value for display.
+	returns: Value text using the configured number of decimal places.
+	End Rem
 	Method ValueText:String()
 		Return _ValueText()
 	End Method
 
+	Rem
+	bbdoc: Registers the user-generated value-change callback.
+	param: Callback receiving this stepper, or Null to remove it.
+	End Rem
 	Method OnChange(handler(stepper:TUIStepper))
 		changeHandler = handler
 	End Method
@@ -4827,10 +4949,17 @@ Type TUIStepper Extends TUIRangeWidget Final
 		Return True
 	End Method
 
+	Rem
+	bbdoc: Increments the stepper by one configured step and notifies observers.
+	End Rem
 	Method _Activate()
 		_SetUserValue(currentValue + stepValue)
 	End Method
 
+	Rem
+	bbdoc: Decrements or increments according to the pressed horizontal third.
+	param: Display x coordinate in pixels.
+	End Rem
 	Method _ActivateAt(x:Int)
 		Local partWidth:Int = Max(Width() / 3, 1)
 		If x < X() + partWidth Then
@@ -4840,10 +4969,18 @@ Type TUIStepper Extends TUIRangeWidget Final
 		End If
 	End Method
 
+	Rem
+	bbdoc: Applies a signed number of configured steps and notifies observers.
+	param: Signed step count.
+	End Rem
 	Method _Adjust(delta:Int)
 		_SetUserValue(currentValue + delta * stepValue)
 	End Method
 
+	Rem
+	bbdoc: Clamps a user-generated value and notifies observers when it changes.
+	param: Desired value in integer or fixed-point units.
+	End Rem
 	Method _SetUserValue(value:Int)
 		If value < minimumValue Then value = minimumValue
 		If value > maximumValue Then value = maximumValue
@@ -4854,6 +4991,11 @@ Type TUIStepper Extends TUIRangeWidget Final
 	End Method
 End Type
 
+Rem
+bbdoc: Horizontal single-selection control divided into equal labeled segments.
+about: SetSelectedIndex changes selection silently. Pointer and focused changes
+invoke the callback and emit EVENT_UISELECTIONCHANGED.
+End Rem
 Type TUISegmentedControl Extends TUIWidget Final
 	Private
 	Field itemNames:String[] = New String[0]
@@ -4861,11 +5003,19 @@ Type TUISegmentedControl Extends TUIWidget Final
 	Field selectionHandler(control:TUISegmentedControl)
 
 	Public
+	Rem
+	bbdoc: Initializes an empty clickable and focusable segmented control.
+	End Rem
 	Method New()
 		clickable = True
 		focusable = True
 	End Method
 
+	Rem
+	bbdoc: Appends one labeled segment.
+	param: Segment text.
+	returns: Zero-based index of the appended segment.
+	End Rem
 	Method AddItem:Int(text:String)
 		If Not text Then text = ""
 		itemNames = itemNames[..itemNames.Length + 1]
@@ -4875,23 +5025,44 @@ Type TUISegmentedControl Extends TUIWidget Final
 		Return itemNames.Length - 1
 	End Method
 
+	Rem
+	bbdoc: Returns the number of segments.
+	returns: Segment count.
+	End Rem
 	Method ItemCount:Int()
 		Return itemNames.Length
 	End Method
 
+	Rem
+	bbdoc: Returns the text of one segment.
+	param: Zero-based segment index.
+	returns: Segment text, or an empty string for an invalid index.
+	End Rem
 	Method ItemText:String(index:Int)
 		If index < 0 Or index >= itemNames.Length Then Return ""
 		Return itemNames[index]
 	End Method
 
+	Rem
+	bbdoc: Returns the selected segment index.
+	returns: Zero-based index, or -1 while empty.
+	End Rem
 	Method SelectedIndex:Int()
 		Return selectedIndex
 	End Method
 
+	Rem
+	bbdoc: Changes selection without invoking the callback or emitting an event.
+	param: Desired index, clamped to the available segments.
+	End Rem
 	Method SetSelectedIndex(value:Int)
 		_SetSelectedIndex(value, False)
 	End Method
 
+	Rem
+	bbdoc: Registers the user-generated selection-change callback.
+	param: Callback receiving this control, or Null to remove it.
+	End Rem
 	Method OnSelectionChanged(handler(control:TUISegmentedControl))
 		selectionHandler = handler
 	End Method
@@ -4975,21 +5146,37 @@ Type TUISegmentedControl Extends TUIWidget Final
 		Return True
 	End Method
 
+	Rem
+	bbdoc: Selects the next segment cyclically and notifies observers.
+	End Rem
 	Method _Activate()
 		If itemNames.Length = 0 Then Return
 		_SetSelectedIndex((selectedIndex + 1) Mod itemNames.Length, True)
 	End Method
 
+	Rem
+	bbdoc: Selects the segment at a horizontal pointer coordinate.
+	param: Display x coordinate in pixels.
+	End Rem
 	Method _ActivateAt(x:Int)
 		If itemNames.Length = 0 Or Width() <= 0 Then Return
 		Local index:Int = Int(Long(x - X()) * itemNames.Length / Width())
 		_SetSelectedIndex(index, True)
 	End Method
 
+	Rem
+	bbdoc: Moves segment selection by a signed delta and notifies observers.
+	param: Signed segment-index delta.
+	End Rem
 	Method _Adjust(delta:Int)
 		_SetSelectedIndex(selectedIndex + delta, True)
 	End Method
 
+	Rem
+	bbdoc: Updates segment selection with optional observer notification.
+	param: Desired segment index.
+	param: True to invoke the callback and emit EVENT_UISELECTIONCHANGED.
+	End Rem
 	Method _SetSelectedIndex(value:Int, notify:Int)
 		If itemNames.Length = 0 Then value = -1
 		If value < 0 And itemNames.Length > 0 Then value = 0
@@ -5004,16 +5191,31 @@ Type TUISegmentedControl Extends TUIWidget Final
 	End Method
 End Type
 
+Rem
+bbdoc: Focusable horizontal range control with direct pointer tracking.
+about: SetValue is silent. Dragging, tapping, or focused adjustment invokes
+OnChange and emits EVENT_UIVALUECHANGED for every effective value change.
+End Rem
 Type TUISlider Extends TUIRangeWidget Final
 	Public
+	Rem
+	bbdoc: Optional callback invoked after user interaction changes the value.
+	End Rem
 	Field changeHandler(slider:TUISlider)
 
 	Public
+	Rem
+	bbdoc: Initializes a clickable and focusable slider.
+	End Rem
 	Method New()
 		clickable = True
 		focusable = True
 	End Method
 
+	Rem
+	bbdoc: Registers the user-generated value-change callback.
+	param: Callback receiving this slider, or Null to remove it.
+	End Rem
 	Method OnChange(handler(slider:TUISlider))
 		changeHandler = handler
 	End Method
@@ -5086,6 +5288,10 @@ Type TUISlider Extends TUIRangeWidget Final
 		Return True
 	End Method
 
+	Rem
+	bbdoc: Clamps a user-generated slider value and notifies observers on change.
+	param: Desired value.
+	End Rem
 	Method _SetUserValue(value:Int)
 		If value < minimumValue Then value = minimumValue
 		If value > maximumValue Then value = maximumValue
@@ -5096,6 +5302,9 @@ Type TUISlider Extends TUIRangeWidget Final
 	End Method
 End Type
 
+Rem
+bbdoc: Display-only horizontal indicator for a bounded value.
+End Rem
 Type TUIProgressBar Extends TUIRangeWidget Final
 	Method DefaultStyle:TUIStyle() Override
 		If Context() And Context().Theme() Then Return Context().Theme().progress
