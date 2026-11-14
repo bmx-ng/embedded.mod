@@ -9,16 +9,33 @@ Import Embedded.Hardware.SPI
 Import Embedded.System.Time
 
 Const Controller:Int = SPIController0
+?pico
 Const ClockPin:UInt = 18
 Const TransmitPin:UInt = 19
+Const ReceivePin:UInt = SPIUnavailablePin
 Const ChipSelectPin:UInt = 17
 Const DataCommandPin:UInt = 16
 Const ResetPin:UInt = 20
+?nrf52
+' Tenstar Robot ProMicro nRF52840 / nice!nano v2 header route.
+' SCK D3/P0.20, MOSI D2/P0.17, CS D4/P0.22,
+' D/C D6/P1.00, RESET D8/P1.04. MISO D14/P1.11 is not wired.
+Const ClockPin:UInt = 20
+Const TransmitPin:UInt = 17
+Const ReceivePin:UInt = 43
+Const ChipSelectPin:UInt = 22
+Const DataCommandPin:UInt = 32
+Const ResetPin:UInt = 36
+?
 
-If Not SPIConfigurePins(Controller, SPIUnavailablePin, TransmitPin, ClockPin) Then ..
+If Not SPIConfigurePins(Controller, ReceivePin, TransmitPin, ClockPin) Then ..
 	RuntimeError "Unable to configure write-only SPI0"
-
-Local actualRate:UInt = SPIInit(Controller, 20000000)
+?nrf52
+Local requestedRate:UInt = 8000000
+?Not nrf52
+Local requestedRate:UInt = 20000000
+?
+Local actualRate:UInt = SPIInit(Controller, requestedRate)
 If actualRate = 0 Then RuntimeError "Unable to initialize SPI0"
 
 Local display:TST7735Display = TST7735Display.Create128x160(Controller, ..
