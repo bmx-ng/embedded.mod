@@ -241,6 +241,39 @@ Chip-select, data/command, and reset are configured as output GPIOs by
 current-limited module backlight to 3.3 V for always-on use, or control an
 appropriate backlight input/transistor through GPIO or PWM.
 
+### ST7796 SPI colour displays
+
+`Embedded.Drivers.Displays.ST7796` provides the same portable RGB565 and
+dirty-region contract for ST7796-compatible 320x480 panels. The SPI controller,
+clock and data pins, and all three control pins remain application choices; the
+Pico 2 W bring-up test merely uses SPI0 SCK GP18, MOSI GP19, CS GP17, D/C GP16,
+and reset GP20 as one known arrangement.
+
+```blitzmax
+Import Embedded.Drivers.Displays.ST7796
+Import Embedded.Hardware.SPI
+
+Const Controller:Int = SPIController0
+If Not SPIConfigurePins(Controller, SPIUnavailablePin, 19, 18) Then ..
+    RuntimeError "Unable to configure SPI0"
+If SPIInit(Controller, 12000000) = 0 Then ..
+    RuntimeError "Unable to initialize SPI0"
+
+Local display:TST7796Display = TST7796Display.Create320x480(Controller, ..
+    17, 16, 20, True, True)
+If Not display Or Not display.Initialize() Then ..
+    RuntimeError "Unable to initialize ST7796"
+```
+
+A complete RGB565 framebuffer occupies 307,200 bytes. This is practical on a
+Pico 2 for simple applications, but leaves substantially less managed heap than
+the 128x160 ST7735. Applications should avoid unnecessary frame-sized images
+and use dirty-region presentation where possible. The driver itself allocates
+only a small transfer buffer in addition to the application framebuffer.
+The final two Boolean values in the example select BGR component order and
+inverted display drive, as required by the tested generic eight-pin module;
+other ST7796 panels may require different values.
+
 ## Touch input
 
 `Embedded.Drivers.Touch` is the controller-neutral touch boundary. A
