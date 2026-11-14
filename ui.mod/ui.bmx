@@ -6295,42 +6295,133 @@ about: Input adapters live in separate modules. A context closes its binding
 automatically, allowing Embedded.UI itself to remain display-only.
 End Rem
 Type TUIInputBinding
+	Rem
+	bbdoc: Releases adapter resources and detaches from its context.
+	End Rem
 	Method Close()
 	End Method
 
+	Rem
+	bbdoc: Reports whether the binding expects context presentation to advance scrolling.
+	returns: True when TUIContext.Present should update scroll momentum.
+	End Rem
 	Method UpdatesScrollMomentum:Int()
 		Return False
 	End Method
 End Type
 
+Rem
+bbdoc: Owns one retained UI tree and coordinates layout, rendering, focus, overlays, and presentation.
+about: A context draws into one TDisplayBuffer through Embedded.Graphics2D.
+Input is optional and supplied by a separate binding, allowing display-only
+firmware to omit interactive adapters and their event-processing code.
+End Rem
 Type TUIContext
 	Public
+	Rem
+	bbdoc: Display used to present rendered dirty regions, or Null for buffer-only rendering.
+	End Rem
 	Field display:TDisplay
+	Rem
+	bbdoc: Framebuffer containing the retained UI output.
+	End Rem
 	Field frame:TDisplayBuffer
+	Rem
+	bbdoc: Graphics2D context drawing into the framebuffer.
+	End Rem
 	Field graphics:TEmbedded2DContext
+	Rem
+	bbdoc: Optional input adapter owned by this context.
+	End Rem
 	Field inputBinding:TUIInputBinding
+	Rem
+	bbdoc: Root vertical container filling the framebuffer.
+	End Rem
 	Field rootWidget:TUIColumn
+	Rem
+	bbdoc: Active modal or popup overlay, or Null.
+	End Rem
 	Field overlayWidget:TUIContainer
+	Rem
+	bbdoc: Widget focused before the active overlay was shown.
+	End Rem
 	Field overlayPreviousFocus:TUIWidget
+	Rem
+	bbdoc: True when a pointer press outside the overlay dismisses it.
+	End Rem
 	Field overlayDismissOutside:Int = True
+	Rem
+	bbdoc: Theme currently inherited by the widget tree.
+	End Rem
 	Field themeValue:TUITheme
+	Rem
+	bbdoc: True when widget bounds require recalculation.
+	End Rem
 	Field layoutPending:Int = True
+	Rem
+	bbdoc: Widget currently holding focus, or Null.
+	End Rem
 	Field focusedWidget:TUIWidget
+	Rem
+	bbdoc: Widget scheduled to receive focus after pending layout.
+	End Rem
 	Field deferredFocus:TUIWidget
+	Rem
+	bbdoc: True when a deferred focus operation is pending.
+	End Rem
 	Field deferredFocusPending:Int
+	Rem
+	bbdoc: Number of retained dirty rectangles.
+	End Rem
 	Field invalidCount:Int
+	Rem
+	bbdoc: Left edges of retained dirty rectangles.
+	End Rem
 	Field invalidX0:Int[UIInvalidRegionMaximum]
+	Rem
+	bbdoc: Top edges of retained dirty rectangles.
+	End Rem
 	Field invalidY0:Int[UIInvalidRegionMaximum]
+	Rem
+	bbdoc: Exclusive right edges of retained dirty rectangles.
+	End Rem
 	Field invalidX1:Int[UIInvalidRegionMaximum]
+	Rem
+	bbdoc: Exclusive bottom edges of retained dirty rectangles.
+	End Rem
 	Field invalidY1:Int[UIInvalidRegionMaximum]
+	Rem
+	bbdoc: Toasts currently displayed above normal and modal content.
+	End Rem
 	Field visibleToasts:TUIToast[] = New TUIToast[0]
+	Rem
+	bbdoc: Toasts waiting for a visible slot.
+	End Rem
 	Field toastQueue:TUIToast[] = New TUIToast[0]
+	Rem
+	bbdoc: Default placement assigned to new toasts.
+	End Rem
 	Field toastPlacement:Int = UIToastBottomCenter
+	Rem
+	bbdoc: Maximum number of toasts displayed simultaneously.
+	End Rem
 	Field toastVisibleLimit:Int = 3
+	Rem
+	bbdoc: Spacing between stacked toasts in pixels.
+	End Rem
 	Field toastGap:Int = 8
+	Rem
+	bbdoc: Minimum toast distance from display edges in pixels.
+	End Rem
 	Field toastMargin:Int = 12
 
 	Public
+	Rem
+	bbdoc: Creates a context with a new framebuffer supplied by a display.
+	param: Display used to allocate and present the framebuffer.
+	param: Optional theme; the standard dark theme is used when Null.
+	returns: New context, or Null when the display or buffer creation fails.
+	End Rem
 	Function Create:TUIContext(display:TDisplay, theme:TUITheme = Null)
 		If Not display Then Return Null
 		Local frame:TDisplayBuffer = display.CreateBuffer()
@@ -6340,6 +6431,9 @@ Type TUIContext
 
 	Rem
 	bbdoc: Creates a display-only UI context without touch input processing.
+	param: Display used to allocate and present the framebuffer.
+	param: Optional theme; the standard dark theme is used when Null.
+	returns: New context, or Null when creation fails.
 	about: Read-only widgets, programmatic page changes, and value updates remain
 	available. The context does not occupy a touch-event slot or perform
 	touch-scroll momentum work during presentation.
@@ -6348,6 +6442,13 @@ Type TUIContext
 		Return Create(display, theme)
 	End Function
 
+	Rem
+	bbdoc: Creates a context that draws into an existing framebuffer.
+	param: Framebuffer owned by the caller.
+	param: Optional display used for presentation.
+	param: Optional theme; the standard dark theme is used when Null.
+	returns: New context, or Null when the framebuffer is invalid.
+	End Rem
 	Function CreateWithBuffer:TUIContext(frame:TDisplayBuffer, display:TDisplay = Null, ..
 			theme:TUITheme = Null)
 		If Not frame Then Return Null
@@ -6367,12 +6468,20 @@ Type TUIContext
 
 	Rem
 	bbdoc: Creates a display-only UI context over an existing framebuffer.
+	param: Framebuffer owned by the caller.
+	param: Optional display used for presentation.
+	param: Optional theme; the standard dark theme is used when Null.
+	returns: New context, or Null when creation fails.
 	End Rem
 	Function CreateDisplayOnlyWithBuffer:TUIContext(frame:TDisplayBuffer, ..
 			display:TDisplay = Null, theme:TUITheme = Null)
 		Return CreateWithBuffer(frame, display, theme)
 	End Function
 
+	Rem
+	bbdoc: Closes the input binding and releases retained focus, overlays, and toasts.
+	about: The caller retains ownership of the display and any supplied framebuffer.
+	End Rem
 	Method Close()
 		Local binding:TUIInputBinding = inputBinding
 		inputBinding = Null
@@ -6386,38 +6495,75 @@ Type TUIContext
 		toastQueue = New TUIToast[0]
 	End Method
 
+	Rem
+	bbdoc: Installs the context's single input binding.
+	param: Input adapter to own until UnbindInput or Close.
+	returns: True when installed, or False when invalid or already bound.
+	End Rem
 	Method BindInput:Int(binding:TUIInputBinding)
 		If Not binding Or inputBinding Then Return False
 		inputBinding = binding
 		Return True
 	End Method
 
+	Rem
+	bbdoc: Removes the input binding when it matches the current adapter.
+	param: Binding requesting detachment.
+	End Rem
 	Method UnbindInput(binding:TUIInputBinding)
 		If inputBinding = binding Then inputBinding = Null
 	End Method
 
+	Rem
+	bbdoc: Returns the root vertical container.
+	returns: Container filling the complete framebuffer.
+	End Rem
 	Method Root:TUIColumn()
 		Return rootWidget
 	End Method
 
+	Rem
+	bbdoc: Returns the active inherited theme.
+	returns: Current theme.
+	End Rem
 	Method Theme:TUITheme()
 		Return themeValue
 	End Method
 
+	Rem
+	bbdoc: Returns the active popup or modal overlay.
+	returns: Overlay container, or Null when none is visible.
+	End Rem
 	Method ActiveOverlay:TUIContainer()
 		Return overlayWidget
 	End Method
 
+	Rem
+	bbdoc: Reports whether a popup or modal overlay is visible.
+	returns: True when ActiveOverlay is not Null.
+	End Rem
 	Method OverlayVisible:Int()
 		Return overlayWidget <> Null
 	End Method
 
+	Rem
+	bbdoc: Creates a detached popup menu attached to this context.
+	returns: New popup menu ready for items and ShowOverlay.
+	about: Requires Embedded.UI.Controls or Embedded.UI.Interactive.
+	End Rem
 	Method PopupMenu:TUIPopupMenu()
 		Local menu:TUIPopupMenu = _UIRequireControls().CreatePopupMenu()
 		menu._Attach(Self, Null)
 		Return menu
 	End Method
 
+	Rem
+	bbdoc: Creates a detached dialog attached to this context.
+	param: Initial title.
+	param: Initial wrapped message.
+	returns: New dialog ready for actions and Show.
+	about: Requires Embedded.UI.Controls or Embedded.UI.Interactive.
+	End Rem
 	Method Dialog:TUIDialog(title:String = "", message:String = "")
 		Local dialog:TUIDialog = _UIRequireControls().CreateDialog()
 		dialog.SetTitle(title)
@@ -6426,6 +6572,14 @@ Type TUIContext
 		Return dialog
 	End Method
 
+	Rem
+	bbdoc: Creates and schedules a non-modal notification.
+	param: Notification message.
+	param: Visible lifetime in milliseconds, or zero for persistent.
+	param: One of the UIToast kind constants.
+	param: Placement constant, or -1 to use the context default.
+	returns: The visible or queued toast, or Null when the queue is full.
+	End Rem
 	Method Toast:TUIToast(message:String, duration:Int = UIToastDefaultDuration, ..
 			kind:Int = UIToastInfo, placement:Int = -1)
 		If toastQueue.Length >= UIToastQueueMaximum Then Return Null
@@ -6442,28 +6596,54 @@ Type TUIContext
 		Return toast
 	End Method
 
+	Rem
+	bbdoc: Returns the most recently activated visible toast.
+	returns: Toast, or Null when none are visible.
+	End Rem
 	Method ActiveToast:TUIToast()
 		If visibleToasts.Length = 0 Then Return Null
 		Return visibleToasts[visibleToasts.Length - 1]
 	End Method
 
+	Rem
+	bbdoc: Returns the number of currently visible toasts.
+	returns: Visible count up to ToastVisibleLimit.
+	End Rem
 	Method VisibleToastCount:Int()
 		Return visibleToasts.Length
 	End Method
 
+	Rem
+	bbdoc: Returns the number of toasts waiting for a visible slot.
+	returns: Pending queue length.
+	End Rem
 	Method PendingToastCount:Int()
 		Return toastQueue.Length
 	End Method
 
+	Rem
+	bbdoc: Sets the default placement for subsequently created toasts.
+	param: One of the UIToast placement constants.
+	End Rem
 	Method SetToastPlacement(value:Int)
 		If value < UIToastTopLeft Or value > UIToastBottomRight Then value = UIToastBottomCenter
 		toastPlacement = value
 	End Method
 
+	Rem
+	bbdoc: Returns the default toast placement.
+	returns: One of the UIToast placement constants.
+	End Rem
 	Method ToastPlacement:Int()
 		Return toastPlacement
 	End Method
 
+	Rem
+	bbdoc: Sets how many toasts may be displayed simultaneously.
+	param: Limit clamped from one through UIToastQueueMaximum.
+	about: Excess visible toasts return to the front of the pending queue; newly
+available slots are filled immediately.
+	End Rem
 	Method SetToastVisibleLimit(value:Int)
 		If value < 1 Then value = 1
 		If value > UIToastQueueMaximum Then value = UIToastQueueMaximum
@@ -6488,30 +6668,55 @@ Type TUIContext
 		RequestLayout()
 	End Method
 
+	Rem
+	bbdoc: Returns the simultaneous visible-toast limit.
+	returns: Limit from one through UIToastQueueMaximum.
+	End Rem
 	Method ToastVisibleLimit:Int()
 		Return toastVisibleLimit
 	End Method
 
+	Rem
+	bbdoc: Sets spacing between notifications in the same placement stack.
+	param: Non-negative gap in pixels.
+	End Rem
 	Method SetToastGap(value:Int)
 		If value < 0 Then value = 0
 		toastGap = value
 		RequestLayout()
 	End Method
 
+	Rem
+	bbdoc: Returns spacing between stacked notifications.
+	returns: Gap in pixels.
+	End Rem
 	Method ToastGap:Int()
 		Return toastGap
 	End Method
 
+	Rem
+	bbdoc: Sets the minimum distance between notifications and display edges.
+	param: Non-negative margin in pixels.
+	End Rem
 	Method SetToastMargin(value:Int)
 		If value < 0 Then value = 0
 		toastMargin = value
 		RequestLayout()
 	End Method
 
+	Rem
+	bbdoc: Returns the toast edge margin.
+	returns: Margin in pixels.
+	End Rem
 	Method ToastMargin:Int()
 		Return toastMargin
 	End Method
 
+	Rem
+	bbdoc: Removes one visible or pending toast.
+	param: Specific toast, or Null to dismiss the newest visible toast.
+	returns: True when a toast was removed.
+	End Rem
 	Method DismissToast:Int(toast:TUIToast = Null)
 		If toast Then
 			For Local index:Int = 0 Until toastQueue.Length
@@ -6555,6 +6760,9 @@ Type TUIContext
 		Return True
 	End Method
 
+	Rem
+	bbdoc: Removes every visible and pending toast.
+	End Rem
 	Method ClearToasts()
 		For Local toast:TUIToast = EachIn visibleToasts
 			InvalidateRect(toast.X(), toast.Y(), toast.Width(), toast.Height())
@@ -6563,6 +6771,18 @@ Type TUIContext
 		toastQueue = New TUIToast[0]
 	End Method
 
+	Rem
+	bbdoc: Shows a detached container above the root UI as the active overlay.
+	param: Detached overlay container belonging to no parent.
+	param: Requested left coordinate in pixels.
+	param: Requested top coordinate in pixels.
+	param: Width in pixels, or UILayoutAuto.
+	param: Height in pixels, or UILayoutAuto.
+	param: True to permit outside pointer presses to dismiss the overlay.
+	returns: True when shown or already active.
+	about: Size and position are clamped to the framebuffer. Focus moves into the
+overlay and the previous focused widget is retained for dismissal.
+	End Rem
 	Method ShowOverlay:Int(widget:TUIContainer, x:Int, y:Int, width:Int = UILayoutAuto, ..
 			height:Int = UILayoutAuto, dismissOnOutside:Int = True)
 		If Not widget Or widget.Parent() Then Return False
@@ -6605,6 +6825,10 @@ Type TUIContext
 		Return True
 	End Method
 
+	Rem
+	bbdoc: Dismisses the active overlay and restores its previous focus.
+	returns: True when an overlay was dismissed.
+	End Rem
 	Method DismissOverlay:Int()
 		If Not overlayWidget Then Return False
 		Local old:TUIContainer = overlayWidget
