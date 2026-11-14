@@ -7,6 +7,8 @@ Rem
 bbdoc: Portable SPI controller operations for embedded targets.
 about: Chip-select is deliberately controlled separately through
 Embedded.Hardware.GPIO so applications can use more than one peripheral.
+Pass SPIUnavailablePin for an unused receive or transmit signal when the
+target supports a one-way SPI device; at least one data signal is required.
 Transfer buffers are caller-owned pointer memory. Keep them allocated until
 the call returns. If a pointer refers to array data, keep the array referenced
 for the entire call.

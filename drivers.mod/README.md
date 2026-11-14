@@ -189,6 +189,58 @@ Concrete display drivers live beneath `Embedded.Drivers.Displays.*`.
 `Embedded.Hardware.I2C`, supports dirty page updates, and includes the 72x40
 EastRising-compatible preset used by common 0.42-inch OLED boards.
 
+### ST7735 SPI colour displays
+
+`Embedded.Drivers.Displays.ST7735` drives ST7735-compatible colour TFT panels
+through the portable SPI and GPIO APIs. It accepts the shared little-endian
+RGB565 framebuffer, sends controller pixels most-significant byte first, and
+supports complete or dirty-region presentation without allocating a second
+framebuffer. The application owns SPI setup so the same display can share a bus
+with other peripherals.
+
+For example, a write-only SPI0 connection on a Pico 2 W can use GP18 for SCK,
+GP19 for MOSI, GP17 for chip-select, GP16 for data/command, and GP20 for reset:
+
+```blitzmax
+Import Embedded.Drivers.Displays.ST7735
+Import Embedded.Hardware.SPI
+
+Const Controller:Int = SPIController0
+
+' No MISO wire is required by this write-only display.
+If Not SPIConfigurePins(Controller, SPIUnavailablePin, 19, 18) Then ..
+    RuntimeError "Unable to configure SPI0"
+If SPIInit(Controller, 20000000) = 0 Then ..
+    RuntimeError "Unable to initialize SPI0"
+
+Local display:TST7735Display = TST7735Display.Create128x160(Controller, ..
+    17, 16, 20, False, True)
+If Not display Or Not display.Initialize() Then ..
+    RuntimeError "Unable to initialize ST7735"
+
+Local frame:TDisplayBuffer = display.CreateBuffer()
+SetRenderTarget(frame, display)
+```
+
+The final two Boolean arguments select BGR component order and display
+inversion. ST7735 modules with the same visible dimensions are sold with
+different panel wiring, so these are panel properties rather than assumptions
+made by Graphics2D. The example selects RGB ordering and inverted drive, as
+required by the tested generic 128x160 module. A module showing cyan instead of
+red needs the other component order; a module showing photographic-negative
+colours needs the other inversion setting.
+
+`TST7735Display.Create()` also accepts arbitrary visible width and height,
+column and row RAM offsets, component order, inversion, and initial orientation.
+This covers smaller ST7735 panels whose visible raster occupies an offset
+window in the controller's 132x162 RAM. The common `Create128x160()` helper uses
+zero offsets.
+
+Chip-select, data/command, and reset are configured as output GPIOs by
+`Initialize()`. Backlight control is deliberately separate: connect a
+current-limited module backlight to 3.3 V for always-on use, or control an
+appropriate backlight input/transistor through GPIO or PWM.
+
 ## Touch input
 
 `Embedded.Drivers.Touch` is the controller-neutral touch boundary. A

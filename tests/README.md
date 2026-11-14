@@ -4,6 +4,12 @@ The individual `.bmx` files are hardware or build fixtures. UI changes should
 at minimum preserve the broad conformance suite, the steady-state allocation
 test and the three firmware tiers.
 
+Hardware bring-up programs which require explicitly wired peripherals live
+under `tests/hardware`. They are not part of unattended conformance runs. The
+ST7735 Pico 2 W fixture documents its SPI0 wiring in constants and presents
+RGB colour bars, text, and primitive drawing through the normal Graphics2D
+framebuffer path.
+
 ## UI firmware-tier matrix
 
 `run_ui_tier_matrix.sh` builds display-only, controls-only and touch-enabled
