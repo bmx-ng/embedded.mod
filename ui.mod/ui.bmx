@@ -2169,6 +2169,9 @@ Type TUICard Extends TUIContainer Final
 	Field titleLabel:TUILabel
 
 	Public
+	Rem
+	bbdoc: Initializes a padded vertical card with an initially hidden title.
+	End Rem
 	Method New()
 		layoutDirection = 2
 		gap = 6
@@ -2182,16 +2185,28 @@ Type TUICard Extends TUIContainer Final
 		Add(titleLabel)
 	End Method
 
+	Rem
+	bbdoc: Sets the optional title displayed at the top of the card.
+	param: Title text, or an empty string to hide the title row.
+	End Rem
 	Method SetTitle(title:String)
 		If Not title Then title = ""
 		titleLabel.SetText(title)
 		titleLabel.SetVisible(title.Length > 0)
 	End Method
 
+	Rem
+	bbdoc: Returns the current card title.
+	returns: The title text, which may be empty.
+	End Rem
 	Method Title:String()
 		Return titleLabel.Text()
 	End Method
 
+	Rem
+	bbdoc: Returns the label used to draw the card title.
+	returns: The retained title label for further styling.
+	End Rem
 	Method TitleLabel:TUILabel()
 		Return titleLabel
 	End Method
@@ -2233,6 +2248,9 @@ Type TUIHeader Extends TUIContainer Final
 	Field titleLabel:TUILabel
 
 	Public
+	Rem
+	bbdoc: Initializes a horizontal header with a growing title region.
+	End Rem
 	Method New()
 		layoutDirection = 1
 		gap = 10
@@ -2242,18 +2260,36 @@ Type TUIHeader Extends TUIContainer Final
 		Add(titleLabel)
 	End Method
 
+	Rem
+	bbdoc: Sets the page-header title.
+	param: Title text.
+	End Rem
 	Method SetTitle(title:String)
 		titleLabel.SetText(title)
 	End Method
 
+	Rem
+	bbdoc: Returns the current page-header title.
+	returns: The title text.
+	End Rem
 	Method Title:String()
 		Return titleLabel.Text()
 	End Method
 
+	Rem
+	bbdoc: Returns the label used to draw the header title.
+	returns: The retained title label for further styling.
+	End Rem
 	Method TitleLabel:TUILabel()
 		Return titleLabel
 	End Method
 
+	Rem
+	bbdoc: Shows or hides the standard Back button.
+	param: True to display the button.
+	about: Creating the Back button requires Embedded.UI.Controls or
+Embedded.UI.Interactive. Activating it calls TUIContext.Back.
+	End Rem
 	Method SetBackVisible(value:Int)
 		If value Then
 			_EnsureBackButton().SetVisible(True)
@@ -2262,10 +2298,22 @@ Type TUIHeader Extends TUIContainer Final
 		End If
 	End Method
 
+	Rem
+	bbdoc: Returns the standard Back button, creating it when necessary.
+	returns: The retained Back button.
+	about: Requires Embedded.UI.Controls or Embedded.UI.Interactive.
+	End Rem
 	Method BackButton:TUIButton()
 		Return _EnsureBackButton()
 	End Method
 
+	Rem
+	bbdoc: Adds a trailing action button to the header.
+	param: Button label.
+	param: Optional activation callback.
+	returns: The attached button.
+	about: Requires Embedded.UI.Controls or Embedded.UI.Interactive.
+	End Rem
 	Method Action:TUIButton(text:String, handler(button:TUIButton) = Null)
 		Local button:TUIButton = Button(text)
 		If handler Then button.OnClick(handler)
@@ -2298,6 +2346,9 @@ bbdoc: Optional equal-width action bar suitable for page-level navigation.
 End Rem
 Type TUINavigationBar Extends TUIContainer Final
 	Public
+	Rem
+	bbdoc: Initializes a padded horizontal navigation bar.
+	End Rem
 	Method New()
 		layoutDirection = 1
 		gap = 8
@@ -2308,6 +2359,13 @@ Type TUINavigationBar Extends TUIContainer Final
 		drawBackground = True
 	End Method
 
+	Rem
+	bbdoc: Adds an equal-width action button to the navigation bar.
+	param: Button label.
+	param: Optional activation callback.
+	returns: The attached growing button.
+	about: Requires Embedded.UI.Controls or Embedded.UI.Interactive.
+	End Rem
 	Method Action:TUIButton(text:String, handler(button:TUIButton) = Null)
 		Local button:TUIButton = Button(text)
 		button.SetGrow(1)
@@ -2331,41 +2389,102 @@ Type TUINavigationBar Extends TUIContainer Final
 	End Method
 End Type
 
+Rem
+bbdoc: Vertically scrollable and clipped container with optional inertial movement.
+about: Children retain natural vertical sizes and are positioned within a
+viewport. Touch adapters use the public drag hooks; applications normally use
+SetScrollY, ScrollBy, or EnsureVisible.
+End Rem
 Type TUIScrollView Extends TUIContainer
 	Public
+	Rem
+	bbdoc: Current vertical content offset in pixels.
+	End Rem
 	Field scrollPosition:Int
+	Rem
+	bbdoc: Largest permitted vertical content offset in pixels.
+	End Rem
 	Field maximumScroll:Int
+	Rem
+	bbdoc: Total measured content height in pixels.
+	End Rem
 	Field contentExtent:Int
+	Rem
+	bbdoc: True when the scroll-position indicator is drawn.
+	End Rem
 	Field showScrollIndicator:Int = True
+	Rem
+	bbdoc: True when release velocity may continue scrolling.
+	End Rem
 	Field momentumEnabled:Int
+	Rem
+	bbdoc: Current inertial velocity in pixels per second.
+	End Rem
 	Field momentumVelocity:Int
+	Rem
+	bbdoc: Subpixel time-integration remainder used by inertial scrolling.
+	End Rem
 	Field momentumRemainder:Int
+	Rem
+	bbdoc: Timestamp of the previous inertial update in milliseconds.
+	End Rem
 	Field momentumLastTime:UInt
+	Rem
+	bbdoc: Timestamp of the previous drag sample in milliseconds.
+	End Rem
 	Field dragLastTime:UInt
+	Rem
+	bbdoc: True while an input adapter is actively dragging this viewport.
+	End Rem
 	Field dragActive:Int
 
 	Public
+	Rem
+	bbdoc: Initializes vertical clipped layout.
+	End Rem
 	Method New()
 		layoutDirection = 2
 	End Method
 
+	Rem
+	bbdoc: Returns the current vertical content offset.
+	returns: Offset in pixels from the top of the content.
+	End Rem
 	Method ScrollY:Int()
 		Return scrollPosition
 	End Method
 
+	Rem
+	bbdoc: Returns the maximum vertical content offset.
+	returns: Maximum offset in pixels, or zero when all content fits.
+	End Rem
 	Method MaxScrollY:Int()
 		Return maximumScroll
 	End Method
 
+	Rem
+	bbdoc: Returns the measured height of the complete content.
+	returns: Content extent in pixels.
+	End Rem
 	Method ContentHeight:Int()
 		Return contentExtent
 	End Method
 
+	Rem
+	bbdoc: Moves the viewport to an absolute vertical offset.
+	param: Desired offset in pixels, clamped to the valid range.
+	about: Any active inertial movement is stopped.
+	End Rem
 	Method SetScrollY(value:Int)
 		_StopMomentum()
 		_SetScrollY(value)
 	End Method
 
+	Rem
+	bbdoc: Updates the vertical offset without stopping inertial movement.
+	param: Desired offset in pixels, clamped to the valid range.
+	about: This extension hook is intended for input adapters.
+	End Rem
 	Method _SetScrollY(value:Int)
 		If value < 0 Then value = 0
 		If value > maximumScroll Then value = maximumScroll
@@ -2375,23 +2494,42 @@ Type TUIScrollView Extends TUIContainer
 		_RequestLayout()
 	End Method
 
+	Rem
+	bbdoc: Moves the viewport relative to its current offset.
+	param: Signed number of pixels to add to the current offset.
+	End Rem
 	Method ScrollBy(delta:Int)
 		SetScrollY(scrollPosition + delta)
 	End Method
 
+	Rem
+	bbdoc: Enables or disables inertial scrolling after a drag.
+	param: True to preserve and decelerate release velocity.
+	End Rem
 	Method SetMomentumEnabled(value:Int)
 		momentumEnabled = value <> 0
 		If Not momentumEnabled Then _StopMomentum()
 	End Method
 
+	Rem
+	bbdoc: Reports whether inertial scrolling is enabled.
+	returns: True when release momentum may continue moving the viewport.
+	End Rem
 	Method MomentumEnabled:Int()
 		Return momentumEnabled
 	End Method
 
+	Rem
+	bbdoc: Stops active inertial movement and any drag state.
+	End Rem
 	Method StopMomentum()
 		_StopMomentum()
 	End Method
 
+	Rem
+	bbdoc: Shows or hides the narrow scroll-position indicator.
+	param: True to draw the indicator when content exceeds the viewport.
+	End Rem
 	Method SetScrollIndicatorVisible(value:Int)
 		value = value <> 0
 		If showScrollIndicator = value Then Return
@@ -2399,10 +2537,19 @@ Type TUIScrollView Extends TUIContainer
 		_Invalidate()
 	End Method
 
+	Rem
+	bbdoc: Reports whether the scroll-position indicator is enabled.
+	returns: True when the indicator may be drawn.
+	End Rem
 	Method ScrollIndicatorVisible:Int()
 		Return showScrollIndicator
 	End Method
 
+	Rem
+	bbdoc: Scrolls the minimum distance needed to reveal a descendant widget.
+	param: Widget contained directly or indirectly by this scroll view.
+	returns: True when the viewport offset changed.
+	End Rem
 	Method EnsureVisible:Int(widget:TUIWidget)
 		If Not widget Then Return False
 		Local current:TUIWidget = widget
@@ -2446,12 +2593,23 @@ Type TUIScrollView Extends TUIContainer
 	End Method
 
 	Public
+	Rem
+	bbdoc: Begins a drag sample sequence and cancels existing momentum.
+	param: Current monotonic time in milliseconds.
+	about: Intended for input adapters.
+	End Rem
 	Method _BeginDrag(now:UInt)
 		_StopMomentum()
 		dragActive = True
 		dragLastTime = now
 	End Method
 
+	Rem
+	bbdoc: Applies one drag delta and estimates its release velocity.
+	param: Signed vertical movement in pixels.
+	param: Current monotonic time in milliseconds.
+	about: Intended for input adapters.
+	End Rem
 	Method _DragBy(delta:Int, now:UInt)
 		If Not dragActive Then _BeginDrag(now)
 		Local previous:Int = scrollPosition
@@ -2471,6 +2629,11 @@ Type TUIScrollView Extends TUIContainer
 		End If
 	End Method
 
+	Rem
+	bbdoc: Ends dragging and starts momentum when velocity is sufficient.
+	param: Current monotonic time in milliseconds.
+	about: Intended for input adapters.
+	End Rem
 	Method _EndDrag(now:UInt)
 		dragActive = False
 		momentumLastTime = now
@@ -2479,6 +2642,12 @@ Type TUIScrollView Extends TUIContainer
 			momentumVelocity = 0
 	End Method
 
+	Rem
+	bbdoc: Advances inertial scrolling to the supplied time.
+	param: Current monotonic time in milliseconds.
+	about: Input bindings which report UpdatesScrollMomentum call this during
+their update path.
+	End Rem
 	Method _UpdateMomentum(now:UInt)
 		If dragActive Or momentumVelocity = 0 Then Return
 		Local elapsed:UInt = now - momentumLastTime
@@ -2506,6 +2675,10 @@ Type TUIScrollView Extends TUIContainer
 		End If
 	End Method
 
+	Rem
+	bbdoc: Clears velocity, integration remainder, and active drag state.
+	about: Intended for input adapters and scrolling subclasses.
+	End Rem
 	Method _StopMomentum()
 		momentumVelocity = 0
 		momentumRemainder = 0
