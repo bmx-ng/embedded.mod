@@ -250,6 +250,8 @@ Type TST7789Display Extends TDisplay
 		If bgrOrder Then memoryAccess :| ST7789MemoryAccessBGR
 		commandBuffer[0] = memoryAccess
 		If Not SendCommand(ST7789CommandMemoryAccess, 1) Then Return False
+		commandBuffer[0] = $00; commandBuffer[1] = $f0
+		If Not SendCommand($b0, 2) Then Return False
 
 		commandBuffer[0] = $0c; commandBuffer[1] = $0c; commandBuffer[2] = $00
 		commandBuffer[3] = $33; commandBuffer[4] = $33
@@ -271,17 +273,19 @@ Type TST7789Display Extends TDisplay
 		commandBuffer[0] = $a4; commandBuffer[1] = $a1
 		If Not SendCommand($d0, 2) Then Return False
 
-		commandBuffer[0] = $d0; commandBuffer[1] = $04; commandBuffer[2] = $0d
-		commandBuffer[3] = $11; commandBuffer[4] = $13; commandBuffer[5] = $2b
-		commandBuffer[6] = $3f; commandBuffer[7] = $54; commandBuffer[8] = $4c
-		commandBuffer[9] = $18; commandBuffer[10] = $0d; commandBuffer[11] = $0b
-		commandBuffer[12] = $1f; commandBuffer[13] = $23
+		' Match the ST7789 type-1 initialization used by Arduino_GFX, which is
+		' the documented driver behind the Lonely Binary 2.0/2.4/2.8-inch set.
+		commandBuffer[0] = $f0; commandBuffer[1] = $09; commandBuffer[2] = $13
+		commandBuffer[3] = $12; commandBuffer[4] = $12; commandBuffer[5] = $2b
+		commandBuffer[6] = $3c; commandBuffer[7] = $44; commandBuffer[8] = $4b
+		commandBuffer[9] = $1b; commandBuffer[10] = $18; commandBuffer[11] = $17
+		commandBuffer[12] = $1d; commandBuffer[13] = $21
 		If Not SendCommand($e0, 14) Then Return False
-		commandBuffer[0] = $d0; commandBuffer[1] = $04; commandBuffer[2] = $0c
-		commandBuffer[3] = $11; commandBuffer[4] = $13; commandBuffer[5] = $2c
-		commandBuffer[6] = $3f; commandBuffer[7] = $44; commandBuffer[8] = $51
-		commandBuffer[9] = $2f; commandBuffer[10] = $1f; commandBuffer[11] = $1f
-		commandBuffer[12] = $20; commandBuffer[13] = $23
+		commandBuffer[0] = $f0; commandBuffer[1] = $09; commandBuffer[2] = $13
+		commandBuffer[3] = $0c; commandBuffer[4] = $0d; commandBuffer[5] = $27
+		commandBuffer[6] = $3b; commandBuffer[7] = $44; commandBuffer[8] = $4d
+		commandBuffer[9] = $0b; commandBuffer[10] = $17; commandBuffer[11] = $17
+		commandBuffer[12] = $1d; commandBuffer[13] = $21
 		If Not SendCommand($e1, 14) Then Return False
 
 		If inverted Then
