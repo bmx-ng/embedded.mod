@@ -241,6 +241,37 @@ Chip-select, data/command, and reset are configured as output GPIOs by
 current-limited module backlight to 3.3 V for always-on use, or control an
 appropriate backlight input/transistor through GPIO or PWM.
 
+### ST7789 SPI colour displays
+
+`Embedded.Drivers.Displays.ST7789` supports ST7789-compatible colour panels
+through the same RGB565 and dirty-region contracts. `Create240x320()` describes
+the controller's native portrait raster; setting display orientation to 90 or
+270 degrees exposes a logical 320x240 landscape surface to Graphics2D.
+
+The tested generic eight-pin module uses RGB component order and inverted
+display drive:
+
+```blitzmax
+Import Embedded.Drivers.Displays.ST7789
+Import Embedded.Hardware.SPI
+
+Const Controller:Int = SPIController0
+If Not SPIConfigurePins(Controller, SPIUnavailablePin, 19, 18) Then ..
+    RuntimeError "Unable to configure SPI0"
+If SPIInit(Controller, 12000000) = 0 Then ..
+    RuntimeError "Unable to initialize SPI0"
+
+Local display:TST7789Display = TST7789Display.Create240x320(Controller, ..
+    17, 16, 20, False, True)
+If Not display Or Not display.Initialize() Then ..
+    RuntimeError "Unable to initialize ST7789"
+```
+
+The SPI controller and every GPIO remain application choices. `Create()` also
+accepts smaller visible rasters and controller-RAM offsets for ST7789 modules
+whose panels expose only part of the 240x320 address space. A full-size RGB565
+framebuffer occupies 153,600 bytes.
+
 ### ST7796 SPI colour displays
 
 `Embedded.Drivers.Displays.ST7796` provides the same portable RGB565 and
