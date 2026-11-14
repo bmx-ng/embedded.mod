@@ -10,12 +10,21 @@ Import Embedded.Hardware.SPI
 Import Embedded.System.Time
 
 Const Controller:Int = SPIController0
+?pico
 Const ReceivePin:UInt = 16
 Const TransmitPin:UInt = 19
 Const ClockPin:UInt = 18
 Const ChipSelectPin:UInt = 17
 Const DataCommandPin:UInt = 15
 Const ResetPin:UInt = 20
+?esp32
+Const ReceivePin:UInt = 14
+Const TransmitPin:UInt = 13
+Const ClockPin:UInt = 12
+Const ChipSelectPin:UInt = 15
+Const DataCommandPin:UInt = 16
+Const ResetPin:UInt = 17
+?
 
 Const StageX:Int = 14
 Const StageY:Int = 67
