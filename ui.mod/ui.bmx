@@ -5355,6 +5355,10 @@ Type TUIStatusIndicator Extends TUIWidget Final
 	Field activeImage:TEmbeddedImage
 
 	Public
+	Rem
+	bbdoc: Sets the label displayed beside the status lamp.
+	param: Label text; Null is treated as an empty string.
+	End Rem
 	Method SetText(text:String)
 		If Not text Then text = ""
 		If indicatorText = text Then Return
@@ -5362,10 +5366,18 @@ Type TUIStatusIndicator Extends TUIWidget Final
 		_RequestLayout()
 	End Method
 
+	Rem
+	bbdoc: Returns the status label.
+	returns: Displayed text.
+	End Rem
 	Method Text:String()
 		Return indicatorText
 	End Method
 
+	Rem
+	bbdoc: Sets the displayed status state.
+	param: True to use the active style or artwork.
+	End Rem
 	Method SetActive(value:Int)
 		value = value <> 0
 		If active = value Then Return
@@ -5373,10 +5385,19 @@ Type TUIStatusIndicator Extends TUIWidget Final
 		_Invalidate()
 	End Method
 
+	Rem
+	bbdoc: Returns the displayed status state.
+	returns: True when active.
+	End Rem
 	Method Active:Int()
 		Return active
 	End Method
 
+	Rem
+	bbdoc: Sets optional artwork for inactive and active states.
+	param: Inactive-state image, or Null to draw the standard lamp.
+	param: Active-state image, or Null to reuse the inactive image.
+	End Rem
 	Method SetStateImages(inactive:TEmbeddedImage, active:TEmbeddedImage = Null)
 		inactiveImage = inactive
 		activeImage = active
@@ -5449,6 +5470,10 @@ Type TUIArcGauge Extends TUIRangeWidget Final
 	Field faceImage:TEmbeddedImage
 
 	Public
+	Rem
+	bbdoc: Sets the caption drawn below the gauge.
+	param: Caption text; Null is treated as an empty string.
+	End Rem
 	Method SetLabel(text:String)
 		If Not text Then text = ""
 		If labelText = text Then Return
@@ -5456,6 +5481,10 @@ Type TUIArcGauge Extends TUIRangeWidget Final
 		_Invalidate()
 	End Method
 
+	Rem
+	bbdoc: Sets the suffix appended to the numeric value.
+	param: Unit text such as `%` or `C`.
+	End Rem
 	Method SetUnit(text:String)
 		If Not text Then text = ""
 		If unitText = text Then Return
@@ -5463,21 +5492,37 @@ Type TUIArcGauge Extends TUIRangeWidget Final
 		_Invalidate()
 	End Method
 
+	Rem
+	bbdoc: Shows or hides the numeric value in the gauge center.
+	param: True to draw the current value and unit.
+	End Rem
 	Method SetShowValue(value:Int)
 		showValue = value <> 0
 		_Invalidate()
 	End Method
 
+	Rem
+	bbdoc: Sets the gauge-track thickness.
+	param: Width in pixels, clamped to at least one.
+	End Rem
 	Method SetArcWidth(value:Int)
 		arcWidth = Max(value, 1)
 		_Invalidate()
 	End Method
 
+	Rem
+	bbdoc: Sets the number of equal divisions drawn around the gauge.
+	param: Non-negative division count; zero disables ticks.
+	End Rem
 	Method SetTickCount(value:Int)
 		tickCount = Max(value, 0)
 		_Invalidate()
 	End Method
 
+	Rem
+	bbdoc: Sets optional artwork drawn beneath the gauge arc and text.
+	param: Face image, or Null to remove it.
+	End Rem
 	Method SetFaceImage(image:TEmbeddedImage)
 		faceImage = image
 		_Invalidate()
@@ -5566,6 +5611,10 @@ Type TUISparkline Extends TUIWidget Final
 	Field autoRange:Int = True
 
 	Public
+	Rem
+	bbdoc: Sets the rolling sample capacity and clears existing history.
+	param: Capacity, clamped to at least two samples.
+	End Rem
 	Method SetCapacity(value:Int)
 		value = Max(value, 2)
 		If samples.Length = value Then Return
@@ -5575,20 +5624,35 @@ Type TUISparkline Extends TUIWidget Final
 		_Invalidate()
 	End Method
 
+	Rem
+	bbdoc: Returns the maximum number of retained samples.
+	returns: Circular-buffer capacity.
+	End Rem
 	Method Capacity:Int()
 		Return samples.Length
 	End Method
 
+	Rem
+	bbdoc: Returns the number of currently retained samples.
+	returns: Sample count from zero through Capacity.
+	End Rem
 	Method Count:Int()
 		Return sampleCount
 	End Method
 
+	Rem
+	bbdoc: Removes all retained samples without reallocating the buffer.
+	End Rem
 	Method Clear()
 		sampleStart = 0
 		sampleCount = 0
 		_Invalidate()
 	End Method
 
+	Rem
+	bbdoc: Appends one sample, discarding the oldest when full.
+	param: Sample value.
+	End Rem
 	Method AddValue(value:Int)
 		If samples.Length < 2 Then SetCapacity(32)
 		Local index:Int
@@ -5603,11 +5667,21 @@ Type TUISparkline Extends TUIWidget Final
 		_Invalidate()
 	End Method
 
+	Rem
+	bbdoc: Returns one retained sample in oldest-to-newest order.
+	param: Zero-based sample index.
+	returns: Sample value, or zero when the index is invalid.
+	End Rem
 	Method ValueAt:Int(index:Int)
 		If index < 0 Or index >= sampleCount Then Return 0
 		Return samples[(sampleStart + index) Mod samples.Length]
 	End Method
 
+	Rem
+	bbdoc: Sets a fixed vertical range and disables automatic ranging.
+	param: Lower graph value.
+	param: Upper graph value; adjusted above the minimum when necessary.
+	End Rem
 	Method SetRange(minimum:Int, maximum:Int)
 		If maximum <= minimum Then maximum = minimum + 1
 		minimumValue = minimum
@@ -5616,11 +5690,19 @@ Type TUISparkline Extends TUIWidget Final
 		_Invalidate()
 	End Method
 
+	Rem
+	bbdoc: Enables or disables range calculation from retained samples.
+	param: True to derive minimum and maximum for each draw.
+	End Rem
 	Method SetAutoRange(value:Int)
 		autoRange = value <> 0
 		_Invalidate()
 	End Method
 
+	Rem
+	bbdoc: Reports whether the graph derives its range from current samples.
+	returns: True when automatic ranging is enabled.
+	End Rem
 	Method AutoRange:Int()
 		Return autoRange
 	End Method
@@ -5701,33 +5783,60 @@ Type TUIRotaryDial Extends TUIRangeWidget Final
 	Field changeHandler(dial:TUIRotaryDial)
 
 	Public
+	Rem
+	bbdoc: Initializes a clickable and focusable rotary dial.
+	End Rem
 	Method New()
 		clickable = True
 		focusable = True
 	End Method
 
+	Rem
+	bbdoc: Sets optional artwork drawn beneath the dial arc and needle.
+	param: Face image, or Null to remove it.
+	End Rem
 	Method SetFaceImage(image:TEmbeddedImage)
 		faceImage = image
 		_Invalidate()
 	End Method
 
+	Rem
+	bbdoc: Sets the increment used by focused adjustment.
+	param: Positive integer increment, clamped to at least one.
+	End Rem
 	Method SetStep(value:Int)
 		stepValue = Max(value, 1)
 	End Method
 
+	Rem
+	bbdoc: Returns the focused-adjustment increment.
+	returns: Positive integer step.
+	End Rem
 	Method Step:Int()
 		Return stepValue
 	End Method
 
+	Rem
+	bbdoc: Selects horizontal or vertical linear drag interaction.
+	param: UIDialDragHorizontal or UIDialDragVertical.
+	End Rem
 	Method SetDragDirection(direction:Int)
 		If direction <> UIDialDragVertical Then direction = UIDialDragHorizontal
 		dragDirection = direction
 	End Method
 
+	Rem
+	bbdoc: Returns the configured linear drag direction.
+	returns: One of the UIDialDrag constants.
+	End Rem
 	Method DragDirection:Int()
 		Return dragDirection
 	End Method
 
+	Rem
+	bbdoc: Registers the user-generated value-change callback.
+	param: Callback receiving this dial, or Null to remove it.
+	End Rem
 	Method OnChange(handler(dial:TUIRotaryDial))
 		changeHandler = handler
 	End Method
@@ -5826,17 +5935,30 @@ Type TUIRotaryDial Extends TUIRangeWidget Final
 	End Method
 End Type
 
+Rem
+bbdoc: Dialog-owned button that closes its dialog with an application result value.
+End Rem
 Type TUIDialogAction Extends TUIButton Final
 	Private
 	Field dialogOwner:TUIDialog
 	Field actionResult:Int
 
 	Public
+	Rem
+	bbdoc: Associates this action with a dialog and result value.
+	param: Owning dialog.
+	param: Integer result returned when the action is activated.
+	about: Intended for TUIDialog.Action.
+	End Rem
 	Method _Configure(owner:TUIDialog, result:Int)
 		dialogOwner = owner
 		actionResult = result
 	End Method
 
+	Rem
+	bbdoc: Returns the result produced by this action.
+	returns: Configured integer result.
+	End Rem
 	Method Result:Int()
 		Return actionResult
 	End Method
@@ -5858,6 +5980,12 @@ Type TUIDialogAction Extends TUIButton Final
 	End Method
 End Type
 
+Rem
+bbdoc: Centered modal overlay with a title, wrapped message, and result actions.
+about: Show gives the dialog focus and blocks hit testing of the underlying UI.
+Close dismisses it, invokes OnResult, and emits EVENT_UIACTION with the result
+in `data`.
+End Rem
 Type TUIDialog Extends TUIContainer Final
 	Private
 	Field titleLabel:TUILabel
@@ -5867,6 +5995,9 @@ Type TUIDialog Extends TUIContainer Final
 	Field resultHandler(dialog:TUIDialog, result:Int)
 
 	Public
+	Rem
+	bbdoc: Initializes the padded dialog structure and action row.
+	End Rem
 	Method New()
 		layoutDirection = 2
 		gap = 12
@@ -5879,30 +6010,60 @@ Type TUIDialog Extends TUIContainer Final
 		actionRow.SetGap(6)
 	End Method
 
+	Rem
+	bbdoc: Sets the dialog title.
+	param: Title text.
+	End Rem
 	Method SetTitle(text:String)
 		titleLabel.SetText(text)
 	End Method
 
+	Rem
+	bbdoc: Returns the dialog title.
+	returns: Title text.
+	End Rem
 	Method Title:String()
 		Return titleLabel.Text()
 	End Method
 
+	Rem
+	bbdoc: Sets the wrapped dialog message.
+	param: Message text.
+	End Rem
 	Method SetMessage(text:String)
 		messageLabel.SetText(text)
 	End Method
 
+	Rem
+	bbdoc: Returns the dialog message.
+	returns: Message text.
+	End Rem
 	Method Message:String()
 		Return messageLabel.Text()
 	End Method
 
+	Rem
+	bbdoc: Returns the retained title label for further styling.
+	returns: Title label.
+	End Rem
 	Method TitleLabel:TUILabel()
 		Return titleLabel
 	End Method
 
+	Rem
+	bbdoc: Returns the retained wrapped message label for further styling.
+	returns: Message label.
+	End Rem
 	Method MessageLabel:TUILabel()
 		Return messageLabel
 	End Method
 
+	Rem
+	bbdoc: Appends an equal-width action button to the dialog.
+	param: Button label.
+	param: Integer result returned by that action.
+	returns: The attached dialog action.
+	End Rem
 	Method Action:TUIDialogAction(text:String, result:Int = 0)
 		Local action:TUIDialogAction = New TUIDialogAction
 		action._Configure(Self, result)
@@ -5912,14 +6073,28 @@ Type TUIDialog Extends TUIContainer Final
 		Return action
 	End Method
 
+	Rem
+	bbdoc: Registers the callback invoked after the dialog closes with a result.
+	param: Callback receiving this dialog and its result, or Null to remove it.
+	End Rem
 	Method OnResult(handler(dialog:TUIDialog, result:Int))
 		resultHandler = handler
 	End Method
 
+	Rem
+	bbdoc: Returns the most recent close result.
+	returns: Integer supplied to Close or the activated action.
+	End Rem
 	Method Result:Int()
 		Return dialogResult
 	End Method
 
+	Rem
+	bbdoc: Shows the dialog centered as a non-dismissable-outside modal overlay.
+	param: Requested width in pixels, or UILayoutAuto.
+	param: Requested height in pixels, or UILayoutAuto.
+	returns: True when the dialog was shown.
+	End Rem
 	Method Show:Int(width:Int = UILayoutAuto, height:Int = UILayoutAuto)
 		If Not Context() Then Return False
 		Local preferredWidth:Int
@@ -5934,6 +6109,11 @@ Type TUIDialog Extends TUIContainer Final
 		Return Context().ShowOverlay(Self, x, y, width, height, False)
 	End Method
 
+	Rem
+	bbdoc: Dismisses the active dialog and publishes its result.
+	param: Application-defined result value.
+	returns: True when this dialog was the active overlay and was closed.
+	End Rem
 	Method Close:Int(result:Int = 0)
 		If Not Context() Or Context().ActiveOverlay() <> Self Then Return False
 		dialogResult = result
@@ -5963,6 +6143,9 @@ Type TUIToast Extends TUIContainer Final
 	Field toastShownAt:UInt
 
 	Public
+	Rem
+	bbdoc: Initializes the padded wrapped-message toast content.
+	End Rem
 	Method New()
 		layoutDirection = 2
 		SetPaddingEdges(14, 10, 14, 10)
@@ -5971,26 +6154,50 @@ Type TUIToast Extends TUIContainer Final
 		messageLabel.SetWordWrap(True)
 	End Method
 
+	Rem
+	bbdoc: Returns the notification message.
+	returns: Message text.
+	End Rem
 	Method Message:String()
 		Return messageLabel.Text()
 	End Method
 
+	Rem
+	bbdoc: Returns the semantic notification kind.
+	returns: One of the UIToast kind constants.
+	End Rem
 	Method Kind:Int()
 		Return toastKind
 	End Method
 
+	Rem
+	bbdoc: Returns the visible lifetime.
+	returns: Duration in milliseconds, or zero for persistent.
+	End Rem
 	Method Duration:Int()
 		Return toastDuration
 	End Method
 
+	Rem
+	bbdoc: Reports whether the toast remains until explicitly dismissed.
+	returns: True when Duration is zero.
+	End Rem
 	Method Persistent:Int()
 		Return toastDuration = 0
 	End Method
 
+	Rem
+	bbdoc: Returns the toast's display placement.
+	returns: One of the UIToast placement constants.
+	End Rem
 	Method Placement:Int()
 		Return toastPlacement
 	End Method
 
+	Rem
+	bbdoc: Moves the toast to another placement stack.
+	param: One of the UIToast placement constants; invalid values use bottom-center.
+	End Rem
 	Method SetPlacement(value:Int)
 		If value < UIToastTopLeft Or value > UIToastBottomRight Then value = UIToastBottomCenter
 		If toastPlacement = value Then Return
@@ -5998,12 +6205,24 @@ Type TUIToast Extends TUIContainer Final
 		If Context() Then Context().RequestLayout()
 	End Method
 
+	Rem
+	bbdoc: Removes this toast from its visible stack or pending queue.
+	returns: True when the context contained and dismissed it.
+	End Rem
 	Method Close:Int()
 		If Not Context() Then Return False
 		Return Context().DismissToast(Self)
 	End Method
 
 	Public
+	Rem
+	bbdoc: Configures message, duration, kind, placement, and default styling.
+	param: Notification message.
+	param: Lifetime in milliseconds; zero creates a persistent toast.
+	param: One of the UIToast kind constants.
+	param: One of the UIToast placement constants.
+	about: Intended for TUIContext.Toast.
+	End Rem
 	Method _Configure(message:String, duration:Int, kind:Int, placement:Int)
 		If duration < 0 Then duration = 0
 		If kind < UIToastInfo Or kind > UIToastError Then kind = UIToastInfo
@@ -6044,10 +6263,18 @@ Type TUIToast Extends TUIContainer Final
 		messageLabel.SetStyle(labelStyle)
 	End Method
 
+	Rem
+	bbdoc: Records when this toast became visible.
+	param: Current monotonic time in milliseconds.
+	End Rem
 	Method _Show(now:UInt)
 		toastShownAt = now
 	End Method
 
+	Rem
+	bbdoc: Returns the monotonic time at which the toast became visible.
+	returns: Timestamp in milliseconds.
+	End Rem
 	Method _ShownAt:UInt()
 		Return toastShownAt
 	End Method
