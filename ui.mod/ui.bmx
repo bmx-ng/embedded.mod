@@ -551,66 +551,181 @@ End Function
 
 Public
 
+Rem
+bbdoc: Base class for every retained UI element.
+about: A widget stores requested layout properties and the bounds assigned by
+its parent. Applications normally configure widgets through their methods;
+subclasses override PreferredSize, Draw, and the optional interaction hooks to
+provide new visual elements or controls.
+End Rem
 Type TUIWidget
 	Public
+	Rem
+	bbdoc: Context currently owning this widget, or Null while detached.
+	End Rem
 	Field uiContext:TUIContext
+	Rem
+	bbdoc: Parent container, or Null for a root or detached widget.
+	End Rem
 	Field uiParent:TUIContainer
+	Rem
+	bbdoc: Child widget array used by container subclasses.
+	about: Applications should use ChildCount and Child to inspect this array,
+and TUIContainer.Add to attach children.
+	End Rem
 	Field uiChildren:TUIWidget[] = New TUIWidget[0]
+	Rem
+	bbdoc: Optional widget-specific style override.
+	End Rem
 	Field uiStyle:TUIStyle
+	Rem
+	bbdoc: Assigned left coordinate in display pixels.
+	End Rem
 	Field uiX:Int
+	Rem
+	bbdoc: Assigned top coordinate in display pixels.
+	End Rem
 	Field uiY:Int
+	Rem
+	bbdoc: Assigned width in display pixels.
+	End Rem
 	Field uiWidth:Int
+	Rem
+	bbdoc: Assigned height in display pixels.
+	End Rem
 	Field uiHeight:Int
+	Rem
+	bbdoc: Requested width in pixels, UILayoutAuto, or UILayoutFill.
+	End Rem
 	Field requestedWidth:Int = UILayoutAuto
+	Rem
+	bbdoc: Requested height in pixels, UILayoutAuto, or UILayoutFill.
+	End Rem
 	Field requestedHeight:Int = UILayoutAuto
+	Rem
+	bbdoc: Relative share of spare space on the parent container's main axis.
+	End Rem
 	Field growWeight:Int
+	Rem
+	bbdoc: Cross-axis alignment requested from the parent container.
+	End Rem
 	Field alignSelf:Int = UIAlignStretch
+	Rem
+	bbdoc: Outer spacing at the left edge in pixels.
+	End Rem
 	Field marginLeft:Int
+	Rem
+	bbdoc: Outer spacing at the top edge in pixels.
+	End Rem
 	Field marginTop:Int
+	Rem
+	bbdoc: Outer spacing at the right edge in pixels.
+	End Rem
 	Field marginRight:Int
+	Rem
+	bbdoc: Outer spacing at the bottom edge in pixels.
+	End Rem
 	Field marginBottom:Int
+	Rem
+	bbdoc: True when the widget participates in layout and drawing.
+	End Rem
 	Field visible:Int = True
+	Rem
+	bbdoc: True when the widget may receive focus and interaction.
+	End Rem
 	Field enabled:Int = True
+	Rem
+	bbdoc: Current pointer-pressed visual state.
+	End Rem
 	Field pressed:Int
+	Rem
+	bbdoc: True when hit testing may treat the widget as clickable.
+	End Rem
 	Field clickable:Int
+	Rem
+	bbdoc: True when the widget may receive UI focus.
+	End Rem
 	Field focusable:Int
+	Rem
+	bbdoc: True when focus should be represented by the theme outline.
+	End Rem
 	Field focusIndicatorVisible:Int = True
+	Rem
+	bbdoc: Number of grid columns occupied by this widget.
+	End Rem
 	Field gridColumnSpan:Int = 1
 
 	Public
+	Rem
+	bbdoc: Returns the context currently owning this widget.
+	returns: The owning context, or Null while detached.
+	End Rem
 	Method Context:TUIContext() Final
 		Return uiContext
 	End Method
 
+	Rem
+	bbdoc: Returns this widget's parent container.
+	returns: The parent, or Null for a root or detached widget.
+	End Rem
 	Method Parent:TUIContainer() Final
 		Return uiParent
 	End Method
 
+	Rem
+	bbdoc: Returns the number of direct children.
+	returns: The number of entries accessible through Child.
+	End Rem
 	Method ChildCount:Int() Final
 		Return uiChildren.Length
 	End Method
 
+	Rem
+	bbdoc: Returns one direct child by index.
+	param: Zero-based child index.
+	returns: The requested widget, or Null when the index is outside the array.
+	End Rem
 	Method Child:TUIWidget(index:Int) Final
 		If index < 0 Or index >= uiChildren.Length Then Return Null
 		Return uiChildren[index]
 	End Method
 
+	Rem
+	bbdoc: Returns the assigned left coordinate in display pixels.
+	returns: The current x coordinate.
+	End Rem
 	Method X:Int() Final
 		Return uiX
 	End Method
 
+	Rem
+	bbdoc: Returns the assigned top coordinate in display pixels.
+	returns: The current y coordinate.
+	End Rem
 	Method Y:Int() Final
 		Return uiY
 	End Method
 
+	Rem
+	bbdoc: Returns the assigned width in display pixels.
+	returns: The current width.
+	End Rem
 	Method Width:Int() Final
 		Return uiWidth
 	End Method
 
+	Rem
+	bbdoc: Returns the assigned height in display pixels.
+	returns: The current height.
+	End Rem
 	Method Height:Int() Final
 		Return uiHeight
 	End Method
 
+	Rem
+	bbdoc: Sets the requested layout width.
+	param: Pixel width, UILayoutAuto, or UILayoutFill.
+	End Rem
 	Method SetWidth(width:Int)
 		If width < 0 And width <> UILayoutAuto And width <> UILayoutFill Then width = 0
 		If requestedWidth = width Then Return
@@ -618,6 +733,10 @@ Type TUIWidget
 		_RequestLayout()
 	End Method
 
+	Rem
+	bbdoc: Sets the requested layout height.
+	param: Pixel height, UILayoutAuto, or UILayoutFill.
+	End Rem
 	Method SetHeight(height:Int)
 		If height < 0 And height <> UILayoutAuto And height <> UILayoutFill Then height = 0
 		If requestedHeight = height Then Return
@@ -625,11 +744,20 @@ Type TUIWidget
 		_RequestLayout()
 	End Method
 
+	Rem
+	bbdoc: Sets both requested layout dimensions.
+	param: Pixel width, UILayoutAuto, or UILayoutFill.
+	param: Pixel height, UILayoutAuto, or UILayoutFill.
+	End Rem
 	Method SetSize(width:Int, height:Int)
 		SetWidth(width)
 		SetHeight(height)
 	End Method
 
+	Rem
+	bbdoc: Sets this widget's relative share of spare main-axis space.
+	param: Non-negative growth weight; zero disables weighted growth.
+	End Rem
 	Method SetGrow(weight:Int = 1)
 		weight = _ClampNonNegative(weight)
 		If growWeight = weight Then Return
@@ -637,10 +765,18 @@ Type TUIWidget
 		_RequestLayout()
 	End Method
 
+	Rem
+	bbdoc: Returns the current layout growth weight.
+	returns: The non-negative growth weight.
+	End Rem
 	Method Grow:Int()
 		Return growWeight
 	End Method
 
+	Rem
+	bbdoc: Sets this widget's alignment on its parent's cross axis.
+	param: One of the UIAlign constants.
+	End Rem
 	Method SetAlign(align:Int)
 		If align < UIAlignStart Or align > UIAlignStretch Then align = UIAlignStretch
 		If alignSelf = align Then Return
@@ -648,10 +784,21 @@ Type TUIWidget
 		_RequestLayout()
 	End Method
 
+	Rem
+	bbdoc: Sets equal outer spacing on all four edges.
+	param: Non-negative margin in pixels.
+	End Rem
 	Method SetMargin(value:Int)
 		SetMarginEdges(value, value, value, value)
 	End Method
 
+	Rem
+	bbdoc: Sets each outer margin independently.
+	param: Left margin in pixels.
+	param: Top margin in pixels.
+	param: Right margin in pixels.
+	param: Bottom margin in pixels.
+	End Rem
 	Method SetMarginEdges(left:Int, top:Int, right:Int, bottom:Int)
 		marginLeft = _ClampNonNegative(left)
 		marginTop = _ClampNonNegative(top)
@@ -662,6 +809,7 @@ Type TUIWidget
 
 	Rem
 	bbdoc: Sets the number of columns occupied by this widget in a TUIGrid.
+	param: Column count, clamped between one and UIGridMaximumColumns.
 	about: Other container types ignore this value.
 	End Rem
 	Method SetGridSpan(columns:Int)
@@ -672,10 +820,18 @@ Type TUIWidget
 		_RequestLayout()
 	End Method
 
+	Rem
+	bbdoc: Returns the grid-column span requested by this widget.
+	returns: The positive column count.
+	End Rem
 	Method GridSpan:Int()
 		Return gridColumnSpan
 	End Method
 
+	Rem
+	bbdoc: Shows or hides this widget.
+	param: True to include the widget in layout, drawing, and hit testing.
+	End Rem
 	Method SetVisible(value:Int)
 		value = value <> 0
 		If visible = value Then Return
@@ -685,10 +841,18 @@ Type TUIWidget
 		_RequestLayout()
 	End Method
 
+	Rem
+	bbdoc: Reports whether this widget is visible.
+	returns: True when the widget participates in layout and drawing.
+	End Rem
 	Method Visible:Int()
 		Return visible
 	End Method
 
+	Rem
+	bbdoc: Enables or disables interaction with this widget.
+	param: True to permit focus and activation.
+	End Rem
 	Method SetEnabled(value:Int)
 		value = value <> 0
 		If enabled = value Then Return
@@ -698,14 +862,26 @@ Type TUIWidget
 		_Invalidate()
 	End Method
 
+	Rem
+	bbdoc: Reports whether this widget is enabled.
+	returns: True when interaction is permitted.
+	End Rem
 	Method Enabled:Int()
 		Return enabled
 	End Method
 
+	Rem
+	bbdoc: Reports whether this widget is currently pressed.
+	returns: True while an armed pointer press is active.
+	End Rem
 	Method Pressed:Int()
 		Return pressed
 	End Method
 
+	Rem
+	bbdoc: Adds or removes this widget from focus traversal.
+	param: True to permit focus.
+	End Rem
 	Method SetFocusable(value:Int)
 		value = value <> 0
 		If focusable = value Then Return
@@ -714,12 +890,17 @@ Type TUIWidget
 		_Invalidate()
 	End Method
 
+	Rem
+	bbdoc: Reports whether this widget may receive focus.
+	returns: True when focus is permitted.
+	End Rem
 	Method Focusable:Int()
 		Return focusable
 	End Method
 
 	Rem
 	bbdoc: Controls whether this widget draws the theme focus indicator.
+	param: True to draw the focus outline while focused.
 	about: Hiding the indicator does not remove the widget from focus traversal.
 	End Rem
 	Method SetFocusIndicatorVisible(value:Int)
@@ -729,43 +910,85 @@ Type TUIWidget
 		_Invalidate()
 	End Method
 
+	Rem
+	bbdoc: Reports whether the focus indicator is enabled for this widget.
+	returns: True when focused state should be outlined.
+	End Rem
 	Method FocusIndicatorVisible:Int()
 		Return focusIndicatorVisible
 	End Method
 
+	Rem
+	bbdoc: Reports whether this is the context's focused widget.
+	returns: True when this widget currently owns focus.
+	End Rem
 	Method Focused:Int()
 		Return uiContext And uiContext.FocusedWidget() = Self
 	End Method
 
+	Rem
+	bbdoc: Requests focus for this widget.
+	returns: True when focus was assigned.
+	End Rem
 	Method RequestFocus:Int()
 		If Not uiContext Then Return False
 		Return uiContext.SetFocus(Self)
 	End Method
 
+	Rem
+	bbdoc: Returns this widget's mutable style override.
+	returns: The existing override, or a new copy of DefaultStyle.
+	End Rem
 	Method Style:TUIStyle()
 		If Not uiStyle Then uiStyle = DefaultStyle().Copy()
 		Return uiStyle
 	End Method
 
+	Rem
+	bbdoc: Replaces this widget's style override.
+	param: Custom style, or Null to resume using DefaultStyle.
+	End Rem
 	Method SetStyle(style:TUIStyle)
 		_Invalidate()
 		uiStyle = style
 		_RequestLayout()
 	End Method
 
+	Rem
+	bbdoc: Marks this widget's visible bounds for redrawing.
+	End Rem
 	Method Invalidate()
 		_Invalidate()
 	End Method
 
+	Rem
+	bbdoc: Tests a display coordinate against this widget's visible bounds.
+	param: Display x coordinate in pixels.
+	param: Display y coordinate in pixels.
+	returns: True when the visible widget contains the point.
+	End Rem
 	Method Contains:Int(x:Int, y:Int)
 		Return visible And x >= uiX And y >= uiY And x < uiX + uiWidth And y < uiY + uiHeight
 	End Method
 
+	Rem
+	bbdoc: Returns the inherited style used when no override is installed.
+	returns: The context's container style, or a basic standalone style.
+	End Rem
 	Method DefaultStyle:TUIStyle()
 		If uiContext And uiContext.Theme() Then Return uiContext.Theme().container
 		Return TUIStyle.Create()
 	End Method
 
+	Rem
+	bbdoc: Measures the widget within the available layout space.
+	param: Available width in pixels.
+	param: Available height in pixels.
+	param: Receives the preferred width in pixels.
+	param: Receives the preferred height in pixels.
+	about: Custom widgets override this method to report their natural size while
+honoring explicit requested dimensions.
+	End Rem
 	Method PreferredSize(availableWidth:Int, availableHeight:Int, width:Int Var, height:Int Var)
 		width = 0
 		height = 0
@@ -773,17 +996,36 @@ Type TUIWidget
 		If requestedHeight >= 0 Then height = requestedHeight
 	End Method
 
+	Rem
+	bbdoc: Draws the widget's normal content.
+	param: Graphics context configured for the current presentation pass.
+	about: Custom widgets should draw only inside their assigned bounds.
+	End Rem
 	Method Draw(graphics:TEmbedded2DContext)
 	End Method
 
+	Rem
+	bbdoc: Draws content that must appear after descendant widgets.
+	param: Graphics context configured for the current presentation pass.
+	End Rem
 	Method DrawOverlay(graphics:TEmbedded2DContext)
 	End Method
 
+	Rem
+	bbdoc: Reports whether descendants are clipped to this widget's bounds.
+	returns: True when drawing and invalidation must respect these bounds.
+	End Rem
 	Method ClipsChildren:Int()
 		Return False
 	End Method
 
 	Public
+	Rem
+	bbdoc: Attaches this widget tree to a context and parent.
+	param: Owning UI context.
+	param: Parent container, or Null for a root widget.
+	about: This is an extension hook used by containers and custom adapters.
+	End Rem
 	Method _Attach(context:TUIContext, parent:TUIContainer)
 		uiContext = context
 		uiParent = parent
@@ -795,6 +1037,13 @@ Type TUIWidget
 		End If
 	End Method
 
+	Rem
+	bbdoc: Assigns the bounds calculated by the layout engine.
+	param: Left coordinate in pixels.
+	param: Top coordinate in pixels.
+	param: Width in pixels.
+	param: Height in pixels.
+	End Rem
 	Method _SetBounds(x:Int, y:Int, width:Int, height:Int)
 		If uiX = x And uiY = y And uiWidth = width And uiHeight = height Then Return
 		_Invalidate()
@@ -805,6 +1054,9 @@ Type TUIWidget
 		_Invalidate()
 	End Method
 
+	Rem
+	bbdoc: Invalidates the visible, ancestor-clipped portion of this widget.
+	End Rem
 	Method _Invalidate()
 		If Not uiContext Or uiWidth <= 0 Or uiHeight <= 0 Then Return
 		Local x0:Int = uiX
@@ -824,10 +1076,17 @@ Type TUIWidget
 		If x0 < x1 And y0 < y1 Then uiContext.InvalidateRect(x0, y0, x1 - x0, y1 - y0)
 	End Method
 
+	Rem
+	bbdoc: Requests a new measure and layout pass from the owning context.
+	End Rem
 	Method _RequestLayout()
 		If uiContext Then uiContext.RequestLayout()
 	End Method
 
+	Rem
+	bbdoc: Updates the pressed visual state used by input adapters.
+	param: True while the widget is armed by an active pointer.
+	End Rem
 	Method _SetPressed(value:Int)
 		value = value <> 0
 		If pressed = value Then Return
@@ -837,25 +1096,55 @@ Type TUIWidget
 
 	' Optional interaction hooks. Passive widgets retain the no-op defaults;
 	' controls override only the operations which they support.
+	Rem
+	bbdoc: Activates this widget through non-pointer focus input.
+	returns: True when the activation was handled.
+	End Rem
 	Method _ActivateFocused:Int()
 		Return False
 	End Method
 
+	Rem
+	bbdoc: Adjusts this widget through non-pointer focus input.
+	param: Signed adjustment amount.
+	returns: True when the adjustment was handled.
+	End Rem
 	Method _AdjustFocused:Int(delta:Int)
 		Return False
 	End Method
 
+	Rem
+	bbdoc: Begins pointer tracking for an interactive widget.
+	param: Display x coordinate in pixels.
+	param: Display y coordinate in pixels.
+	returns: True when the initial pointer position was handled.
+	End Rem
 	Method _BeginPointer:Int(x:Int, y:Int)
 		Return False
 	End Method
 
+	Rem
+	bbdoc: Updates an active pointer interaction.
+	param: Display x coordinate in pixels.
+	param: Display y coordinate in pixels.
+	returns: True when the position was handled directly.
+	End Rem
 	Method _TrackPointer:Int(x:Int, y:Int)
 		Return False
 	End Method
 
+	Rem
+	bbdoc: Ends pointer tracking without necessarily activating the widget.
+	End Rem
 	Method _EndPointer()
 	End Method
 
+	Rem
+	bbdoc: Activates this widget at a released pointer coordinate.
+	param: Display x coordinate in pixels.
+	param: Display y coordinate in pixels.
+	returns: True when activation was handled.
+	End Rem
 	Method _ActivatePointer:Int(x:Int, y:Int)
 		Return _ActivateFocused()
 	End Method
@@ -868,54 +1157,106 @@ control construction behind this boundary lets display-only firmware omit
 controls which it never creates while retaining the fluent container API.
 End Rem
 Type TUIControlFactory
+	Rem
+	bbdoc: Creates a list control, or Null when unsupported.
+	returns: A new detached list.
+	End Rem
 	Method CreateList:TUIList()
 		Return Null
 	End Method
 
+	Rem
+	bbdoc: Creates a tab view, or Null when unsupported.
+	returns: A new detached tab view.
+	End Rem
 	Method CreateTabView:TUITabView()
 		Return Null
 	End Method
 
+	Rem
+	bbdoc: Creates a button, or Null when unsupported.
+	returns: A new detached button.
+	End Rem
 	Method CreateButton:TUIButton()
 		Return Null
 	End Method
 
+	Rem
+	bbdoc: Creates a combo box, or Null when unsupported.
+	returns: A new detached combo box.
+	End Rem
 	Method CreateComboBox:TUIComboBox()
 		Return Null
 	End Method
 
+	Rem
+	bbdoc: Creates a check box, or Null when unsupported.
+	returns: A new detached check box.
+	End Rem
 	Method CreateCheckBox:TUICheckBox()
 		Return Null
 	End Method
 
+	Rem
+	bbdoc: Creates a radio group, or Null when unsupported.
+	returns: A new detached radio group.
+	End Rem
 	Method CreateRadioGroup:TUIRadioGroup()
 		Return Null
 	End Method
 
+	Rem
+	bbdoc: Creates a numeric stepper, or Null when unsupported.
+	returns: A new detached stepper.
+	End Rem
 	Method CreateStepper:TUIStepper()
 		Return Null
 	End Method
 
+	Rem
+	bbdoc: Creates a segmented control, or Null when unsupported.
+	returns: A new detached segmented control.
+	End Rem
 	Method CreateSegmentedControl:TUISegmentedControl()
 		Return Null
 	End Method
 
+	Rem
+	bbdoc: Creates a switch, or Null when unsupported.
+	returns: A new detached switch.
+	End Rem
 	Method CreateSwitch:TUISwitch()
 		Return Null
 	End Method
 
+	Rem
+	bbdoc: Creates a slider, or Null when unsupported.
+	returns: A new detached slider.
+	End Rem
 	Method CreateSlider:TUISlider()
 		Return Null
 	End Method
 
+	Rem
+	bbdoc: Creates a rotary dial, or Null when unsupported.
+	returns: A new detached dial.
+	End Rem
 	Method CreateRotaryDial:TUIRotaryDial()
 		Return Null
 	End Method
 
+	Rem
+	bbdoc: Creates a popup menu, or Null when unsupported.
+	returns: A new detached popup menu.
+	End Rem
 	Method CreatePopupMenu:TUIPopupMenu()
 		Return Null
 	End Method
 
+	Rem
+	bbdoc: Creates a dialog, or Null when unsupported.
+	returns: A new detached dialog.
+	End Rem
 	Method CreateDialog:TUIDialog()
 		Return Null
 	End Method
@@ -992,6 +1333,7 @@ End Function
 
 Rem
 bbdoc: Installs the interactive-control constructor provider.
+param: Provider used by fluent container construction methods.
 about: Applications normally obtain this automatically by importing
 Embedded.UI.Controls or Embedded.UI.Interactive.
 End Rem
@@ -999,6 +1341,10 @@ Function RegisterUIControlFactory(factory:TUIControlFactory)
 	_uiControlFactory = factory
 End Function
 
+Rem
+bbdoc: Reports whether an interactive-control provider is installed.
+returns: True after Embedded.UI.Controls or Embedded.UI.Interactive is imported.
+End Rem
 Function UIControlsAvailable:Int()
 	Return _uiControlFactory <> Null
 End Function
@@ -1013,17 +1359,47 @@ End Function
 
 Public
 
+Rem
+bbdoc: Base container that owns child widgets and arranges them as a stack, row, or column.
+about: TUIContainer also provides fluent constructors. Interactive constructors
+require Embedded.UI.Controls; display-only containers and widgets do not.
+End Rem
 Type TUIContainer Extends TUIWidget
 	Public
+	Rem
+	bbdoc: Internal layout mode: stack, row, or column.
+	End Rem
 	Field layoutDirection:Int
+	Rem
+	bbdoc: Spacing between adjacent visible children in pixels.
+	End Rem
 	Field gap:Int
+	Rem
+	bbdoc: Inner spacing at the left edge in pixels.
+	End Rem
 	Field paddingLeft:Int
+	Rem
+	bbdoc: Inner spacing at the top edge in pixels.
+	End Rem
 	Field paddingTop:Int
+	Rem
+	bbdoc: Inner spacing at the right edge in pixels.
+	End Rem
 	Field paddingRight:Int
+	Rem
+	bbdoc: Inner spacing at the bottom edge in pixels.
+	End Rem
 	Field paddingBottom:Int
+	Rem
+	bbdoc: True when the container explicitly draws its background.
+	End Rem
 	Field drawBackground:Int
 
 	Public
+	Rem
+	bbdoc: Sets the spacing between adjacent visible children.
+	param: Non-negative gap in pixels.
+	End Rem
 	Method SetGap(value:Int)
 		value = _ClampNonNegative(value)
 		If gap = value Then Return
@@ -1031,14 +1407,29 @@ Type TUIContainer Extends TUIWidget
 		_RequestLayout()
 	End Method
 
+	Rem
+	bbdoc: Returns the spacing between adjacent visible children.
+	returns: The gap in pixels.
+	End Rem
 	Method Gap:Int()
 		Return gap
 	End Method
 
+	Rem
+	bbdoc: Sets equal inner spacing on all four edges.
+	param: Non-negative padding in pixels.
+	End Rem
 	Method SetPadding(value:Int)
 		SetPaddingEdges(value, value, value, value)
 	End Method
 
+	Rem
+	bbdoc: Sets each inner padding edge independently.
+	param: Left padding in pixels.
+	param: Top padding in pixels.
+	param: Right padding in pixels.
+	param: Bottom padding in pixels.
+	End Rem
 	Method SetPaddingEdges(left:Int, top:Int, right:Int, bottom:Int)
 		paddingLeft = _ClampNonNegative(left)
 		paddingTop = _ClampNonNegative(top)
@@ -1047,11 +1438,20 @@ Type TUIContainer Extends TUIWidget
 		_RequestLayout()
 	End Method
 
+	Rem
+	bbdoc: Controls whether the container explicitly draws its style background.
+	param: True to draw the background even when the style does not request it.
+	End Rem
 	Method SetBackgroundVisible(value:Int)
 		drawBackground = value <> 0
 		_Invalidate()
 	End Method
 
+	Rem
+	bbdoc: Appends a detached widget to this container.
+	param: Widget without an existing parent.
+	returns: The attached widget, or Null when it cannot be added.
+	End Rem
 	Method Add:TUIWidget(widget:TUIWidget)
 		If Not widget Or widget.Parent() Then Return Null
 		uiChildren = uiChildren[..uiChildren.Length + 1]
@@ -1061,48 +1461,83 @@ Type TUIContainer Extends TUIWidget
 		Return widget
 	End Method
 
+	Rem
+	bbdoc: Adds a horizontal row container.
+	returns: The attached row.
+	End Rem
 	Method Row:TUIRow() Final
 		Local widget:TUIRow = New TUIRow
 		Add(widget)
 		Return widget
 	End Method
 
+	Rem
+	bbdoc: Adds a vertical column container.
+	returns: The attached column.
+	End Rem
 	Method Column:TUIColumn() Final
 		Local widget:TUIColumn = New TUIColumn
 		Add(widget)
 		Return widget
 	End Method
 
+	Rem
+	bbdoc: Adds an overlapping stack container.
+	returns: The attached stack.
+	End Rem
 	Method Stack:TUIStack() Final
 		Local widget:TUIStack = New TUIStack
 		Add(widget)
 		Return widget
 	End Method
 
+	Rem
+	bbdoc: Adds a vertically scrollable container.
+	returns: The attached scroll view.
+	End Rem
 	Method ScrollView:TUIScrollView() Final
 		Local widget:TUIScrollView = New TUIScrollView
 		Add(widget)
 		Return widget
 	End Method
 
+	Rem
+	bbdoc: Adds an interactive selectable list.
+	returns: The attached list.
+	about: Requires Embedded.UI.Controls or Embedded.UI.Interactive.
+	End Rem
 	Method List:TUIList() Final
 		Local widget:TUIList = _UIRequireControls().CreateList()
 		Add(widget)
 		Return widget
 	End Method
 
+	Rem
+	bbdoc: Adds an interactive tab view.
+	returns: The attached tab view.
+	about: Requires Embedded.UI.Controls or Embedded.UI.Interactive.
+	End Rem
 	Method TabView:TUITabView() Final
 		Local widget:TUITabView = _UIRequireControls().CreateTabView()
 		Add(widget)
 		Return widget
 	End Method
 
+	Rem
+	bbdoc: Adds a bounded navigation page stack.
+	returns: The attached page stack.
+	End Rem
 	Method PageStack:TUIPageStack() Final
 		Local widget:TUIPageStack = New TUIPageStack
 		Add(widget)
 		Return widget
 	End Method
 
+	Rem
+	bbdoc: Adds a responsive equal-cell grid.
+	param: Fixed column count, or zero to derive it from available width.
+	returns: The attached grid.
+	End Rem
 	Method Grid:TUIGrid(columns:Int = 0) Final
 		Local widget:TUIGrid = New TUIGrid
 		widget.SetColumns(columns)
@@ -1110,6 +1545,11 @@ Type TUIContainer Extends TUIWidget
 		Return widget
 	End Method
 
+	Rem
+	bbdoc: Adds a styled card container.
+	param: Optional card title.
+	returns: The attached card.
+	End Rem
 	Method Card:TUICard(title:String = "") Final
 		Local widget:TUICard = New TUICard
 		widget.SetTitle(title)
@@ -1117,6 +1557,12 @@ Type TUIContainer Extends TUIWidget
 		Return widget
 	End Method
 
+	Rem
+	bbdoc: Adds a page header.
+	param: Header title.
+	param: True to reserve and draw the back affordance.
+	returns: The attached header.
+	End Rem
 	Method Header:TUIHeader(title:String = "", showBack:Int = False) Final
 		Local widget:TUIHeader = New TUIHeader
 		widget.SetTitle(title)
@@ -1125,12 +1571,21 @@ Type TUIContainer Extends TUIWidget
 		Return widget
 	End Method
 
+	Rem
+	bbdoc: Adds a navigation-bar container.
+	returns: The attached navigation bar.
+	End Rem
 	Method NavigationBar:TUINavigationBar() Final
 		Local widget:TUINavigationBar = New TUINavigationBar
 		Add(widget)
 		Return widget
 	End Method
 
+	Rem
+	bbdoc: Adds a text label.
+	param: Initial text.
+	returns: The attached label.
+	End Rem
 	Method Label:TUILabel(text:String = "") Final
 		Local widget:TUILabel = New TUILabel
 		widget.SetText(text)
@@ -1138,6 +1593,12 @@ Type TUIContainer Extends TUIWidget
 		Return widget
 	End Method
 
+	Rem
+	bbdoc: Adds an interactive button.
+	param: Initial button label.
+	returns: The attached button.
+	about: Requires Embedded.UI.Controls or Embedded.UI.Interactive.
+	End Rem
 	Method Button:TUIButton(text:String = "") Final
 		Local widget:TUIButton = _UIRequireControls().CreateButton()
 		widget.SetText(text)
@@ -1145,12 +1606,24 @@ Type TUIContainer Extends TUIWidget
 		Return widget
 	End Method
 
+	Rem
+	bbdoc: Adds an interactive combo box.
+	returns: The attached combo box.
+	about: Requires Embedded.UI.Controls or Embedded.UI.Interactive.
+	End Rem
 	Method ComboBox:TUIComboBox() Final
 		Local widget:TUIComboBox = _UIRequireControls().CreateComboBox()
 		Add(widget)
 		Return widget
 	End Method
 
+	Rem
+	bbdoc: Adds an interactive check box.
+	param: Label displayed beside the check mark.
+	param: Initial checked state.
+	returns: The attached check box.
+	about: Requires Embedded.UI.Controls or Embedded.UI.Interactive.
+	End Rem
 	Method CheckBox:TUICheckBox(text:String = "", checked:Int = False) Final
 		Local widget:TUICheckBox = _UIRequireControls().CreateCheckBox()
 		widget.SetText(text)
@@ -1159,12 +1632,26 @@ Type TUIContainer Extends TUIWidget
 		Return widget
 	End Method
 
+	Rem
+	bbdoc: Adds an interactive radio-button group.
+	returns: The attached group.
+	about: Requires Embedded.UI.Controls or Embedded.UI.Interactive.
+	End Rem
 	Method RadioGroup:TUIRadioGroup() Final
 		Local widget:TUIRadioGroup = _UIRequireControls().CreateRadioGroup()
 		Add(widget)
 		Return widget
 	End Method
 
+	Rem
+	bbdoc: Adds an integer stepper control.
+	param: Minimum permitted value.
+	param: Maximum permitted value.
+	param: Initial value.
+	param: Positive increment used by each step.
+	returns: The attached stepper.
+	about: Requires Embedded.UI.Controls or Embedded.UI.Interactive.
+	End Rem
 	Method Stepper:TUIStepper(minimum:Int = 0, maximum:Int = 100, value:Int = 0, step:Int = 1) Final
 		Local widget:TUIStepper = _UIRequireControls().CreateStepper()
 		widget.SetRange(minimum, maximum)
@@ -1174,6 +1661,17 @@ Type TUIContainer Extends TUIWidget
 		Return widget
 	End Method
 
+	Rem
+	bbdoc: Adds a fixed-precision decimal stepper control.
+	param: Minimum permitted value.
+	param: Maximum permitted value.
+	param: Initial value.
+	param: Positive increment used by each step.
+	param: Number of displayed decimal places.
+	returns: The attached stepper.
+	about: Decimal values are represented internally as scaled integers. Requires
+Embedded.UI.Controls or Embedded.UI.Interactive.
+	End Rem
 	Method DecimalStepper:TUIStepper(minimum:Double = 0.0, maximum:Double = 100.0, ..
 			value:Double = 0.0, step:Double = 1.0, decimalPlaces:Int = 1) Final
 		Local widget:TUIStepper = _UIRequireControls().CreateStepper()
@@ -1182,12 +1680,23 @@ Type TUIContainer Extends TUIWidget
 		Return widget
 	End Method
 
+	Rem
+	bbdoc: Adds an interactive segmented selection control.
+	returns: The attached control.
+	about: Requires Embedded.UI.Controls or Embedded.UI.Interactive.
+	End Rem
 	Method SegmentedControl:TUISegmentedControl() Final
 		Local widget:TUISegmentedControl = _UIRequireControls().CreateSegmentedControl()
 		Add(widget)
 		Return widget
 	End Method
 
+	Rem
+	bbdoc: Adds an interactive Boolean switch.
+	param: Initial on or off value.
+	returns: The attached switch.
+	about: Requires Embedded.UI.Controls or Embedded.UI.Interactive.
+	End Rem
 	Method Switch:TUISwitch(value:Int = False) Final
 		Local widget:TUISwitch = _UIRequireControls().CreateSwitch()
 		widget.SetValue(value)
@@ -1195,6 +1704,14 @@ Type TUIContainer Extends TUIWidget
 		Return widget
 	End Method
 
+	Rem
+	bbdoc: Adds an interactive linear slider.
+	param: Minimum permitted value.
+	param: Maximum permitted value.
+	param: Initial value.
+	returns: The attached slider.
+	about: Requires Embedded.UI.Controls or Embedded.UI.Interactive.
+	End Rem
 	Method Slider:TUISlider(minimum:Int = 0, maximum:Int = 100, value:Int = 0) Final
 		Local widget:TUISlider = _UIRequireControls().CreateSlider()
 		widget.SetRange(minimum, maximum)
@@ -1203,6 +1720,13 @@ Type TUIContainer Extends TUIWidget
 		Return widget
 	End Method
 
+	Rem
+	bbdoc: Adds a read-only linear progress indicator.
+	param: Minimum represented value.
+	param: Maximum represented value.
+	param: Initial value.
+	returns: The attached progress bar.
+	End Rem
 	Method ProgressBar:TUIProgressBar(minimum:Int = 0, maximum:Int = 100, value:Int = 0) Final
 		Local widget:TUIProgressBar = New TUIProgressBar
 		widget.SetRange(minimum, maximum)
@@ -1211,6 +1735,12 @@ Type TUIContainer Extends TUIWidget
 		Return widget
 	End Method
 
+	Rem
+	bbdoc: Adds a labeled read-only status indicator.
+	param: Initial status text.
+	param: Initial active state.
+	returns: The attached indicator.
+	End Rem
 	Method StatusIndicator:TUIStatusIndicator(text:String = "", active:Int = False) Final
 		Local widget:TUIStatusIndicator = New TUIStatusIndicator
 		widget.SetText(text)
@@ -1219,6 +1749,13 @@ Type TUIContainer Extends TUIWidget
 		Return widget
 	End Method
 
+	Rem
+	bbdoc: Adds a read-only arc gauge.
+	param: Minimum represented value.
+	param: Maximum represented value.
+	param: Initial value.
+	returns: The attached gauge.
+	End Rem
 	Method ArcGauge:TUIArcGauge(minimum:Int = 0, maximum:Int = 100, value:Int = 0) Final
 		Local widget:TUIArcGauge = New TUIArcGauge
 		widget.SetRange(minimum, maximum)
@@ -1227,6 +1764,11 @@ Type TUIContainer Extends TUIWidget
 		Return widget
 	End Method
 
+	Rem
+	bbdoc: Adds a compact read-only history graph.
+	param: Maximum number of retained samples.
+	returns: The attached sparkline.
+	End Rem
 	Method Sparkline:TUISparkline(capacity:Int = 32) Final
 		Local widget:TUISparkline = New TUISparkline
 		widget.SetCapacity(capacity)
@@ -1234,6 +1776,14 @@ Type TUIContainer Extends TUIWidget
 		Return widget
 	End Method
 
+	Rem
+	bbdoc: Adds an interactive rotary dial.
+	param: Minimum permitted value.
+	param: Maximum permitted value.
+	param: Initial value.
+	returns: The attached dial.
+	about: Requires Embedded.UI.Controls or Embedded.UI.Interactive.
+	End Rem
 	Method RotaryDial:TUIRotaryDial(minimum:Int = 0, maximum:Int = 100, value:Int = 0) Final
 		Local widget:TUIRotaryDial = _UIRequireControls().CreateRotaryDial()
 		widget.SetRange(minimum, maximum)
@@ -1296,6 +1846,11 @@ Type TUIContainer Extends TUIWidget
 	End Method
 
 	Public
+	Rem
+	bbdoc: Assigns bounds to this container's visible children.
+	about: Container subclasses override this extension hook to implement a
+specialized layout algorithm, then recursively lay out child containers.
+	End Rem
 	Method _LayoutChildren()
 		Local contentX:Int = X() + paddingLeft
 		Local contentY:Int = Y() + paddingTop
@@ -1395,19 +1950,43 @@ Type TUIContainer Extends TUIWidget
 	End Method
 End Type
 
+Rem
+bbdoc: Container that arranges visible children from left to right.
+about: Fixed-size children use their preferred widths. UILayoutFill and positive
+growth weights divide the remaining horizontal space.
+End Rem
 Type TUIRow Extends TUIContainer Final
+	Rem
+	bbdoc: Initializes horizontal child layout.
+	End Rem
 	Method New()
 		layoutDirection = 1
 	End Method
 End Type
 
+Rem
+bbdoc: Container that arranges visible children from top to bottom.
+about: Fixed-size children use their preferred heights. UILayoutFill and
+positive growth weights divide the remaining vertical space.
+End Rem
 Type TUIColumn Extends TUIContainer Final
+	Rem
+	bbdoc: Initializes vertical child layout.
+	End Rem
 	Method New()
 		layoutDirection = 2
 	End Method
 End Type
 
+Rem
+bbdoc: Container that overlays its visible children in the same content area.
+about: Children are drawn in insertion order, allowing later children to appear
+above earlier children.
+End Rem
 Type TUIStack Extends TUIContainer Final
+	Rem
+	bbdoc: Initializes overlapping child layout.
+	End Rem
 	Method New()
 		layoutDirection = 0
 	End Method
@@ -1425,10 +2004,17 @@ Type TUIGrid Extends TUIContainer Final
 	Field configuredRowHeight:Int
 
 	Public
+	Rem
+	bbdoc: Initializes a grid with responsive column selection enabled.
+	End Rem
 	Method New()
 		layoutDirection = 0
 	End Method
 
+	Rem
+	bbdoc: Sets a fixed column count or enables responsive column selection.
+	param: Fixed count from one to UIGridMaximumColumns, or zero for automatic.
+	End Rem
 	Method SetColumns(columns:Int)
 		If columns < 0 Then columns = 0
 		If columns > UIGridMaximumColumns Then columns = UIGridMaximumColumns
@@ -1437,10 +2023,18 @@ Type TUIGrid Extends TUIContainer Final
 		_RequestLayout()
 	End Method
 
+	Rem
+	bbdoc: Returns the configured column count.
+	returns: The fixed count, or zero when columns are selected responsively.
+	End Rem
 	Method Columns:Int()
 		Return configuredColumns
 	End Method
 
+	Rem
+	bbdoc: Sets the minimum cell width used by responsive column selection.
+	param: Positive width in pixels.
+	End Rem
 	Method SetMinimumColumnWidth(width:Int)
 		If width < 1 Then width = 1
 		If minimumColumnWidth = width Then Return
@@ -1448,10 +2042,18 @@ Type TUIGrid Extends TUIContainer Final
 		_RequestLayout()
 	End Method
 
+	Rem
+	bbdoc: Returns the responsive minimum column width.
+	returns: The positive width in pixels.
+	End Rem
 	Method MinimumColumnWidth:Int()
 		Return minimumColumnWidth
 	End Method
 
+	Rem
+	bbdoc: Sets a fixed row height or enables content-based row measurement.
+	param: Fixed height in pixels, or zero for automatic measurement.
+	End Rem
 	Method SetRowHeight(height:Int)
 		If height < 0 Then height = 0
 		If configuredRowHeight = height Then Return
@@ -1459,6 +2061,10 @@ Type TUIGrid Extends TUIContainer Final
 		_RequestLayout()
 	End Method
 
+	Rem
+	bbdoc: Returns the configured row height.
+	returns: The fixed height in pixels, or zero for automatic measurement.
+	End Rem
 	Method RowHeight:Int()
 		Return configuredRowHeight
 	End Method
