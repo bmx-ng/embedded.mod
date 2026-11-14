@@ -23,64 +23,237 @@ Import Embedded.Drivers.Display.Image
 Import Embedded.Graphics2D
 Import "native/ui_math.c"
 
+Rem
+bbdoc: Requests the natural measured size for one layout dimension.
+End Rem
 Const UILayoutAuto:Int = -1
+Rem
+bbdoc: Requests all available space for one layout dimension.
+End Rem
 Const UILayoutFill:Int = -2
+Rem
+bbdoc: Aligns a widget with the leading edge of its layout axis.
+End Rem
 Const UIAlignStart:Int = 0
+Rem
+bbdoc: Centers a widget on its layout axis.
+End Rem
 Const UIAlignCenter:Int = 1
+Rem
+bbdoc: Aligns a widget with the trailing edge of its layout axis.
+End Rem
 Const UIAlignEnd:Int = 2
+Rem
+bbdoc: Stretches a widget across the available cross-axis space.
+End Rem
 Const UIAlignStretch:Int = 3
+Rem
+bbdoc: Maximum number of independent dirty rectangles retained by a UI context.
+End Rem
 Const UIInvalidRegionMaximum:Int = 8
+Rem
+bbdoc: Pointer travel in pixels required to turn a touch gesture into scrolling.
+End Rem
 Const UIScrollDragThreshold:Int = 4
+Rem
+bbdoc: Minimum release velocity in pixels per second that starts inertial scrolling.
+End Rem
 Const UIScrollMinimumMomentum:Int = 60
+Rem
+bbdoc: Maximum inertial scrolling velocity in pixels per second.
+End Rem
 Const UIScrollMaximumMomentum:Int = 2400
+Rem
+bbdoc: Inertial scrolling deceleration in pixels per second squared.
+End Rem
 Const UIScrollMomentumDeceleration:Int = 1800
+Rem
+bbdoc: Identifies an informational toast notification.
+End Rem
 Const UIToastInfo:Int = 0
+Rem
+bbdoc: Identifies a successful-operation toast notification.
+End Rem
 Const UIToastSuccess:Int = 1
+Rem
+bbdoc: Identifies a warning toast notification.
+End Rem
 Const UIToastWarning:Int = 2
+Rem
+bbdoc: Identifies an error toast notification.
+End Rem
 Const UIToastError:Int = 3
+Rem
+bbdoc: Default toast lifetime in milliseconds.
+End Rem
 Const UIToastDefaultDuration:Int = 2500
+Rem
+bbdoc: Maximum number of pending toast notifications in one context.
+End Rem
 Const UIToastQueueMaximum:Int = 8
+Rem
+bbdoc: Maximum number of pages retained by one page stack.
+End Rem
 Const UIPageStackMaximum:Int = 16
+Rem
+bbdoc: Maximum number of columns supported by one grid.
+End Rem
 Const UIGridMaximumColumns:Int = 12
+Rem
+bbdoc: Places toast notifications at the top-left of the display.
+End Rem
 Const UIToastTopLeft:Int = 0
+Rem
+bbdoc: Places toast notifications at the top-center of the display.
+End Rem
 Const UIToastTopCenter:Int = 1
+Rem
+bbdoc: Places toast notifications at the top-right of the display.
+End Rem
 Const UIToastTopRight:Int = 2
+Rem
+bbdoc: Places toast notifications at the center-left of the display.
+End Rem
 Const UIToastCenterLeft:Int = 3
+Rem
+bbdoc: Places toast notifications at the center of the display.
+End Rem
 Const UIToastCenter:Int = 4
+Rem
+bbdoc: Places toast notifications at the center-right of the display.
+End Rem
 Const UIToastCenterRight:Int = 5
+Rem
+bbdoc: Places toast notifications at the bottom-left of the display.
+End Rem
 Const UIToastBottomLeft:Int = 6
+Rem
+bbdoc: Places toast notifications at the bottom-center of the display.
+End Rem
 Const UIToastBottomCenter:Int = 7
+Rem
+bbdoc: Places toast notifications at the bottom-right of the display.
+End Rem
 Const UIToastBottomRight:Int = 8
+Rem
+bbdoc: Default angular span of an arc gauge in degrees.
+End Rem
 Const UIGaugeSweepDegrees:Int = 270
+Rem
+bbdoc: Default starting angle of an arc gauge in degrees.
+End Rem
 Const UIGaugeStartDegrees:Int = 135
+Rem
+bbdoc: Selects horizontal pointer movement for rotary-dial interaction.
+End Rem
 Const UIDialDragHorizontal:Int = 0
+Rem
+bbdoc: Selects vertical pointer movement for rotary-dial interaction.
+End Rem
 Const UIDialDragVertical:Int = 1
 
+Rem
+bbdoc: Event emitted when a button-like widget or dialog action is activated.
+about: The event source is the activated widget. Pointer activation also records
+the display coordinates in the event's `x` and `y` fields. Dialogs place their
+result value in `data`.
+End Rem
 Global EVENT_UIACTION:Int = AllocUserEventId("UIAction")
+Rem
+bbdoc: Event emitted after the value of a control changes interactively.
+about: The event source is the changed widget and `data` contains its current
+integer or Boolean value.
+End Rem
 Global EVENT_UIVALUECHANGED:Int = AllocUserEventId("UIValueChanged")
+Rem
+bbdoc: Event emitted after keyboard or pointer focus moves to another widget.
+about: The event source is the newly focused widget, or `Null` when focus is
+cleared. The previous focused widget is available through `extra`.
+End Rem
 Global EVENT_UIFOCUSCHANGED:Int = AllocUserEventId("UIFocusChanged")
+Rem
+bbdoc: Event emitted after a selectable widget changes its selection.
+about: The event source is the changed widget and `data` contains its selected
+index. A list also supplies the selected item through `extra`.
+End Rem
 Global EVENT_UISELECTIONCHANGED:Int = AllocUserEventId("UISelectionChanged")
+Rem
+bbdoc: Event emitted after a page stack changes its visible page.
+about: The event source is the page stack and `data` contains its current depth.
+End Rem
 Global EVENT_UIPAGECHANGED:Int = AllocUserEventId("UIPageChanged")
+
+Private
 
 Extern "C"
 	Function _UISin:Double(degrees:Double) = "bmx_ui_sin"
 	Function _UICos:Double(degrees:Double) = "bmx_ui_cos"
 End Extern
 
+Public
+
+Rem
+bbdoc: Mutable colors, typography, borders, and padding for one widget state.
+about: Styles are commonly shared through a TUITheme. Use Copy before changing
+a shared style when only one widget or state should be affected.
+End Rem
 Type TUIStyle
+	Rem
+	bbdoc: Bitmap font used to draw text, or Null to use the graphics default.
+	End Rem
 	Field font:TBitmapFont
+	Rem
+	bbdoc: Positive integer scale applied when drawing the style's font.
+	End Rem
 	Field fontScale:Int = 1
+	Rem
+	bbdoc: Foreground text and mark color in `$RRGGBB` form.
+	End Rem
 	Field foreground:UInt = $ffffff
+	Rem
+	bbdoc: Background fill color in `$RRGGBB` form.
+	End Rem
 	Field background:UInt
+	Rem
+	bbdoc: Border color in `$RRGGBB` form.
+	End Rem
 	Field border:UInt
+	Rem
+	bbdoc: True when the background color should be drawn.
+	End Rem
 	Field backgroundVisible:Int
+	Rem
+	bbdoc: Border thickness in pixels, or zero for no border.
+	End Rem
 	Field borderWidth:Int
+	Rem
+	bbdoc: Corner radius in pixels.
+	End Rem
 	Field cornerRadius:Int
+	Rem
+	bbdoc: Inner spacing at the left edge in pixels.
+	End Rem
 	Field paddingLeft:Int
+	Rem
+	bbdoc: Inner spacing at the top edge in pixels.
+	End Rem
 	Field paddingTop:Int
+	Rem
+	bbdoc: Inner spacing at the right edge in pixels.
+	End Rem
 	Field paddingRight:Int
+	Rem
+	bbdoc: Inner spacing at the bottom edge in pixels.
+	End Rem
 	Field paddingBottom:Int
 
+	Rem
+	bbdoc: Creates a style with the requested foreground and optional background.
+	param: Foreground color in `$RRGGBB` form.
+	param: Background color in `$RRGGBB` form.
+	param: True to draw the background color.
+	returns: A new mutable style.
+	End Rem
 	Function Create:TUIStyle(foreground:UInt = $ffffff, background:UInt = 0, ..
 			backgroundVisible:Int = False)
 		Local style:TUIStyle = New TUIStyle
@@ -90,6 +263,10 @@ Type TUIStyle
 		Return style
 	End Function
 
+	Rem
+	bbdoc: Creates an independent copy of this style.
+	returns: A new style containing the same visual properties.
+	End Rem
 	Method Copy:TUIStyle()
 		Local result:TUIStyle = New TUIStyle
 		result.font = font
@@ -107,10 +284,21 @@ Type TUIStyle
 		Return result
 	End Method
 
+	Rem
+	bbdoc: Sets equal padding on all four edges.
+	param: Non-negative padding in pixels.
+	End Rem
 	Method SetPadding(value:Int)
 		SetPaddingEdges(value, value, value, value)
 	End Method
 
+	Rem
+	bbdoc: Sets the padding of each edge independently.
+	param: Left padding in pixels.
+	param: Top padding in pixels.
+	param: Right padding in pixels.
+	param: Bottom padding in pixels.
+	End Rem
 	Method SetPaddingEdges(left:Int, top:Int, right:Int, bottom:Int)
 		paddingLeft = left
 		paddingTop = top
@@ -119,28 +307,99 @@ Type TUIStyle
 	End Method
 End Type
 
+Rem
+bbdoc: State-aware style collection and interaction metrics for a UI context.
+about: A theme supplies the default appearance for containers, text, controls,
+cards, headers, navigation, focus, and disabled or pressed states. Individual
+widgets may override those styles without changing the theme.
+End Rem
 Type TUITheme
+	Rem
+	bbdoc: Style used to clear and draw the screen background.
+	End Rem
 	Field screen:TUIStyle
+	Rem
+	bbdoc: Default style for layout containers.
+	End Rem
 	Field container:TUIStyle
+	Rem
+	bbdoc: Default style for labels.
+	End Rem
 	Field label:TUIStyle
+	Rem
+	bbdoc: Normal button style.
+	End Rem
 	Field button:TUIStyle
+	Rem
+	bbdoc: Pressed button style.
+	End Rem
 	Field buttonPressed:TUIStyle
+	Rem
+	bbdoc: Disabled button style.
+	End Rem
 	Field buttonDisabled:TUIStyle
+	Rem
+	bbdoc: Normal selection-control style.
+	End Rem
 	Field control:TUIStyle
+	Rem
+	bbdoc: Active or selected control style.
+	End Rem
 	Field controlActive:TUIStyle
+	Rem
+	bbdoc: Pressed control style.
+	End Rem
 	Field controlPressed:TUIStyle
+	Rem
+	bbdoc: Disabled control style.
+	End Rem
 	Field controlDisabled:TUIStyle
+	Rem
+	bbdoc: Unfilled progress-track style.
+	End Rem
 	Field progress:TUIStyle
+	Rem
+	bbdoc: Filled progress-track style.
+	End Rem
 	Field progressFill:TUIStyle
+	Rem
+	bbdoc: Default card style.
+	End Rem
 	Field card:TUIStyle
+	Rem
+	bbdoc: Default header style.
+	End Rem
 	Field header:TUIStyle
+	Rem
+	bbdoc: Default navigation-region style.
+	End Rem
 	Field navigation:TUIStyle
+	Rem
+	bbdoc: Focus-outline color in `$RRGGBB` form.
+	End Rem
 	Field focusColor:UInt = $ffd84a
+	Rem
+	bbdoc: Focus-outline thickness in pixels.
+	End Rem
 	Field focusWidth:Int = 2
+	Rem
+	bbdoc: Gap in pixels between a widget and its focus outline.
+	End Rem
 	Field focusInset:Int = 2
+	Rem
+	bbdoc: Minimum automatically measured button height in pixels.
+	End Rem
 	Field buttonMinimumHeight:Int
+	Rem
+	bbdoc: Minimum automatically measured selection-row height in pixels.
+	End Rem
 	Field selectionMinimumHeight:Int
 
+	Rem
+	bbdoc: Creates the standard dark embedded UI theme.
+	param: Optional bitmap font applied throughout the theme.
+	returns: A new fully initialized theme.
+	End Rem
 	Function Dark:TUITheme(font:TBitmapFont = Null)
 		Local theme:TUITheme = New TUITheme
 		theme.screen = TUIStyle.Create($e8edf2, $10161d, True)
@@ -187,6 +446,11 @@ Type TUITheme
 		Return theme
 	End Function
 
+	Rem
+	bbdoc: Applies one font and scale to every style in this theme.
+	param: Bitmap font to use, or Null to use the graphics default.
+	param: Positive integer glyph scale; values below one are clamped to one.
+	End Rem
 	Method SetFont(font:TBitmapFont, scale:Int = 1)
 		If scale < 1 Then scale = 1
 		screen.font = font
@@ -223,6 +487,7 @@ Type TUITheme
 
 	Rem
 	bbdoc: Sets the minimum automatically measured button height.
+	param: Minimum height in pixels; negative values are clamped to zero.
 	about: This keeps touch targets finger-sized independently of the selected
 	font. A button with an explicit height still uses that requested height.
 	End Rem
@@ -232,6 +497,7 @@ Type TUITheme
 
 	Rem
 	bbdoc: Sets the minimum automatically measured selection-control height.
+	param: Minimum height in pixels; negative values are clamped to zero.
 	about: This applies to combo boxes and selectable list or popup rows, keeping
 	the closed control and its dropdown choices finger-sized independently of the
 	font. An explicit widget height still takes precedence.

@@ -21,6 +21,9 @@ Import Embedded.Drivers.Touch
 Import Embedded.UI
 Import Embedded.UI.Controls
 
+Rem
+bbdoc: Maximum number of touch devices that may be bound simultaneously.
+End Rem
 Const UITouchContextMaximum:Int = 4
 
 Private
@@ -59,6 +62,13 @@ Type TUITouchInput Extends TUIInputBinding Final
 	Field touchScrolled:Int
 
 	Public
+	Rem
+	bbdoc: Attaches a touch device to an existing UI context.
+	param: UI context that will receive normalized pointer interaction.
+	param: Touch device that emits BRL.Event touch events.
+	returns: A retained binding, or Null when the arguments are invalid, the
+	context already has input, or all adapter slots are occupied.
+	End Rem
 	Function Attach:TUITouchInput(ui:TUIContext, device:TTouchDevice)
 		If Not ui Or Not device Then Return Null
 		Local freeSlot:Int = -1
@@ -80,6 +90,10 @@ Type TUITouchInput Extends TUIInputBinding Final
 
 	Rem
 	bbdoc: Creates a UI context and attaches a touch device.
+	param: Display presented by the new context.
+	param: Touch device used for pointer interaction.
+	param: Optional theme; the standard dark theme is used when Null.
+	returns: The initialized context, or Null when creation or attachment fails.
 	End Rem
 	Function CreateContext:TUIContext(display:TDisplay, device:TTouchDevice, ..
 			theme:TUITheme = Null)
@@ -94,6 +108,12 @@ Type TUITouchInput Extends TUIInputBinding Final
 
 	Rem
 	bbdoc: Creates a UI context over an existing framebuffer and attaches touch.
+	param: Display buffer to draw into.
+	param: Display that presents the buffer.
+	param: Touch device used for pointer interaction.
+	param: Optional theme; the standard dark theme is used when Null.
+	returns: The initialized context, or Null when creation or attachment fails.
+	about: The caller retains ownership of the supplied display buffer.
 	End Rem
 	Function CreateContextWithBuffer:TUIContext(frame:TDisplayBuffer, ..
 			display:TDisplay, device:TTouchDevice, theme:TUITheme = Null)
@@ -106,18 +126,35 @@ Type TUITouchInput Extends TUIInputBinding Final
 		Return ui
 	End Function
 
+	Rem
+	bbdoc: Returns the context receiving this adapter's pointer interaction.
+	returns: The attached context, or Null after Close.
+	End Rem
 	Method Context:TUIContext()
 		Return ui
 	End Method
 
+	Rem
+	bbdoc: Returns the touch device monitored by this adapter.
+	returns: The attached device, or Null after Close.
+	End Rem
 	Method Device:TTouchDevice()
 		Return device
 	End Method
 
+	Rem
+	bbdoc: Reports that this adapter advances inertial scrolling from touch events.
+	returns: True.
+	End Rem
 	Method UpdatesScrollMomentum:Int() Override
 		Return True
 	End Method
 
+	Rem
+	bbdoc: Detaches the device and releases this adapter slot.
+	about: Closing is safe to repeat. TUIContext.Close calls this automatically
+	for its active input binding.
+	End Rem
 	Method Close() Override
 		If slot >= 0 And slot < UITouchContextMaximum And _touchInputs[slot] = Self Then ..
 			_touchInputs[slot] = Null
@@ -134,6 +171,10 @@ Type TUITouchInput Extends TUIInputBinding Final
 		If oldUI Then oldUI.UnbindInput(Self)
 	End Method
 
+	Rem
+	bbdoc: Translates one touch event into focus, scrolling, and widget activation.
+	param: Touch event to process; unrelated events and devices are ignored.
+	End Rem
 	Method HandleEvent(event:TEvent)
 		If Not ui Or Not device Or Not event Or event.source <> device Then Return
 		Local frame:TDisplayBuffer = ui.Frame()
