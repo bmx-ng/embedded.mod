@@ -861,8 +861,10 @@ Type TEmbedded2DContext Final
 			If offset Then DrawLine(leftCenter - extent, bottomCenter + offset, ..
 				rightCenter + extent, bottomCenter + offset)
 		Next
-		If bottomCenter - topCenter > 1 Then ..
-			FillRect(x, topCenter + 1, width, bottomCenter - topCenter - 1)
+		' The upper arc already supplies topCenter. Fill through bottomCenter so
+		' the lower arc begins on the following row without a one-pixel seam.
+		If bottomCenter > topCenter Then ..
+			FillRect(x, topCenter + 1, width, bottomCenter - topCenter)
 	End Method
 
 	Method FillRect(x:Int, y:Int, width:Int, height:Int)

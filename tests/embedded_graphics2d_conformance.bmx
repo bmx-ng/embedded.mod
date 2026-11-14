@@ -192,7 +192,10 @@ shapeFrame.Clear()
 shapeGraphics.FillRoundRect(2, 2, 12, 8, 3)
 passed :& shapeFrame.Pixel(2, 2) = 0 And shapeFrame.Pixel(13, 2) = 0
 passed :& shapeFrame.Pixel(5, 2) = 1 And shapeFrame.Pixel(2, 5) = 1
-passed :& shapeFrame.Pixel(7, 5) = 1
+' Both centre rows must join the rounded halves. A missing lower centre row
+' leaves the bottom of short badges looking like a detached strip.
+passed :& shapeFrame.Pixel(7, 5) = 1 And shapeFrame.Pixel(2, 6) = 1
+passed :& shapeFrame.Pixel(7, 6) = 1
 shapeFrame.Clear()
 shapeGraphics.DrawRoundRect(2, 2, 12, 8, 3)
 passed :& shapeFrame.Pixel(5, 2) = 1 And shapeFrame.Pixel(2, 5) = 1
