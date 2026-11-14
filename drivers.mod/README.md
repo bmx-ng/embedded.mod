@@ -272,6 +272,11 @@ accepts smaller visible rasters and controller-RAM offsets for ST7789 modules
 whose panels expose only part of the 240x320 address space. A full-size RGB565
 framebuffer occupies 153,600 bytes.
 
+The Pico 2 W landscape example configures orientation 90, producing a logical
+320x240 Graphics2D view over the native portrait framebuffer. Its bouncing-ball
+animation presents only the old and new sprite rectangles and sustains 49
+frames per second on the tested module at 12 MHz SPI.
+
 ### ST7796 SPI colour displays
 
 `Embedded.Drivers.Displays.ST7796` provides the same portable RGB565 and
