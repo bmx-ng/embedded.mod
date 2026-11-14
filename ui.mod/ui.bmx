@@ -2727,17 +2727,36 @@ their update path.
 	End Method
 End Type
 
+Rem
+bbdoc: Scrollable single-selection list of retained TUIListItem widgets.
+about: Programmatic selection is silent. Pointer or focus-driven selection
+invokes the registered callback and emits EVENT_UISELECTIONCHANGED.
+End Rem
 Type TUIList Extends TUIScrollView
 	Public
+	Rem
+	bbdoc: Currently selected item, or Null when selection is clear.
+	End Rem
 	Field selectedItem:TUIListItem
+	Rem
+	bbdoc: Optional callback invoked after interactive selection changes.
+	End Rem
 	Field selectionHandler(list:TUIList)
 
 	Public
+	Rem
+	bbdoc: Initializes a compact list with two-pixel item spacing and padding.
+	End Rem
 	Method New()
 		gap = 2
 		SetPadding(2)
 	End Method
 
+	Rem
+	bbdoc: Creates and appends one selectable list item.
+	param: Initial item text.
+	returns: The attached item.
+	End Rem
 	Method Item:TUIListItem(text:String = "")
 		Local item:TUIListItem = New TUIListItem
 		item.listOwner = Self
@@ -2746,6 +2765,10 @@ Type TUIList Extends TUIScrollView
 		Return item
 	End Method
 
+	Rem
+	bbdoc: Returns the number of list-item children.
+	returns: Item count, excluding any non-item children.
+	End Rem
 	Method ItemCount:Int()
 		Local count:Int
 		For Local child:TUIWidget = EachIn uiChildren
@@ -2754,6 +2777,11 @@ Type TUIList Extends TUIScrollView
 		Return count
 	End Method
 
+	Rem
+	bbdoc: Returns one list item by logical item index.
+	param: Zero-based item index.
+	returns: The item, or Null when the index is invalid.
+	End Rem
 	Method ItemAt:TUIListItem(index:Int)
 		If index < 0 Then Return Null
 		Local cursor:Int
@@ -2766,10 +2794,18 @@ Type TUIList Extends TUIScrollView
 		Return Null
 	End Method
 
+	Rem
+	bbdoc: Returns the currently selected item.
+	returns: The selected item, or Null when selection is clear.
+	End Rem
 	Method SelectedItem:TUIListItem()
 		Return selectedItem
 	End Method
 
+	Rem
+	bbdoc: Returns the logical index of the selected item.
+	returns: Zero-based index, or -1 when selection is clear.
+	End Rem
 	Method SelectedIndex:Int()
 		If Not selectedItem Then Return -1
 		Local cursor:Int
@@ -2782,14 +2818,28 @@ Type TUIList Extends TUIScrollView
 		Return -1
 	End Method
 
+	Rem
+	bbdoc: Selects an item without emitting a selection notification.
+	param: Zero-based item index; an invalid index clears selection.
+	End Rem
 	Method SetSelectedIndex(value:Int)
 		_SetSelectedItem(ItemAt(value), False)
 	End Method
 
+	Rem
+	bbdoc: Clears selection without emitting a selection notification.
+	End Rem
 	Method ClearSelection()
 		_SetSelectedItem(Null, False)
 	End Method
 
+	Rem
+	bbdoc: Moves interactive selection by a signed number of items.
+	param: Signed index delta; movement is clamped at the list ends.
+	returns: True when selection changed.
+	about: The selected item is revealed and focused. A change invokes the
+callback and emits EVENT_UISELECTIONCHANGED.
+	End Rem
 	Method MoveSelection:Int(delta:Int)
 		If delta = 0 Or ItemCount() = 0 Then Return False
 		Local index:Int = SelectedIndex()
@@ -2812,15 +2862,29 @@ Type TUIList Extends TUIScrollView
 		Return True
 	End Method
 
+	Rem
+	bbdoc: Registers the interactive selection-change callback.
+	param: Callback receiving this list, or Null to remove it.
+	End Rem
 	Method OnSelectionChanged(handler(list:TUIList))
 		selectionHandler = handler
 	End Method
 
 	Public
+	Rem
+	bbdoc: Selects an item as an interactive action.
+	param: Item owned by this list.
+	about: Intended for TUIListItem and popup subclasses.
+	End Rem
 	Method _SelectItem(item:TUIListItem)
 		_SetSelectedItem(item, True)
 	End Method
 
+	Rem
+	bbdoc: Updates selection with optional callback and event notification.
+	param: Item owned by this list, or Null to clear selection.
+	param: True to notify observers.
+	End Rem
 	Method _SetSelectedItem(item:TUIListItem, notify:Int)
 		If item And item.listOwner <> Self Then Return
 		If selectedItem = item Then Return
@@ -2838,17 +2902,33 @@ Type TUIList Extends TUIScrollView
 	End Method
 End Type
 
+Rem
+bbdoc: One focusable and selectable text row owned by a TUIList.
+End Rem
 Type TUIListItem Extends TUIWidget Final
 	Public
+	Rem
+	bbdoc: List that owns this item.
+	End Rem
 	Field listOwner:TUIList
+	Rem
+	bbdoc: Text displayed by this item.
+	End Rem
 	Field itemText:String
 
 	Public
+	Rem
+	bbdoc: Initializes a clickable and focusable list item.
+	End Rem
 	Method New()
 		clickable = True
 		focusable = True
 	End Method
 
+	Rem
+	bbdoc: Sets the displayed item text.
+	param: Text to display; Null is treated as an empty string.
+	End Rem
 	Method SetText(text:String)
 		If Not text Then text = ""
 		If itemText = text Then Return
@@ -2857,10 +2937,18 @@ Type TUIListItem Extends TUIWidget Final
 		_RequestLayout()
 	End Method
 
+	Rem
+	bbdoc: Returns the displayed item text.
+	returns: Current text.
+	End Rem
 	Method Text:String()
 		Return itemText
 	End Method
 
+	Rem
+	bbdoc: Reports whether this item is selected by its owner.
+	returns: True when this is the list's selected item.
+	End Rem
 	Method Selected:Int()
 		Return listOwner And listOwner.SelectedItem() = Self
 	End Method
@@ -2928,16 +3016,29 @@ Type TUIListItem Extends TUIWidget Final
 		Return False
 	End Method
 
+	Rem
+	bbdoc: Selects this item through its owning list.
+	about: Intended for focus and pointer adapters.
+	End Rem
 	Method _Activate()
 		If listOwner Then listOwner._SelectItem(Self)
 	End Method
 End Type
 
+Rem
+bbdoc: Overlay list used for transient selection menus and combo-box choices.
+End Rem
 Type TUIPopupMenu Extends TUIList
 	Public
+	Rem
+	bbdoc: Combo box receiving this popup's selection, or Null when standalone.
+	End Rem
 	Field comboOwner:TUIComboBox
 
 	Public
+	Rem
+	bbdoc: Initializes a list with a visible background suitable for overlays.
+	End Rem
 	Method New()
 		Super.New()
 		SetBackgroundVisible(True)
@@ -2959,6 +3060,11 @@ Type TUIPopupMenu Extends TUIList
 	End Method
 End Type
 
+Rem
+bbdoc: Compact single-selection control that opens its choices in an overlay list.
+about: SetSelectedIndex changes the value silently. Pointer, focused adjustment,
+or popup selection invokes OnChange and emits EVENT_UISELECTIONCHANGED.
+End Rem
 Type TUIComboBox Extends TUIWidget Final
 	Private
 	Field itemNames:String[] = New String[0]
@@ -2967,11 +3073,19 @@ Type TUIComboBox Extends TUIWidget Final
 	Field changeHandler(combo:TUIComboBox)
 
 	Public
+	Rem
+	bbdoc: Initializes a clickable and focusable combo box with no items.
+	End Rem
 	Method New()
 		clickable = True
 		focusable = True
 	End Method
 
+	Rem
+	bbdoc: Appends one choice.
+	param: Text displayed for the choice.
+	returns: Zero-based index of the appended choice.
+	End Rem
 	Method AddItem:Int(text:String)
 		If Not text Then text = ""
 		itemNames = itemNames[..itemNames.Length + 1]
@@ -2982,32 +3096,61 @@ Type TUIComboBox Extends TUIWidget Final
 		Return itemNames.Length - 1
 	End Method
 
+	Rem
+	bbdoc: Returns the number of choices.
+	returns: Choice count.
+	End Rem
 	Method ItemCount:Int()
 		Return itemNames.Length
 	End Method
 
+	Rem
+	bbdoc: Returns the text of one choice.
+	param: Zero-based choice index.
+	returns: Choice text, or an empty string for an invalid index.
+	End Rem
 	Method ItemText:String(index:Int)
 		If index < 0 Or index >= itemNames.Length Then Return ""
 		Return itemNames[index]
 	End Method
 
+	Rem
+	bbdoc: Returns the selected choice index.
+	returns: Zero-based index, or -1 when there are no choices.
+	End Rem
 	Method SelectedIndex:Int()
 		Return selectedIndex
 	End Method
 
+	Rem
+	bbdoc: Returns the selected choice text.
+	returns: Selected text, or an empty string when no choice is selected.
+	End Rem
 	Method SelectedText:String()
 		Return ItemText(selectedIndex)
 	End Method
 
+	Rem
+	bbdoc: Returns the popup while this combo box owns the active overlay.
+	returns: Active popup, or Null while closed.
+	End Rem
 	Method ActivePopup:TUIPopupMenu()
 		If Context() And Context().ActiveOverlay() = popup Then Return popup
 		Return Null
 	End Method
 
+	Rem
+	bbdoc: Changes selection without invoking the callback or emitting an event.
+	param: Desired index, clamped to the available choices.
+	End Rem
 	Method SetSelectedIndex(value:Int)
 		_SetSelectedIndex(value, False)
 	End Method
 
+	Rem
+	bbdoc: Registers the interactive selection-change callback.
+	param: Callback receiving this combo box, or Null to remove it.
+	End Rem
 	Method OnChange(handler(combo:TUIComboBox))
 		changeHandler = handler
 	End Method
@@ -3125,19 +3268,36 @@ bbdoc: One retained page owned by a TUIPageStack.
 End Rem
 Type TUIPage Extends TUIContainer Final
 	Public
+	Rem
+	bbdoc: Page stack that owns this page.
+	End Rem
 	Field pageOwner:TUIPageStack
+	Rem
+	bbdoc: Application-defined page name.
+	End Rem
 	Field pageName:String
 
 	Public
+	Rem
+	bbdoc: Initializes vertical page content layout.
+	End Rem
 	Method New()
 		layoutDirection = 2
 	End Method
 
+	Rem
+	bbdoc: Sets the application-defined page name.
+	param: Name used to identify the page; Null becomes an empty string.
+	End Rem
 	Method SetName(name:String)
 		If Not name Then name = ""
 		pageName = name
 	End Method
 
+	Rem
+	bbdoc: Returns the application-defined page name.
+	returns: Current name.
+	End Rem
 	Method Name:String()
 		Return pageName
 	End Method
@@ -3157,10 +3317,19 @@ Type TUIPageStack Extends TUIContainer Final
 	Field changeHandler(stack:TUIPageStack)
 
 	Public
+	Rem
+	bbdoc: Initializes an empty page stack.
+	End Rem
 	Method New()
 		layoutDirection = 0
 	End Method
 
+	Rem
+	bbdoc: Creates and retains a page owned by this stack.
+	param: Optional application-defined page name.
+	returns: The new page.
+	about: The first page is pushed automatically; later pages begin hidden.
+	End Rem
 	Method Page:TUIPage(name:String = "")
 		Local page:TUIPage = New TUIPage
 		page.pageOwner = Self
@@ -3173,32 +3342,64 @@ Type TUIPageStack Extends TUIContainer Final
 		Return page
 	End Method
 
+	Rem
+	bbdoc: Returns the number of pages owned by the stack.
+	returns: Retained page count, including pages outside the history.
+	End Rem
 	Method PageCount:Int()
 		Return navigationPages.Length
 	End Method
 
+	Rem
+	bbdoc: Returns one owned page by creation order.
+	param: Zero-based page index.
+	returns: The page, or Null when the index is invalid.
+	End Rem
 	Method PageAt:TUIPage(index:Int)
 		If index < 0 Or index >= navigationPages.Length Then Return Null
 		Return navigationPages[index]
 	End Method
 
+	Rem
+	bbdoc: Returns the current navigation-history depth.
+	returns: Number of pages in the active history.
+	End Rem
 	Method Depth:Int()
 		Return historyDepth
 	End Method
 
+	Rem
+	bbdoc: Returns the visible page at the top of the history.
+	returns: Current page, or Null when the stack is empty.
+	End Rem
 	Method CurrentPage:TUIPage()
 		If historyDepth = 0 Then Return Null
 		Return pageHistory[historyDepth - 1]
 	End Method
 
+	Rem
+	bbdoc: Reports whether Pop can return to an earlier page.
+	returns: True when history contains more than one page.
+	End Rem
 	Method CanPop:Int()
 		Return historyDepth > 1
 	End Method
 
+	Rem
+	bbdoc: Registers the navigation-change callback.
+	param: Callback receiving this page stack, or Null to remove it.
+	End Rem
 	Method OnPageChanged(handler(stack:TUIPageStack))
 		changeHandler = handler
 	End Method
 
+	Rem
+	bbdoc: Pushes an owned page onto the navigation history.
+	param: Page created by this stack and not already in the history.
+	returns: True when the page was pushed.
+	about: The current focused descendant is remembered, the new page becomes
+visible, and EVENT_UIPAGECHANGED is emitted.
+	End Rem
 	Method Push:Int(page:TUIPage)
 		If Not page Or page.pageOwner <> Self Or page = CurrentPage() Or ..
 				historyDepth >= UIPageStackMaximum Then Return False
@@ -3219,6 +3420,12 @@ Type TUIPageStack Extends TUIContainer Final
 		Return True
 	End Method
 
+	Rem
+	bbdoc: Removes the current page from history and reveals its predecessor.
+	returns: True when a page was popped.
+	about: The predecessor's remembered focus is restored after layout and
+EVENT_UIPAGECHANGED is emitted.
+	End Rem
 	Method Pop:Int()
 		If historyDepth <= 1 Then Return False
 		Local outgoing:TUIPage = CurrentPage()
@@ -3237,6 +3444,11 @@ Type TUIPageStack Extends TUIContainer Final
 		Return True
 	End Method
 
+	Rem
+	bbdoc: Replaces the current history entry with another owned page.
+	param: Page created by this stack and absent from earlier history entries.
+	returns: True when replacement succeeded.
+	End Rem
 	Method Replace:Int(page:TUIPage)
 		If Not page Or page.pageOwner <> Self Or page = CurrentPage() Then Return False
 		For Local index:Int = 0 Until historyDepth - 1
@@ -3292,20 +3504,41 @@ Type TUIPageStack Extends TUIContainer Final
 	End Method
 End Type
 
+Rem
+bbdoc: Vertically arranged content page owned by a TUITabView.
+End Rem
 Type TUITabPage Extends TUIContainer Final
 	Public
+	Rem
+	bbdoc: Initializes vertical tab-page layout.
+	End Rem
 	Method New()
 		layoutDirection = 2
 	End Method
 End Type
 
+Rem
+bbdoc: Focusable tab selector owned and configured by a TUITabView.
+End Rem
 Type TUITabButton Extends TUIWidget Final
 	Public
+	Rem
+	bbdoc: Tab view that owns this selector.
+	End Rem
 	Field tabOwner:TUITabView
+	Rem
+	bbdoc: Zero-based page index selected by this button.
+	End Rem
 	Field tabIndex:Int
+	Rem
+	bbdoc: Text displayed by this tab selector.
+	End Rem
 	Field tabText:String
 
 	Public
+	Rem
+	bbdoc: Initializes a clickable and focusable tab selector.
+	End Rem
 	Method New()
 		clickable = True
 		focusable = True
@@ -3376,18 +3609,43 @@ Type TUITabButton Extends TUIWidget Final
 	End Method
 End Type
 
+Rem
+bbdoc: Single-selection tab strip with one retained content page per tab.
+about: Programmatic selection is silent. Pointer or focus-driven selection
+invokes the callback and emits EVENT_UISELECTIONCHANGED.
+End Rem
 Type TUITabView Extends TUIContainer Final
 	Public
+	Rem
+	bbdoc: Retained tab selectors in creation order.
+	End Rem
 	Field tabButtons:TUITabButton[] = New TUITabButton[0]
+	Rem
+	bbdoc: Retained tab pages in creation order.
+	End Rem
 	Field tabPages:TUITabPage[] = New TUITabPage[0]
+	Rem
+	bbdoc: Zero-based selected tab index, or -1 while empty.
+	End Rem
 	Field selectedTab:Int = -1
+	Rem
+	bbdoc: Optional callback invoked after interactive tab selection.
+	End Rem
 	Field selectionHandler(tabView:TUITabView)
 
 	Public
+	Rem
+	bbdoc: Initializes an empty tab view.
+	End Rem
 	Method New()
 		gap = 3
 	End Method
 
+	Rem
+	bbdoc: Adds one tab selector and its retained content page.
+	param: Text displayed by the tab selector.
+	returns: The new page container.
+	End Rem
 	Method Page:TUITabPage(title:String)
 		Local button:TUITabButton = New TUITabButton
 		button.tabOwner = Self
@@ -3408,32 +3666,62 @@ Type TUITabView Extends TUIContainer Final
 		Return page
 	End Method
 
+	Rem
+	bbdoc: Returns the number of tabs and pages.
+	returns: Tab count.
+	End Rem
 	Method PageCount:Int()
 		Return tabPages.Length
 	End Method
 
+	Rem
+	bbdoc: Returns one tab page by index.
+	param: Zero-based tab index.
+	returns: The page, or Null when the index is invalid.
+	End Rem
 	Method PageAt:TUITabPage(index:Int)
 		If index < 0 Or index >= tabPages.Length Then Return Null
 		Return tabPages[index]
 	End Method
 
+	Rem
+	bbdoc: Returns one tab selector by index.
+	param: Zero-based tab index.
+	returns: The selector, or Null when the index is invalid.
+	End Rem
 	Method TabButtonAt:TUITabButton(index:Int)
 		If index < 0 Or index >= tabButtons.Length Then Return Null
 		Return tabButtons[index]
 	End Method
 
+	Rem
+	bbdoc: Returns the selected tab index.
+	returns: Zero-based index, or -1 while empty.
+	End Rem
 	Method SelectedIndex:Int()
 		Return selectedTab
 	End Method
 
+	Rem
+	bbdoc: Returns the selected content page.
+	returns: Selected page, or Null while empty.
+	End Rem
 	Method SelectedPage:TUITabPage()
 		Return PageAt(selectedTab)
 	End Method
 
+	Rem
+	bbdoc: Selects a tab without invoking the callback or emitting an event.
+	param: Valid zero-based tab index.
+	End Rem
 	Method SetSelectedIndex(value:Int)
 		_SelectIndex(value, False)
 	End Method
 
+	Rem
+	bbdoc: Registers the interactive tab-selection callback.
+	param: Callback receiving this tab view, or Null to remove it.
+	End Rem
 	Method OnSelectionChanged(handler(tabView:TUITabView))
 		selectionHandler = handler
 	End Method
@@ -3466,6 +3754,12 @@ Type TUITabView Extends TUIContainer Final
 	End Method
 
 	Public
+	Rem
+	bbdoc: Updates the selected tab with optional observer notification.
+	param: Valid zero-based tab index.
+	param: True to invoke the callback and emit EVENT_UISELECTIONCHANGED.
+	about: Intended for tab selectors and input adapters.
+	End Rem
 	Method _SelectIndex(value:Int, notify:Int)
 		If value < 0 Or value >= tabPages.Length Or selectedTab = value Then Return
 		Local previous:Int = selectedTab
