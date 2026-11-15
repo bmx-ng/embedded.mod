@@ -65,3 +65,30 @@ adapter:
 bmk makeapp -r -a -board esp32_s31_korvo_1 -heap-region psram -heap 512k -x \
     benchmarks/graphics2d/graphics2d_present_esp32_s31_korvo_1.bmx
 ```
+
+## Representative UI frames
+
+`graphics2d_ui_frame_esp32_s31_korvo_1.bmx` measures a deterministic retained
+dashboard built from `Embedded.UI`. It exercises real layout, labels, status
+indicators, an arc gauge, a sparkline, and a progress bar. The three cases are:
+
+- `single_status`: one small status indicator changes;
+- `dashboard_tick`: several separated dashboard values change together;
+- `full_redraw`: the complete retained tree is redrawn.
+
+Each case reports four separate phases. `ui_prepare` measures widget state
+updates and invalid-region merging, `ui_render` measures retained-tree drawing,
+`ui_present` measures physical display submission, and `ui_frame` is their sum.
+The records also include the mean dirty-region count and pixel area, making it
+possible to distinguish drawing improvements from better damage tracking or
+display-driver behaviour.
+
+Run the S31 reference workload with:
+
+```sh
+bmk makeapp -r -a -board esp32_s31_korvo_1 -heap-region psram -heap 512k -x \
+    benchmarks/graphics2d/graphics2d_ui_frame_esp32_s31_korvo_1.bmx
+```
+
+This is intentionally a display-only scene. It does not import touch or the
+interactive control adapter, so input polling cannot distort the frame timings.
