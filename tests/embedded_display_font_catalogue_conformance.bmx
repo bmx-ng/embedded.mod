@@ -86,4 +86,12 @@ CheckFont Terminus14x28BoldFont(), 28, 1300, "Terminus 14x28 bold"
 CheckFont Terminus16x32Font(), 32, 1300, "Terminus 16x32 regular"
 CheckFont Terminus16x32BoldFont(), 32, 1300, "Terminus 16x32 bold"
 
+' Exercise the non-ASCII lookup path repeatedly. These calls populate and then
+' reuse the font's fixed Unicode cache rather than taking the ASCII shortcut.
+Local cyrillicFont:TBitmapFont = Terminus6x12Font()
+For Local repeat:Int = 0 Until 32
+	If Not cyrillicFont.HasGlyph($0410) Or Not cyrillicFont.HasGlyph($044F) Then ..
+		RuntimeError "Terminus 6x12 is missing Cyrillic glyphs"
+Next
+
 Print "embedded bitmap-font catalogue conformance: PASS"

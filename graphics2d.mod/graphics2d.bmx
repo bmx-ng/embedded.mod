@@ -1543,7 +1543,11 @@ Type TEmbedded2DContext Final
 	End Rem
 	Method DrawText:Int(text:String, x:Int, y:Int, scale:Int = 1)
 		If Not target Or Not currentFont Then Return x
-		If scale > 0 And text.length Then
+		' Measuring text requires a complete glyph pass. Retained renderers such as
+		' Embedded.UI disable primitive dirty tracking because they publish their
+		' final invalid regions themselves, so avoid repeating that pass when its
+		' bounds would immediately be discarded.
+		If dirtyTracking And scale > 0 And text.length Then
 			MarkDirtyLogical(x + originX, y + originY, currentFont.TextWidth(text, scale), ..
 				TextLineCount(text) * currentFont.LineHeight() * scale)
 		End If

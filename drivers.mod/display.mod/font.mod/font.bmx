@@ -22,6 +22,11 @@ bbdoc: The Embedded Bitmap Font data-format version accepted by TBitmapFont.
 End Rem
 Const EmbeddedBitmapFontVersion:Int = 1
 
+' Direct-mapped and deliberately small: this removes repeated binary searches
+' for international UI labels without turning every active font into a large
+' RAM-resident lookup table.
+Const EmbeddedBitmapFontGlyphCacheSize:Int = 16
+
 Rem
 bbdoc: Aligns wrapped text against the left edge of its text box.
 End Rem
@@ -98,6 +103,9 @@ Type TBitmapFont
 	Field bitmapsOffset:Int
 	Field recordSize:Int
 	Field asciiGlyphStart:Int
+	Field glyphCacheCodePoint:UInt[EmbeddedBitmapFontGlyphCacheSize]
+	Field glyphCacheIndex:Int[EmbeddedBitmapFontGlyphCacheSize]
+	Field glyphCacheValid:Byte[EmbeddedBitmapFontGlyphCacheSize]
 
 	Public
 	Rem
@@ -205,7 +213,12 @@ Type TBitmapFont
 				lineWidth = 0
 				Continue
 			End If
-			Local glyph:Int = FindGlyph(codePoint, True)
+			Local glyph:Int
+			If asciiGlyphStart >= 0 And codePoint >= 32 And codePoint <= 126 Then
+				glyph = asciiGlyphStart + Int(codePoint - 32)
+			Else
+				glyph = FindGlyph(codePoint, True)
+			End If
 			If glyph >= 0 Then lineWidth :+ GlyphByte(glyph, 12) * scale
 		Wend
 		If lineWidth > maximum Then maximum = lineWidth
@@ -270,7 +283,12 @@ Type TBitmapFont
 				penY :+ fontLineHeight * scale
 				Continue
 			End If
-			Local glyph:Int = FindGlyph(codePoint, True)
+			Local glyph:Int
+			If asciiGlyphStart >= 0 And codePoint >= 32 And codePoint <= 126 Then
+				glyph = asciiGlyphStart + Int(codePoint - 32)
+			Else
+				glyph = FindGlyph(codePoint, True)
+			End If
 			If glyph < 0 Then Continue
 			DrawGlyph(target, glyph, penX, penY, color, scale, ..
 				clipX, clipY, clipX1, clipY1)
@@ -374,7 +392,12 @@ Type TBitmapFont
 
 	Private
 	Method GlyphAdvance:Int(codePoint:UInt, scale:Int)
-		Local glyph:Int = FindGlyph(codePoint, True)
+		Local glyph:Int
+		If asciiGlyphStart >= 0 And codePoint >= 32 And codePoint <= 126 Then
+			glyph = asciiGlyphStart + Int(codePoint - 32)
+		Else
+			glyph = FindGlyph(codePoint, True)
+		End If
 		If glyph < 0 Then Return 0
 		Return GlyphByte(glyph, 12) * scale
 	End Method
@@ -463,7 +486,12 @@ Type TBitmapFont
 		While index < endIndex
 			Local codePoint:UInt = FontNextCodePoint(text, index)
 			If codePoint = 13 Or codePoint = 10 Then Continue
-			Local glyph:Int = FindGlyph(codePoint, True)
+			Local glyph:Int
+			If asciiGlyphStart >= 0 And codePoint >= 32 And codePoint <= 126 Then
+				glyph = asciiGlyphStart + Int(codePoint - 32)
+			Else
+				glyph = FindGlyph(codePoint, True)
+			End If
 			If glyph < 0 Then Continue
 			DrawGlyph(target, glyph, penX, y, color, scale, clipX, clipY, clipX1, clipY1)
 			penX :+ GlyphByte(glyph, 12) * scale
@@ -483,18 +511,34 @@ Type TBitmapFont
 		If asciiGlyphStart >= 0 And codePoint >= 32 And codePoint <= 126 Then
 			Return asciiGlyphStart + Int(codePoint - 32)
 		End If
+		Local cacheSlot:Int = Int((codePoint ~ (codePoint Shr 8) ~ (codePoint Shr 16)) & ..
+			UInt(EmbeddedBitmapFontGlyphCacheSize - 1))
+		If glyphCacheValid[cacheSlot] And glyphCacheCodePoint[cacheSlot] = codePoint Then
+			Local cached:Int = glyphCacheIndex[cacheSlot]
+			If cached >= 0 Or Not useDefault Then Return cached
+			If codePoint <> defaultCodePoint Then Return FindGlyph(defaultCodePoint, False)
+			Return -1
+		End If
 		Local low:Int
 		Local high:Int = glyphCount - 1
 		While low <= high
 			Local middle:Int = low + ((high - low) Shr 1)
 			Local found:UInt = FontU32(data, GlyphRecordOffset(middle))
-			If found = codePoint Then Return middle
+			If found = codePoint Then
+				glyphCacheCodePoint[cacheSlot] = codePoint
+				glyphCacheIndex[cacheSlot] = middle
+				glyphCacheValid[cacheSlot] = True
+				Return middle
+			End If
 			If found < codePoint Then
 				low = middle + 1
 			Else
 				high = middle - 1
 			End If
 		Wend
+		glyphCacheCodePoint[cacheSlot] = codePoint
+		glyphCacheIndex[cacheSlot] = -1
+		glyphCacheValid[cacheSlot] = True
 		If useDefault And codePoint <> defaultCodePoint Then Return FindGlyph(defaultCodePoint, False)
 		Return -1
 	End Method
