@@ -97,6 +97,7 @@ Type TBitmapFont
 	Field recordsOffset:Int
 	Field bitmapsOffset:Int
 	Field recordSize:Int
+	Field asciiGlyphStart:Int
 
 	Public
 	Rem
@@ -127,7 +128,20 @@ Type TBitmapFont
 		result.defaultCodePoint = FontU32(data, 20)
 		result.recordsOffset = records
 		result.bitmapsOffset = bitmaps
+		result.asciiGlyphStart = -1
 		If result.fontLineHeight <= 0 Then Return Null
+		Local asciiStart:Int = result.FindGlyph(32, False)
+		If asciiStart >= 0 And asciiStart + 94 < count Then
+			Local contiguous:Int = True
+			For Local asciiOffset:Int = 0 Until 95
+				If FontU32(data, result.GlyphRecordOffset(asciiStart + asciiOffset)) <> ..
+						UInt(32 + asciiOffset) Then
+					contiguous = False
+					Exit
+				End If
+			Next
+			If contiguous Then result.asciiGlyphStart = asciiStart
+		End If
 		Return result
 	End Function
 
@@ -466,6 +480,9 @@ Type TBitmapFont
 	End Method
 
 	Method FindGlyph:Int(codePoint:UInt, useDefault:Int)
+		If asciiGlyphStart >= 0 And codePoint >= 32 And codePoint <= 126 Then
+			Return asciiGlyphStart + Int(codePoint - 32)
+		End If
 		Local low:Int
 		Local high:Int = glyphCount - 1
 		While low <= high
