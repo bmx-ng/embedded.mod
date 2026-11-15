@@ -13,15 +13,15 @@ Const BenchmarkHeight:Int = 128
 ' Allow a serial monitor to reconnect after upload before emitting the one-shot report.
 SleepMicroseconds(3000000)
 
-Local rgb565:TGraphics2DBenchmark = TGraphics2DBenchmark.Create(BenchmarkWidth, ..
-	BenchmarkHeight, DisplayPixelFormatRGB565)
-If Not rgb565 Then RuntimeError "Unable to create RGB565 Graphics2D benchmark"
-rgb565.RunRenderSuite()
+Function RunFormat(pixelFormat:Int, formatName:String)
+	Local benchmark:TGraphics2DBenchmark = TGraphics2DBenchmark.Create(BenchmarkWidth, ..
+		BenchmarkHeight, pixelFormat)
+	If Not benchmark Then RuntimeError "Unable to create " + formatName + " Graphics2D benchmark"
+	benchmark.RunRenderSuite()
+End Function
 
-Local mono1:TGraphics2DBenchmark = TGraphics2DBenchmark.Create(BenchmarkWidth, ..
-	BenchmarkHeight, DisplayPixelFormatMono1)
-If Not mono1 Then RuntimeError "Unable to create Mono1 Graphics2D benchmark"
-mono1.RunRenderSuite()
+RunFormat(DisplayPixelFormatRGB565, "RGB565")
+RunFormat(DisplayPixelFormatMono1, "Mono1")
 
 Print "G2D_BENCH,format=" + GraphicsBenchmarkFormat + ",kind=done"
 

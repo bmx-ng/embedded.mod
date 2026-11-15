@@ -24,6 +24,14 @@ bmk makeapp -r -a -board pico2 benchmarks/graphics2d/graphics2d_render_benchmark
 bmk makeapp -r -a -board baguette_s3 benchmarks/graphics2d/graphics2d_render_benchmark.bmx
 ```
 
+Graphics workloads may use a larger managed heap. On a PSRAM-equipped ESP32,
+for example:
+
+```sh
+bmk makeapp -r -a -board esp32_s31_korvo_1 -heap-region psram -heap 512k \
+    benchmarks/graphics2d/graphics2d_render_benchmark.bmx
+```
+
 Capture the serial output before and after a renderer change, then compare it:
 
 ```sh
@@ -49,3 +57,11 @@ and two-region updates. Those results use `phase=present` so SPI or parallel-
 transfer improvements cannot be mistaken for raster improvements. A hardware
 launcher is intentionally responsible for pins, bus rate and display setup,
 which must be recorded alongside its captured results.
+
+The ESP32-S31 Korvo-1 800x480 RGB launcher is provided as a reference physical
+adapter:
+
+```sh
+bmk makeapp -r -a -board esp32_s31_korvo_1 -heap-region psram -heap 512k -x \
+    benchmarks/graphics2d/graphics2d_present_esp32_s31_korvo_1.bmx
+```

@@ -16,6 +16,12 @@ Const GraphicsBenchmarkWarmups:Int = 2
 Const GraphicsBenchmarkCaseCount:Int = 14
 Const GraphicsBenchmarkPresentSamples:Int = 5
 
+Function BenchmarkHousekeeping()
+	' A long uninterrupted benchmark can starve an embedded platform's idle task.
+	' Keep the cooperative yield outside timed sections.
+	Delay 10
+End Function
+
 ?pico
 Const GraphicsBenchmarkPlatform:String = "pico"
 ?esp32
@@ -33,6 +39,11 @@ Type TGraphics2DBenchmark
 	Field image:TEmbeddedImage
 	Field samples:ULong[] = New ULong[GraphicsBenchmarkSamples]
 	Field checksums:UInt[] = New UInt[GraphicsBenchmarkSamples]
+	Field renderSamples:ULong[] = New ULong[GraphicsBenchmarkCaseCount * GraphicsBenchmarkSamples]
+	Field renderBest:ULong[] = New ULong[GraphicsBenchmarkCaseCount]
+	Field renderMean:ULong[] = New ULong[GraphicsBenchmarkCaseCount]
+	Field renderChecksums:UInt[] = New UInt[GraphicsBenchmarkCaseCount]
+	Field renderIterations:Int[] = New Int[GraphicsBenchmarkCaseCount]
 	Field presentX:Int[] = New Int[2]
 	Field presentY:Int[] = New Int[2]
 	Field presentWidth:Int[] = New Int[2]
@@ -75,8 +86,36 @@ Type TGraphics2DBenchmark
 			",platform=" + GraphicsBenchmarkPlatform + ..
 			",width=" + frame.Width() + ",height=" + frame.Height() + ..
 			",pixel_format=" + pixelFormatName + ",samples=" + GraphicsBenchmarkSamples
+		BenchmarkHousekeeping()
 		For Local caseId:Int = 0 Until GraphicsBenchmarkCaseCount
 			RunRenderCase(caseId)
+		Next
+		PrintRenderResults()
+	End Method
+
+	Method PrintRenderResults()
+		For Local caseId:Int = 0 Until GraphicsBenchmarkCaseCount
+			Local iterations:Int = renderIterations[caseId]
+			For Local sample:Int = 0 Until GraphicsBenchmarkSamples
+				Print "G2D_BENCH,format=" + GraphicsBenchmarkFormat + ",kind=sample,phase=render" + ..
+					",platform=" + GraphicsBenchmarkPlatform + ",width=" + frame.Width() + ..
+					",height=" + frame.Height() + ",pixel_format=" + pixelFormatName + ..
+					",case=" + CaseName(caseId) + ..
+					",sample=" + sample + ",iterations=" + iterations + ..
+					",nominal_pixels=" + CaseNominalPixels(caseId, iterations) + ..
+					",us=" + renderSamples[caseId * GraphicsBenchmarkSamples + sample] + ..
+					",checksum=" + renderChecksums[caseId]
+				BenchmarkHousekeeping()
+			Next
+			Print "G2D_BENCH,format=" + GraphicsBenchmarkFormat + ",kind=summary,phase=render" + ..
+				",platform=" + GraphicsBenchmarkPlatform + ",width=" + frame.Width() + ..
+				",height=" + frame.Height() + ",pixel_format=" + pixelFormatName + ..
+				",case=" + CaseName(caseId) + ..
+				",iterations=" + iterations + ",nominal_pixels=" + ..
+				CaseNominalPixels(caseId, iterations) + ..
+				",best_us=" + renderBest[caseId] + ",mean_us=" + renderMean[caseId] + ..
+				",checksum=" + renderChecksums[caseId]
+			BenchmarkHousekeeping()
 		Next
 	End Method
 
@@ -114,6 +153,7 @@ Type TGraphics2DBenchmark
 				",sample=" + sample + ",iterations=1,nominal_pixels=" + ..
 				PresentationCasePixels(display, caseId) + ",us=" + elapsed + ..
 				",checksum=" + checksum
+			BenchmarkHousekeeping()
 		Next
 		Print "G2D_BENCH,format=" + GraphicsBenchmarkFormat + ",kind=summary,phase=present" + ..
 			",platform=" + GraphicsBenchmarkPlatform + ",width=" + display.Width() + ..
@@ -122,6 +162,7 @@ Type TGraphics2DBenchmark
 			",iterations=1,nominal_pixels=" + PresentationCasePixels(display, caseId) + ..
 			",best_us=" + best + ",mean_us=" + (total / GraphicsBenchmarkPresentSamples) + ..
 			",checksum=" + checksum
+		BenchmarkHousekeeping()
 	End Method
 
 	Method PreparePresentation()
@@ -214,24 +255,17 @@ Type TGraphics2DBenchmark
 			checksums[sample] = checksum
 			total :+ elapsed
 			If elapsed < best Then best = elapsed
-			Print "G2D_BENCH,format=" + GraphicsBenchmarkFormat + ",kind=sample,phase=render" + ..
-				",platform=" + GraphicsBenchmarkPlatform + ",width=" + frame.Width() + ..
-				",height=" + frame.Height() + ",pixel_format=" + pixelFormatName + ..
-				",case=" + CaseName(caseId) + ..
-				",sample=" + sample + ",iterations=" + iterations + ..
-				",nominal_pixels=" + CaseNominalPixels(caseId, iterations) + ..
-				",us=" + elapsed + ",checksum=" + checksum
+			renderSamples[caseId * GraphicsBenchmarkSamples + sample] = elapsed
+			BenchmarkHousekeeping()
 		Next
 		For Local sample:Int = 1 Until GraphicsBenchmarkSamples
 			If checksums[sample] <> checksums[0] Then RuntimeError "Graphics benchmark checksum changed between samples"
 		Next
-		Print "G2D_BENCH,format=" + GraphicsBenchmarkFormat + ",kind=summary,phase=render" + ..
-			",platform=" + GraphicsBenchmarkPlatform + ",width=" + frame.Width() + ..
-			",height=" + frame.Height() + ",pixel_format=" + pixelFormatName + ..
-			",case=" + CaseName(caseId) + ..
-			",iterations=" + iterations + ",nominal_pixels=" + CaseNominalPixels(caseId, iterations) + ..
-			",best_us=" + best + ",mean_us=" + (total / GraphicsBenchmarkSamples) + ..
-			",checksum=" + checksums[0]
+		renderIterations[caseId] = iterations
+		renderBest[caseId] = best
+		renderMean[caseId] = total / GraphicsBenchmarkSamples
+		renderChecksums[caseId] = checksums[0]
+		BenchmarkHousekeeping()
 	End Method
 
 	Method PrepareCase(caseId:Int)
@@ -240,8 +274,12 @@ Type TGraphics2DBenchmark
 		graphics.ResetViewport()
 		graphics.SetFont(Spleen5x8Font())
 		graphics.SetColorValue($ffffff)
-		frame.Clear($102030)
-		If caseId = 12 Then frame.Clear($315a7d)
+		If frame.Format() = DisplayPixelFormatMono1 Then
+			frame.Clear($000000)
+		Else
+			frame.Clear($102030)
+			If caseId = 12 Then frame.Clear($315a7d)
+		End If
 	End Method
 
 	Method ExecuteCase(caseId:Int, iterations:Int)
@@ -360,18 +398,31 @@ Type TGraphics2DBenchmark
 	End Method
 
 	Method CaseIterations:Int(caseId:Int)
+		Local iterations:Int
 		Select caseId
-			Case 0, 1 Return 32
-			Case 2 Return 192
-			Case 3, 4 Return 128
-			Case 5, 6 Return 96
-			Case 7 Return 48
-			Case 8 Return 64
-			Case 9, 11, 12 Return 128
-			Case 10 Return 64
-			Case 13 Return 192
+			Case 0, 1 iterations = 32
+			Case 2 iterations = 192
+			Case 3, 4 iterations = 128
+			Case 5, 6 iterations = 96
+			Case 7 iterations = 48
+			Case 8 iterations = 64
+			Case 9, 11, 12 iterations = 128
+			Case 10 iterations = 64
+			Case 13 iterations = 192
 		End Select
-		Return 1
+		If iterations = 0 Then iterations = 1
+		' Mono1 uses generic colour conversion and bit-addressed writes. Keep a
+		' single timed batch below embedded watchdog intervals while preserving
+		' enough work for stable microsecond measurements.
+		If frame.Format() = DisplayPixelFormatMono1 Then
+			If caseId >= 8 And caseId <= 12 Then
+				iterations = 1
+			Else
+				iterations :/ 16
+			End If
+			If iterations < 1 Then iterations = 1
+		End If
+		Return iterations
 	End Method
 
 	Method CaseNominalPixels:Long(caseId:Int, iterations:Int)
