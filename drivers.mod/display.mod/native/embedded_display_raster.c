@@ -125,3 +125,51 @@ void bmx_embedded_display_fill_rgb565(uint8_t *pixels, int32_t stride,
         row += stride;
     }
 }
+
+void bmx_embedded_display_draw_line(uint8_t *pixels, int32_t stride,
+        int32_t buffer_width, int32_t buffer_height, int32_t format,
+        int32_t x0, int32_t y0, int32_t x1, int32_t y1, uint32_t color) {
+    if (!pixels || stride <= 0 || buffer_width <= 0 || buffer_height <= 0 ||
+            format < 1 || format > 3) return;
+
+    const uint16_t rgb565 = (uint16_t)((((color >> 19) & 0x1fU) << 11) |
+        (((color >> 10) & 0x3fU) << 5) | ((color >> 3) & 0x1fU));
+    const int32_t dx = x1 >= x0 ? x1 - x0 : x0 - x1;
+    const int32_t dy_abs = y1 >= y0 ? y1 - y0 : y0 - y1;
+    const int32_t dy = -dy_abs;
+    const int32_t sx = x0 < x1 ? 1 : -1;
+    const int32_t sy = y0 < y1 ? 1 : -1;
+    int32_t error = dx + dy;
+
+    for (;;) {
+        if ((uint32_t)x0 < (uint32_t)buffer_width &&
+                (uint32_t)y0 < (uint32_t)buffer_height) {
+            uint8_t *row = pixels + (size_t)y0 * (size_t)stride;
+            if (format == 1) {
+                uint8_t *pixel = row + (x0 >> 3);
+                const uint8_t mask = (uint8_t)(0x80U >> (x0 & 7));
+                if (color) *pixel |= mask;
+                else *pixel &= (uint8_t)~mask;
+            } else if (format == 2) {
+                uint8_t *pixel = row + (size_t)x0 * 2U;
+                pixel[0] = (uint8_t)rgb565;
+                pixel[1] = (uint8_t)(rgb565 >> 8);
+            } else {
+                uint8_t *pixel = row + (size_t)x0 * 3U;
+                pixel[0] = (uint8_t)(color >> 16);
+                pixel[1] = (uint8_t)(color >> 8);
+                pixel[2] = (uint8_t)color;
+            }
+        }
+        if (x0 == x1 && y0 == y1) break;
+        const int32_t twice_error = error * 2;
+        if (twice_error >= dy) {
+            error += dy;
+            x0 += sx;
+        }
+        if (twice_error <= dx) {
+            error += dx;
+            y0 += sy;
+        }
+    }
+}

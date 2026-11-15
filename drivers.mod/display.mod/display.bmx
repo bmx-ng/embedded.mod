@@ -27,6 +27,9 @@ Extern "C"
 	Function _DisplayFillRGB565(pixels:Byte Ptr, stride:Int, bufferWidth:Int, ..
 		bufferHeight:Int, x:Int, y:Int, width:Int, height:Int, color:UInt) = ..
 		"bmx_embedded_display_fill_rgb565"
+	Function _DisplayDrawLine(pixels:Byte Ptr, stride:Int, bufferWidth:Int, ..
+		bufferHeight:Int, format:Int, x0:Int, y0:Int, x1:Int, y1:Int, color:UInt) = ..
+		"bmx_embedded_display_draw_line"
 End Extern
 
 Public
@@ -526,45 +529,11 @@ Type TDisplayBuffer
 			FillRect(x0, y0, 1, y1 - y0 + 1, color)
 			Return
 		End If
-		Local dx:Int = x1 - x0
-		If dx < 0 Then
-			dx = -dx
+		Local pixels:Byte Ptr = Pixels()
+		If pixels Then
+			_DisplayDrawLine(pixels, bufferStride, bufferWidth, bufferHeight, bufferFormat, ..
+				x0, y0, x1, y1, color)
 		End If
-
-		Local sx:Int = -1
-		If x0 < x1 Then
-			sx = 1
-		End If
-
-		Local dy:Int = y1 - y0
-		If dy < 0 Then
-			dy = -dy
-		End If
-
-		dy = -dy
-		Local sy:Int = -1
-		If y0 < y1 Then
-			sy = 1
-		End If
-
-		Local error:Int = dx + dy
-		While True
-			SetPixel(x0, y0, color)
-			If x0 = x1 And y0 = y1 Then
-				Exit
-			End If
-
-			Local twiceError:Int = error Shl 1
-			If twiceError >= dy Then
-				error :+ dy
-				x0 :+ sx
-			End If
-
-			If twiceError <= dx Then
-				error :+ dx
-				y0 :+ sy
-			End If
-		Wend
 	End Method
 End Type
 

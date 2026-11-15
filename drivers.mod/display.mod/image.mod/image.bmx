@@ -21,6 +21,12 @@ Import "native/embedded_display_image_raster.c"
 Private
 
 Extern "C"
+	Function _DisplayBlitMono1:Int(targetPixels:Byte Ptr, targetStride:Int, ..
+		targetWidth:Int, targetHeight:Int, sourcePixels:Byte Ptr, sourceStride:Int, ..
+		sourceWidth:Int, sourceHeight:Int, sourceFormat:Int, destinationX:Int, destinationY:Int, ..
+		destinationWidth:Int, destinationHeight:Int, clipX:Int, clipY:Int, ..
+		clipWidth:Int, clipHeight:Int, tint:UInt, opacity:Int, drawFlags:Int) = ..
+		"bmx_embedded_display_blit_mono1"
 	Function _DisplayBlitRGB565:Int(targetPixels:Byte Ptr, targetStride:Int, ..
 		targetWidth:Int, targetHeight:Int, sourcePixels:Byte Ptr, sourceStride:Int, ..
 		sourceWidth:Int, sourceHeight:Int, sourceFormat:Int, destinationX:Int, destinationY:Int, ..
@@ -458,6 +464,16 @@ Type TEmbeddedImage Final
 				tint, opacity, drawFlags)
 			Return
 		End If
+		If targetPixels And target.Format() = DisplayPixelFormatMono1 And Not HasMask() And ..
+				colorKey = EmbeddedImageColorKeyDisabled And ..
+				(imageFormat = DisplayPixelFormatRGB565 Or imageFormat = DisplayPixelFormatRGB888) Then
+			Local sourceBytesPerPixel:Int = DisplayPixelFormatBits(imageFormat) / 8
+			_DisplayBlitMono1(targetPixels, target.Stride(), target.Width(), target.Height(), ..
+				data + pixelOffset + sourceY * pixelStride + sourceX * sourceBytesPerPixel, pixelStride, ..
+				width, height, imageFormat, x, y, width, height, x0, y0, x1 - x0, y1 - y0, ..
+				tint, opacity, drawFlags)
+			Return
+		End If
 		If targetPixels And tint = $ffffff And Not HasMask() And ..
 				opacity = 255 And colorKey = EmbeddedImageColorKeyDisabled And imageFormat = target.Format() And ..
 				imageFormat <> DisplayPixelFormatMono1 Then
@@ -544,6 +560,15 @@ Type TEmbeddedImage Final
 				colorKey = EmbeddedImageColorKeyDisabled And ..
 				(imageFormat = DisplayPixelFormatRGB565 Or imageFormat = DisplayPixelFormatRGB888) Then
 			_DisplayBlitRGB565(targetPixels, target.Stride(), target.Width(), target.Height(), ..
+				data + pixelOffset, pixelStride, imageWidth, imageHeight, imageFormat, ..
+				destinationX, destinationY, destinationWidth, destinationHeight, ..
+				x0, y0, x1 - x0, y1 - y0, tint, opacity, drawFlags)
+			Return
+		End If
+		If targetPixels And target.Format() = DisplayPixelFormatMono1 And Not HasMask() And ..
+				colorKey = EmbeddedImageColorKeyDisabled And ..
+				(imageFormat = DisplayPixelFormatRGB565 Or imageFormat = DisplayPixelFormatRGB888) Then
+			_DisplayBlitMono1(targetPixels, target.Stride(), target.Width(), target.Height(), ..
 				data + pixelOffset, pixelStride, imageWidth, imageHeight, imageFormat, ..
 				destinationX, destinationY, destinationWidth, destinationHeight, ..
 				x0, y0, x1 - x0, y1 - y0, tint, opacity, drawFlags)

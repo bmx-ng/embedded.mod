@@ -140,6 +140,29 @@ rgb565Scaled.Clear()
 rgb565Image.DrawRect(rgb565Scaled, 0, 0, 4, 4, $ffffff, EmbeddedImageDrawFlipX)
 passed :& rgb565Scaled.Pixel(0, 0) = $00ff00 And rgb565Scaled.Pixel(3, 0) = $ff0000
 
+' Direct-color images use the packed Mono1 conversion path for scaling, flips, tint, and opacity.
+Local monoSourceData:Byte[] = New Byte[40]
+Header(monoSourceData, 0, 2, 2, DisplayPixelFormatRGB565, 4, 32)
+PutU16(monoSourceData, 32, $0000); PutU16(monoSourceData, 34, $ffff)
+PutU16(monoSourceData, 36, $f800); PutU16(monoSourceData, 38, $0000)
+Local monoSource:TEmbeddedImage = TEmbeddedImage.Create(Varptr monoSourceData[0], ..
+	monoSourceData.length)
+Local directMono:TDisplayBuffer = TDisplayBuffer.Create(5, 4, DisplayPixelFormatMono1)
+monoSource.DrawRect(directMono, 0, 0, 4, 4, $ffffff, EmbeddedImageDrawFlipX)
+passed :& directMono.Pixel(0, 0) And directMono.Pixel(1, 1)
+passed :& Not directMono.Pixel(2, 0) And Not directMono.Pixel(3, 1)
+passed :& Not directMono.Pixel(0, 2) And directMono.Pixel(2, 2) And directMono.Pixel(3, 3)
+passed :& Not directMono.Pixel(4, 0)
+directMono.Clear($ffffff)
+monoSource.DrawRegionClipped(directMono, 0, 0, 0, 0, 2, 2, 0, 1, 0, 1, 2)
+passed :& directMono.Pixel(0, 0) And Not directMono.Pixel(1, 0)
+passed :& directMono.Pixel(0, 1) And Not directMono.Pixel(1, 1)
+directMono.Clear($ffffff)
+monoSource.DrawRegion(directMono, 0, 0, 0, 0, 1, 1, $ffffff, 0, 1)
+passed :& directMono.Pixel(0, 0)
+monoSource.DrawRegion(directMono, 0, 0, 0, 0, 1, 1, $ffffff, 0, 128)
+passed :& Not directMono.Pixel(0, 0)
+
 ' Masked RGB565 regions retain non-byte-aligned mask origins, flips, tint, and opacity.
 Local maskedRGB565Data:Byte[] = New Byte[50]
 Header(maskedRGB565Data, EmbeddedImageFlagMask, 4, 2, DisplayPixelFormatRGB565, 8, 32, 1, 48)

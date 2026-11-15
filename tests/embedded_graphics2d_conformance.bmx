@@ -65,6 +65,13 @@ passed :& frame.Pixel(2, 1) = 1 And frame.Pixel(3, 1) = 0 And frame.Pixel(12, 2)
 passed :& frame.Pixel(13, 2) = 1
 frame.Clear()
 
+' Native arbitrary lines preserve Bresenham coverage and silently clip endpoints.
+frame.DrawLine(-2, -2, 4, 4)
+passed :& frame.Pixel(0, 0) = 1 And frame.Pixel(1, 1) = 1 And frame.Pixel(4, 4) = 1
+passed :& frame.Pixel(0, 1) = 0 And frame.Pixel(5, 5) = 0
+frame.DrawLine(4, 4, 0, 0, 0)
+passed :& frame.Pixel(0, 0) = 0 And frame.Pixel(2, 2) = 0 And frame.Pixel(4, 4) = 0
+
 graphics.SetViewport(2, 2, 8, 8)
 graphics.SetColor(300, -1, 128)
 passed :& graphics.Color() = $ff0080
