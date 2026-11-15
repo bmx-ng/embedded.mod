@@ -30,6 +30,9 @@ Extern "C"
 	Function _DisplayDrawLine(pixels:Byte Ptr, stride:Int, bufferWidth:Int, ..
 		bufferHeight:Int, format:Int, x0:Int, y0:Int, x1:Int, y1:Int, color:UInt) = ..
 		"bmx_embedded_display_draw_line"
+	Function _DisplayDrawRect(pixels:Byte Ptr, stride:Int, bufferWidth:Int, ..
+		bufferHeight:Int, format:Int, x:Int, y:Int, width:Int, height:Int, color:UInt) = ..
+		"bmx_embedded_display_draw_rect"
 	Function _DisplayDrawMono1Mask(pixels:Byte Ptr, stride:Int, bufferWidth:Int, ..
 		bufferHeight:Int, format:Int, mask:Byte Ptr, maskStride:Int, maskWidth:Int, ..
 		maskHeight:Int, x:Int, y:Int, scale:Int, clipX:Int, clipY:Int, clipWidth:Int, ..
@@ -507,11 +510,9 @@ Type TDisplayBuffer
 		If width <= 0 Or height <= 0 Then
 			Return
 		End If
-
-		DrawLine(x, y, x + width - 1, y, color)
-		DrawLine(x, y + height - 1, x + width - 1, y + height - 1, color)
-		DrawLine(x, y, x, y + height - 1, color)
-		DrawLine(x + width - 1, y, x + width - 1, y + height - 1, color)
+		Local pixels:Byte Ptr = Pixels()
+		If pixels Then _DisplayDrawRect(pixels, bufferStride, bufferWidth, bufferHeight, ..
+			bufferFormat, x, y, width, height, color)
 	End Method
 
 	Rem

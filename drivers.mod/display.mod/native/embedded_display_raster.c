@@ -126,6 +126,107 @@ void bmx_embedded_display_fill_rgb565(uint8_t *pixels, int32_t stride,
     }
 }
 
+void bmx_embedded_display_draw_rect(uint8_t *pixels, int32_t stride,
+        int32_t buffer_width, int32_t buffer_height, int32_t format,
+        int32_t x, int32_t y, int32_t width, int32_t height,
+        uint32_t color) {
+    if (!pixels || stride <= 0 || buffer_width <= 0 || buffer_height <= 0 ||
+            format < 1 || format > 3 || width <= 0 || height <= 0) return;
+
+    const int32_t right = x + width - 1;
+    const int32_t bottom = y + height - 1;
+    int32_t span_x = x;
+    int32_t span_right = right;
+    if (span_x < 0) span_x = 0;
+    if (span_right >= buffer_width) span_right = buffer_width - 1;
+    if (span_x <= span_right) {
+        if ((uint32_t)y < (uint32_t)buffer_height) {
+            if (format == 1) {
+                bmx_embedded_display_fill_mono1(pixels, stride, buffer_width,
+                    buffer_height, span_x, y, span_right - span_x + 1, 1, color);
+            } else if (format == 2) {
+                bmx_embedded_display_fill_rgb565(pixels, stride, buffer_width,
+                    buffer_height, span_x, y, span_right - span_x + 1, 1, color);
+            } else {
+                const uint8_t red = (uint8_t)(color >> 16);
+                const uint8_t green = (uint8_t)(color >> 8);
+                const uint8_t blue = (uint8_t)color;
+                uint8_t *output = pixels + (size_t)y * (size_t)stride +
+                    (size_t)span_x * 3U;
+                for (int32_t column = span_x; column <= span_right; ++column) {
+                    *output++ = red;
+                    *output++ = green;
+                    *output++ = blue;
+                }
+            }
+        }
+        if (bottom != y && (uint32_t)bottom < (uint32_t)buffer_height) {
+            if (format == 1) {
+                bmx_embedded_display_fill_mono1(pixels, stride, buffer_width,
+                    buffer_height, span_x, bottom, span_right - span_x + 1, 1, color);
+            } else if (format == 2) {
+                bmx_embedded_display_fill_rgb565(pixels, stride, buffer_width,
+                    buffer_height, span_x, bottom, span_right - span_x + 1, 1, color);
+            } else {
+                const uint8_t red = (uint8_t)(color >> 16);
+                const uint8_t green = (uint8_t)(color >> 8);
+                const uint8_t blue = (uint8_t)color;
+                uint8_t *output = pixels + (size_t)bottom * (size_t)stride +
+                    (size_t)span_x * 3U;
+                for (int32_t column = span_x; column <= span_right; ++column) {
+                    *output++ = red;
+                    *output++ = green;
+                    *output++ = blue;
+                }
+            }
+        }
+    }
+
+    int32_t span_y = y;
+    int32_t span_bottom = bottom;
+    if (span_y < 0) span_y = 0;
+    if (span_bottom >= buffer_height) span_bottom = buffer_height - 1;
+    if (span_y > span_bottom) return;
+    const uint16_t rgb565 = (uint16_t)((((color >> 19) & 0x1fU) << 11) |
+        (((color >> 10) & 0x3fU) << 5) | ((color >> 3) & 0x1fU));
+    const uint8_t mono_mask_left = (uint8_t)(0x80U >> (x & 7));
+    const uint8_t mono_mask_right = (uint8_t)(0x80U >> (right & 7));
+    for (int32_t row = span_y; row <= span_bottom; ++row) {
+        uint8_t *output = pixels + (size_t)row * (size_t)stride;
+        if ((uint32_t)x < (uint32_t)buffer_width) {
+            if (format == 1) {
+                if (color) output[x >> 3] |= mono_mask_left;
+                else output[x >> 3] &= (uint8_t)~mono_mask_left;
+            } else if (format == 2) {
+                output += (size_t)x * 2U;
+                output[0] = (uint8_t)rgb565;
+                output[1] = (uint8_t)(rgb565 >> 8);
+            } else {
+                output += (size_t)x * 3U;
+                output[0] = (uint8_t)(color >> 16);
+                output[1] = (uint8_t)(color >> 8);
+                output[2] = (uint8_t)color;
+            }
+        }
+        if (right != x && (uint32_t)right < (uint32_t)buffer_width) {
+            output = pixels + (size_t)row * (size_t)stride;
+            if (format == 1) {
+                if (color) output[right >> 3] |= mono_mask_right;
+                else output[right >> 3] &= (uint8_t)~mono_mask_right;
+            } else if (format == 2) {
+                output += (size_t)right * 2U;
+                output[0] = (uint8_t)rgb565;
+                output[1] = (uint8_t)(rgb565 >> 8);
+            } else {
+                output += (size_t)right * 3U;
+                output[0] = (uint8_t)(color >> 16);
+                output[1] = (uint8_t)(color >> 8);
+                output[2] = (uint8_t)color;
+            }
+        }
+    }
+}
+
 void bmx_embedded_display_draw_line(uint8_t *pixels, int32_t stride,
         int32_t buffer_width, int32_t buffer_height, int32_t format,
         int32_t x0, int32_t y0, int32_t x1, int32_t y1, uint32_t color) {

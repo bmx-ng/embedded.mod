@@ -897,6 +897,17 @@ Type TEmbedded2DContext Final
 	End Rem
 	Method DrawRect(x:Int, y:Int, width:Int, height:Int)
 		If width <= 0 Or height <= 0 Then Return
+		If target And viewportWidth > 0 And viewportHeight > 0 Then
+			Local targetX:Int = x + originX
+			Local targetY:Int = y + originY
+			If targetX >= viewportX And targetY >= viewportY And ..
+					targetX + width <= viewportX + viewportWidth And ..
+					targetY + height <= viewportY + viewportHeight Then
+				MarkDirtyLogical(targetX, targetY, width, height)
+				DrawingTarget().DrawRect(targetX, targetY, width, height, drawColor)
+				Return
+			End If
+		End If
 		DrawLine(x, y, x + width - 1, y)
 		DrawLine(x, y + height - 1, x + width - 1, y + height - 1)
 		DrawLine(x, y, x, y + height - 1)

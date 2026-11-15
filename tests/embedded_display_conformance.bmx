@@ -55,6 +55,11 @@ mono.Clear()
 mono.DrawLine(0, 0, 3, 3)
 passed :& mono.Pixel(0, 0) = 1 And mono.Pixel(1, 1) = 1
 passed :& mono.Pixel(2, 2) = 1 And mono.Pixel(3, 3) = 1
+mono.Clear()
+mono.DrawRect(-2, 1, 5, 3)
+passed :& mono.Pixel(0, 1) = 1 And mono.Pixel(2, 1) = 1
+passed :& mono.Pixel(2, 2) = 1 And mono.Pixel(1, 2) = 0
+passed :& mono.Pixel(0, 3) = 1 And mono.Pixel(3, 1) = 0
 
 Local rgb565:TDisplayBuffer = TDisplayBuffer.Create(2, 1, DisplayPixelFormatRGB565)
 rgb565.SetPixel(0, 0, $ff0000)
@@ -67,6 +72,10 @@ rgb565Fill.FillRect(1, 1, 3, 1, $ff0000)
 passed :& rgb565Fill.Pixel(0, 0) = $0000ff And rgb565Fill.Pixel(4, 2) = $0000ff
 passed :& rgb565Fill.Pixel(0, 1) = $0000ff And rgb565Fill.Pixel(4, 1) = $0000ff
 passed :& rgb565Fill.Pixel(1, 1) = $ff0000 And rgb565Fill.Pixel(3, 1) = $ff0000
+rgb565Fill.DrawRect(1, 0, 3, 3, $00ff00)
+passed :& rgb565Fill.Pixel(1, 0) = $00ff00 And rgb565Fill.Pixel(3, 2) = $00ff00
+passed :& rgb565Fill.Pixel(1, 1) = $00ff00 And rgb565Fill.Pixel(3, 1) = $00ff00
+passed :& rgb565Fill.Pixel(2, 1) = $ff0000
 
 Local rgb888:TDisplayBuffer = TDisplayBuffer.Create(1, 1, DisplayPixelFormatRGB888)
 rgb888.SetPixel(0, 0, $123456)
