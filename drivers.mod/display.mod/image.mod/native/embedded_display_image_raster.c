@@ -12,6 +12,13 @@
 #define BMX_DISPLAY_PIXEL_FORMAT_RGB565 2
 #define BMX_DISPLAY_PIXEL_FORMAT_RGB888 3
 
+/* Exact floor(value / 255) for the 16-bit numerators produced by channel
+   tinting and source-over blending. Callers add 127 before this operation to
+   retain the shared round-to-nearest colour contract. */
+static inline uint32_t bmx_embedded_display_divide_255(uint32_t value) {
+    return (value + 1U + (value >> 8)) >> 8;
+}
+
 typedef int32_t (*bmx_embedded_display_blit_rgb565_accelerator_t)(
     uint8_t *target, int32_t target_stride, int32_t target_width,
     int32_t target_height, const uint8_t *source, int32_t source_stride,
@@ -90,21 +97,24 @@ int32_t bmx_embedded_display_blit_mono1(uint8_t *target,
                 blue = pixel[2];
             }
             if (tint != 0xffffffU) {
-                red = (red * ((tint >> 16) & 0xffU) + 127U) / 255U;
-                green = (green * ((tint >> 8) & 0xffU) + 127U) / 255U;
-                blue = (blue * (tint & 0xffU) + 127U) / 255U;
+                red = bmx_embedded_display_divide_255(
+                    red * ((tint >> 16) & 0xffU) + 127U);
+                green = bmx_embedded_display_divide_255(
+                    green * ((tint >> 8) & 0xffU) + 127U);
+                blue = bmx_embedded_display_divide_255(
+                    blue * (tint & 0xffU) + 127U);
             }
 
             uint8_t *target_pixel = target_row + (x >> 3);
             const uint8_t mask = (uint8_t)(0x80U >> (x & 7));
             if (opacity < 255) {
                 const uint32_t destination = (*target_pixel & mask) != 0;
-                red = (red * (uint32_t)opacity +
-                    destination * (uint32_t)(255 - opacity) + 127U) / 255U;
-                green = (green * (uint32_t)opacity +
-                    destination * (uint32_t)(255 - opacity) + 127U) / 255U;
-                blue = (blue * (uint32_t)opacity +
-                    destination * (uint32_t)(255 - opacity) + 127U) / 255U;
+                red = bmx_embedded_display_divide_255(red * (uint32_t)opacity +
+                    destination * (uint32_t)(255 - opacity) + 127U);
+                green = bmx_embedded_display_divide_255(green * (uint32_t)opacity +
+                    destination * (uint32_t)(255 - opacity) + 127U);
+                blue = bmx_embedded_display_divide_255(blue * (uint32_t)opacity +
+                    destination * (uint32_t)(255 - opacity) + 127U);
             }
             if ((red | green | blue) != 0) *target_pixel |= mask;
             else *target_pixel &= (uint8_t)~mask;
@@ -162,9 +172,12 @@ int32_t bmx_embedded_display_blit_masked_rgb565(uint8_t *target,
                     green = (green << 2) | (green >> 4);
                     blue = (blue << 3) | (blue >> 2);
                     if (tint != 0xFFFFFFU) {
-                        red = (red * ((tint >> 16) & 0xFFU) + 127U) / 255U;
-                        green = (green * ((tint >> 8) & 0xFFU) + 127U) / 255U;
-                        blue = (blue * (tint & 0xFFU) + 127U) / 255U;
+                        red = bmx_embedded_display_divide_255(
+                            red * ((tint >> 16) & 0xFFU) + 127U);
+                        green = bmx_embedded_display_divide_255(
+                            green * ((tint >> 8) & 0xFFU) + 127U);
+                        blue = bmx_embedded_display_divide_255(
+                            blue * (tint & 0xFFU) + 127U);
                     }
                     if (opacity < 255) {
                         const uint32_t target565 = (uint32_t)target_pixel[0] |
@@ -175,12 +188,12 @@ int32_t bmx_embedded_display_blit_masked_rgb565(uint8_t *target,
                         target_red = (target_red << 3) | (target_red >> 2);
                         target_green = (target_green << 2) | (target_green >> 4);
                         target_blue = (target_blue << 3) | (target_blue >> 2);
-                        red = (red * (uint32_t)opacity +
-                            target_red * (uint32_t)(255 - opacity) + 127U) / 255U;
-                        green = (green * (uint32_t)opacity +
-                            target_green * (uint32_t)(255 - opacity) + 127U) / 255U;
-                        blue = (blue * (uint32_t)opacity +
-                            target_blue * (uint32_t)(255 - opacity) + 127U) / 255U;
+                        red = bmx_embedded_display_divide_255(red * (uint32_t)opacity +
+                            target_red * (uint32_t)(255 - opacity) + 127U);
+                        green = bmx_embedded_display_divide_255(green * (uint32_t)opacity +
+                            target_green * (uint32_t)(255 - opacity) + 127U);
+                        blue = bmx_embedded_display_divide_255(blue * (uint32_t)opacity +
+                            target_blue * (uint32_t)(255 - opacity) + 127U);
                     }
                     const uint32_t output565 = ((red >> 3) << 11) |
                         ((green >> 2) << 5) | (blue >> 3);
@@ -301,6 +314,72 @@ int32_t bmx_embedded_display_blit_rgb565(uint8_t *target,
         return 1;
     }
 
+    /* With opaque RGB565 tinting, all source channel results are determined
+       by 32, 64, and 32 possible packed values. Build those tiny tables once
+       per blit and keep the inner loop to extraction, lookup, and stores. */
+    if (source_format == BMX_DISPLAY_PIXEL_FORMAT_RGB565 && opacity == 255) {
+        uint16_t red_table[32];
+        uint16_t green_table[64];
+        uint16_t blue_table[32];
+        const uint32_t tint_red = (tint >> 16) & 0xFFU;
+        const uint32_t tint_green = (tint >> 8) & 0xFFU;
+        const uint32_t tint_blue = tint & 0xFFU;
+        for (uint32_t value = 0; value < 32U; ++value) {
+            const uint32_t expanded = (value << 3) | (value >> 2);
+            red_table[value] = (uint16_t)((bmx_embedded_display_divide_255(
+                expanded * tint_red + 127U) >> 3) << 11);
+            blue_table[value] = (uint16_t)(bmx_embedded_display_divide_255(
+                expanded * tint_blue + 127U) >> 3);
+        }
+        for (uint32_t value = 0; value < 64U; ++value) {
+            const uint32_t expanded = (value << 2) | (value >> 4);
+            green_table[value] = (uint16_t)((bmx_embedded_display_divide_255(
+                expanded * tint_green + 127U) >> 2) << 5);
+        }
+
+        for (int32_t y = clip_y; y < clip_y + clip_height; ++y) {
+            int32_t sampled_y = source_y;
+            if (draw_flags & BMX_EMBEDDED_IMAGE_FLIP_Y) {
+                sampled_y = source_height - 1 - sampled_y;
+            }
+            const uint8_t *in = source +
+                (size_t)sampled_y * (size_t)source_stride;
+            uint8_t *out = target + (size_t)y * (size_t)target_stride +
+                (size_t)clip_x * 2U;
+            int32_t source_x = first_source_x;
+            int32_t source_x_remainder = first_source_x_remainder;
+            for (int32_t x = 0; x < clip_width; ++x) {
+                int32_t sampled_x = source_x;
+                if (draw_flags & BMX_EMBEDDED_IMAGE_FLIP_X) {
+                    sampled_x = source_width - 1 - sampled_x;
+                }
+                const uint8_t *pixel = in + (size_t)sampled_x * 2U;
+                const uint32_t source565 = (uint32_t)pixel[0] |
+                    ((uint32_t)pixel[1] << 8);
+                const uint16_t output565 = (uint16_t)(
+                    red_table[(source565 >> 11) & 0x1FU] |
+                    green_table[(source565 >> 5) & 0x3FU] |
+                    blue_table[source565 & 0x1FU]);
+                out[0] = (uint8_t)output565;
+                out[1] = (uint8_t)(output565 >> 8);
+                out += 2;
+                source_x += source_x_step;
+                source_x_remainder += source_x_step_remainder;
+                if (source_x_remainder >= destination_width) {
+                    ++source_x;
+                    source_x_remainder -= destination_width;
+                }
+            }
+            source_y += source_y_step;
+            source_y_remainder += source_y_step_remainder;
+            if (source_y_remainder >= destination_height) {
+                ++source_y;
+                source_y_remainder -= destination_height;
+            }
+        }
+        return 1;
+    }
+
     for (int32_t y = clip_y; y < clip_y + clip_height; ++y) {
         int32_t sampled_y = source_y;
         if (draw_flags & BMX_EMBEDDED_IMAGE_FLIP_Y) {
@@ -337,9 +416,12 @@ int32_t bmx_embedded_display_blit_rgb565(uint8_t *target,
                 blue = pixel[2];
             }
             if (tint != 0xFFFFFFU) {
-                red = (red * ((tint >> 16) & 0xFFU) + 127U) / 255U;
-                green = (green * ((tint >> 8) & 0xFFU) + 127U) / 255U;
-                blue = (blue * (tint & 0xFFU) + 127U) / 255U;
+                red = bmx_embedded_display_divide_255(
+                    red * ((tint >> 16) & 0xFFU) + 127U);
+                green = bmx_embedded_display_divide_255(
+                    green * ((tint >> 8) & 0xFFU) + 127U);
+                blue = bmx_embedded_display_divide_255(
+                    blue * (tint & 0xFFU) + 127U);
             }
             if (opacity < 255) {
                 const uint32_t target565 = (uint32_t)out[0] |
@@ -350,12 +432,12 @@ int32_t bmx_embedded_display_blit_rgb565(uint8_t *target,
                 target_red = (target_red << 3) | (target_red >> 2);
                 target_green = (target_green << 2) | (target_green >> 4);
                 target_blue = (target_blue << 3) | (target_blue >> 2);
-                red = (red * (uint32_t)opacity +
-                    target_red * (uint32_t)(255 - opacity) + 127U) / 255U;
-                green = (green * (uint32_t)opacity +
-                    target_green * (uint32_t)(255 - opacity) + 127U) / 255U;
-                blue = (blue * (uint32_t)opacity +
-                    target_blue * (uint32_t)(255 - opacity) + 127U) / 255U;
+                red = bmx_embedded_display_divide_255(red * (uint32_t)opacity +
+                    target_red * (uint32_t)(255 - opacity) + 127U);
+                green = bmx_embedded_display_divide_255(green * (uint32_t)opacity +
+                    target_green * (uint32_t)(255 - opacity) + 127U);
+                blue = bmx_embedded_display_divide_255(blue * (uint32_t)opacity +
+                    target_blue * (uint32_t)(255 - opacity) + 127U);
             }
             const uint32_t rgb565 = ((red >> 3) << 11) |
                 ((green >> 2) << 5) | (blue >> 3);

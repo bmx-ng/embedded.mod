@@ -1,0 +1,7 @@
+# ESP32-S31 Korvo-1 focused image baseline after exact RGB565 tint tables
+# ESP-IDF 6.1, 320 MHz, release, 512K managed heap in PSRAM
+# Checksums were stable across all seven samples and match the prior baseline.
+G2D_BENCH,format=1,kind=summary,phase=render,platform=esp32,width=160,height=128,pixel_format=rgb565,case=image_rgb565_16x16,iterations=128,nominal_pixels=32768,best_us=5976,mean_us=5987,checksum=830134047
+G2D_BENCH,format=1,kind=summary,phase=render,platform=esp32,width=160,height=128,pixel_format=rgb565,case=image_scaled_32x32,iterations=64,nominal_pixels=65536,best_us=7353,mean_us=7357,checksum=48025222
+G2D_BENCH,format=1,kind=summary,phase=render,platform=esp32,width=160,height=128,pixel_format=rgb565,case=image_tinted_16x16,iterations=128,nominal_pixels=32768,best_us=11476,mean_us=11524,checksum=720584565
+G2D_BENCH,format=1,kind=summary,phase=render,platform=esp32,width=160,height=128,pixel_format=rgb565,case=image_alpha_16x16,iterations=128,nominal_pixels=32768,best_us=17027,mean_us=17044,checksum=1260655676
