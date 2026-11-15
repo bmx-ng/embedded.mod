@@ -62,6 +62,7 @@ int32_t bmx_embedded_display_blit_mono1(uint8_t *target,
             clip_y + clip_height > destination_y + destination_height) return 0;
 
     draw_flags &= BMX_EMBEDDED_IMAGE_FLIP_X | BMX_EMBEDDED_IMAGE_FLIP_Y;
+
     for (int32_t y = clip_y; y < clip_y + clip_height; ++y) {
         int32_t source_y = (int32_t)(((int64_t)(y - destination_y) *
             source_height) / destination_height);
@@ -142,6 +143,32 @@ int32_t bmx_embedded_display_blit_masked_rgb565(uint8_t *target,
             clip_y + clip_height > destination_y + source_height) return 0;
 
     draw_flags &= BMX_EMBEDDED_IMAGE_FLIP_X | BMX_EMBEDDED_IMAGE_FLIP_Y;
+
+    /* A one-bit sprite mask changes visibility, not colour conversion. For
+       opaque tinted RGB565 sprites, cache every possible packed channel result
+       once per blit instead of expanding and multiplying each visible pixel. */
+    uint16_t red_table[32];
+    uint16_t green_table[64];
+    uint16_t blue_table[32];
+    const int32_t use_tint_tables = opacity == 255 && tint != 0xFFFFFFU;
+    if (use_tint_tables) {
+        const uint32_t tint_red = (tint >> 16) & 0xFFU;
+        const uint32_t tint_green = (tint >> 8) & 0xFFU;
+        const uint32_t tint_blue = tint & 0xFFU;
+        for (uint32_t value = 0; value < 32U; ++value) {
+            const uint32_t expanded = (value << 3) | (value >> 2);
+            red_table[value] = (uint16_t)((bmx_embedded_display_divide_255(
+                expanded * tint_red + 127U) >> 3) << 11);
+            blue_table[value] = (uint16_t)(bmx_embedded_display_divide_255(
+                expanded * tint_blue + 127U) >> 3);
+        }
+        for (uint32_t value = 0; value < 64U; ++value) {
+            const uint32_t expanded = (value << 2) | (value >> 4);
+            green_table[value] = (uint16_t)((bmx_embedded_display_divide_255(
+                expanded * tint_green + 127U) >> 2) << 5);
+        }
+    }
+
     for (int32_t y = clip_y; y < clip_y + clip_height; ++y) {
         int32_t source_y = y - destination_y;
         if (draw_flags & BMX_EMBEDDED_IMAGE_FLIP_Y) {
@@ -162,6 +189,14 @@ int32_t bmx_embedded_display_blit_masked_rgb565(uint8_t *target,
                 if (tint == 0xFFFFFFU && opacity == 255) {
                     target_pixel[0] = source_pixel[0];
                     target_pixel[1] = source_pixel[1];
+                } else if (use_tint_tables) {
+                    const uint32_t source565 = (uint32_t)source_pixel[0] |
+                        ((uint32_t)source_pixel[1] << 8);
+                    const uint32_t output565 = red_table[source565 >> 11] |
+                        green_table[(source565 >> 5) & 0x3FU] |
+                        blue_table[source565 & 0x1FU];
+                    target_pixel[0] = (uint8_t)output565;
+                    target_pixel[1] = (uint8_t)(output565 >> 8);
                 } else {
                     const uint32_t source565 = (uint32_t)source_pixel[0] |
                         ((uint32_t)source_pixel[1] << 8);

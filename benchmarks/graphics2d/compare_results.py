@@ -14,7 +14,11 @@ def load(path: Path) -> dict[Key, int]:
     results: dict[Key, int] = {}
     for raw_line in path.read_text(encoding="utf-8").splitlines():
         line = raw_line.strip()
-        if not line.startswith("G2D_BENCH,"):
+        if line.startswith("G2D_BENCH,"):
+            default_phase = "unknown"
+        elif line.startswith("G2D_SPRITE_BENCH,"):
+            default_phase = "sprite"
+        else:
             continue
         fields: dict[str, str] = {}
         for item in line.split(",")[1:]:
@@ -27,7 +31,7 @@ def load(path: Path) -> dict[Key, int]:
             fields.get("platform", "unknown"),
             fields.get("width", "unknown"),
             fields.get("height", "unknown"),
-            fields.get("phase", "unknown"),
+            fields.get("phase", default_phase),
             fields.get("pixel_format", "unknown"),
             fields.get("case", "unknown"),
         )

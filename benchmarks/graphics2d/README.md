@@ -42,6 +42,32 @@ python3 benchmarks/graphics2d/compare_results.py before.log after.log
 The comparison reports `old / new` speedup and elapsed-time percentage change.
 A positive speedup above `1.00x`, or a negative percentage, is an improvement.
 
+## Sprite workloads
+
+`graphics2d_sprite_benchmark.bmx` isolates the sprite layer from the broader
+primitive suite. It measures opaque, flipped, tinted and translucent atlas
+frames; the same operations with a one-bit transparency mask; animation-frame
+selection; player advancement; animated drawing; and 24-sprite scenes. The
+timed sections allocate no memory and use stable `G2D_SPRITE_BENCH` records.
+
+The benchmark runs against both RGB565 and Mono1 memory targets. Build it with
+the same board, compiler, CPU frequency and heap options before and after a
+sprite change, for example:
+
+```sh
+bmk makeapp -r -a -board esp32_s31_korvo_1 -heap-region psram -heap 512k -x \
+    benchmarks/graphics2d/graphics2d_sprite_benchmark.bmx
+```
+
+Frame lookup and player cases fold their numerical result into the checksum as
+well as checking the framebuffer, so an apparently faster timing cannot hide a
+playback-semantics change.
+
+The initial S31 captures in `results` provide the first sprite reference. A
+packed-channel lookup table for opaque masked tinting preserves identical
+output while reducing 512 tinted 16x16 draws from 47,131 us to 38,785 us
+(17.7%).
+
 ## Benchmark rules
 
 - Use release builds; debug builds measure checking and instrumentation.
