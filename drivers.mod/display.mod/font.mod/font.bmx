@@ -496,29 +496,8 @@ Type TBitmapFont
 			bitmap + bitmapLength > dataLength Or stride * height > bitmapLength Then Return
 		Local originX:Int = penX + xOffset * scale
 		Local originY:Int = lineTop + (fontAscent - yOffset - height) * scale
-		For Local row:Int = 0 Until height
-			For Local column:Int = 0 Until width
-				Local packed:Int = Int(data[bitmap + row * stride + (column Shr 3)]) & $ff
-				If Not (packed & ($80 Shr (column & 7))) Then Continue
-				Local pixelX:Int = originX + column * scale
-				Local pixelY:Int = originY + row * scale
-				If scale = 1 Then
-					If pixelX >= clipX0 And pixelX < clipX1 And ..
-							pixelY >= clipY0 And pixelY < clipY1 Then target.SetPixel(pixelX, pixelY, color)
-				Else
-					Local fillX0:Int = pixelX
-					Local fillY0:Int = pixelY
-					Local fillX1:Int = pixelX + scale
-					Local fillY1:Int = pixelY + scale
-					If fillX0 < clipX0 Then fillX0 = clipX0
-					If fillY0 < clipY0 Then fillY0 = clipY0
-					If fillX1 > clipX1 Then fillX1 = clipX1
-					If fillY1 > clipY1 Then fillY1 = clipY1
-					If fillX0 < fillX1 And fillY0 < fillY1 Then ..
-						target.FillRect(fillX0, fillY0, fillX1 - fillX0, fillY1 - fillY0, color)
-				End If
-			Next
-		Next
+		target.DrawMono1Mask(data + bitmap, stride, width, height, originX, originY, scale, ..
+			clipX0, clipY0, clipX1 - clipX0, clipY1 - clipY0, color)
 	End Method
 End Type
 ?

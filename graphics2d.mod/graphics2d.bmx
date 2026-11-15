@@ -208,6 +208,31 @@ Type TGraphicsDisplayBuffer Extends TDisplayBuffer
 		target.DrawLine(tx0, ty0, tx1, ty1, color)
 	End Method
 
+	Method DrawMono1Mask(mask:Byte Ptr, maskStride:Int, maskWidth:Int, maskHeight:Int, ..
+			x:Int, y:Int, scale:Int, clipX:Int, clipY:Int, clipWidth:Int, clipHeight:Int, ..
+			color:UInt = $ffffff) Override
+		If Not target Or Not mask Or maskStride < (maskWidth + 7) / 8 Or ..
+				maskWidth <= 0 Or maskHeight <= 0 Or scale <= 0 Then Return
+		Local clipX1:Int = clipX + clipWidth
+		Local clipY1:Int = clipY + clipHeight
+		For Local row:Int = 0 Until maskHeight
+			For Local column:Int = 0 Until maskWidth
+				Local packed:Int = Int(mask[row * maskStride + (column Shr 3)]) & $ff
+				If Not (packed & ($80 Shr (column & 7))) Then Continue
+				Local fillX0:Int = x + column * scale
+				Local fillY0:Int = y + row * scale
+				Local fillX1:Int = fillX0 + scale
+				Local fillY1:Int = fillY0 + scale
+				If fillX0 < clipX Then fillX0 = clipX
+				If fillY0 < clipY Then fillY0 = clipY
+				If fillX1 > clipX1 Then fillX1 = clipX1
+				If fillY1 > clipY1 Then fillY1 = clipY1
+				If fillX0 < fillX1 And fillY0 < fillY1 Then ..
+					FillRect(fillX0, fillY0, fillX1 - fillX0, fillY1 - fillY0, color)
+			Next
+		Next
+	End Method
+
 	Private
 	Method MapPoint(x:Int, y:Int, targetX:Int Var, targetY:Int Var)
 		targetX = xx * x + xy * y + tx

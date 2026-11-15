@@ -72,6 +72,15 @@ passed :& frame.Pixel(0, 1) = 0 And frame.Pixel(5, 5) = 0
 frame.DrawLine(4, 4, 0, 0, 0)
 passed :& frame.Pixel(0, 0) = 0 And frame.Pixel(2, 2) = 0 And frame.Pixel(4, 4) = 0
 
+' Packed transparent masks support scaled drawing with destination clipping.
+Local maskBits:Byte[] = New Byte[1]
+maskBits[0] = $a0
+frame.DrawMono1Mask(Varptr maskBits[0], 1, 3, 1, 0, 0, 2, 1, 1, 4, 1)
+passed :& Not frame.Pixel(0, 0) And Not frame.Pixel(1, 0)
+passed :& frame.Pixel(1, 1) And Not frame.Pixel(2, 1) And Not frame.Pixel(3, 1)
+passed :& frame.Pixel(4, 1) And Not frame.Pixel(5, 1)
+frame.Clear()
+
 graphics.SetViewport(2, 2, 8, 8)
 graphics.SetColor(300, -1, 128)
 passed :& graphics.Color() = $ff0080

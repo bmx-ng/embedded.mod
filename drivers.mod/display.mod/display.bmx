@@ -30,6 +30,10 @@ Extern "C"
 	Function _DisplayDrawLine(pixels:Byte Ptr, stride:Int, bufferWidth:Int, ..
 		bufferHeight:Int, format:Int, x0:Int, y0:Int, x1:Int, y1:Int, color:UInt) = ..
 		"bmx_embedded_display_draw_line"
+	Function _DisplayDrawMono1Mask(pixels:Byte Ptr, stride:Int, bufferWidth:Int, ..
+		bufferHeight:Int, format:Int, mask:Byte Ptr, maskStride:Int, maskWidth:Int, ..
+		maskHeight:Int, x:Int, y:Int, scale:Int, clipX:Int, clipY:Int, clipWidth:Int, ..
+		clipHeight:Int, color:UInt) = "bmx_embedded_display_draw_mono1_mask"
 End Extern
 
 Public
@@ -500,6 +504,41 @@ Type TDisplayBuffer
 		DrawLine(x, y + height - 1, x + width - 1, y + height - 1, color)
 		DrawLine(x, y, x, y + height - 1, color)
 		DrawLine(x + width - 1, y, x + width - 1, y + height - 1, color)
+	End Method
+
+	Rem
+	bbdoc: Draws the set pixels of a packed one-bit mask in a solid color.
+	param: A pointer to top-to-bottom, most-significant-bit-first mask rows.
+	param: The number of bytes between adjacent mask rows.
+	param: The mask width in pixels.
+	param: The mask height in pixels.
+	param: The destination left coordinate.
+	param: The destination top coordinate.
+	param: A positive integer nearest-neighbour scale.
+	param: The clipping rectangle's left coordinate.
+	param: The clipping rectangle's top coordinate.
+	param: The clipping rectangle's width.
+	param: The clipping rectangle's height.
+	param: An $RRGGBB color; Mono1 treats zero as off and any non-zero value as on.
+	about: Clear mask bits leave the destination unchanged. This compact primitive
+	is suitable for bitmap glyphs, monochrome icons, and other transparent masks.
+	End Rem
+	Method DrawMono1Mask(mask:Byte Ptr, maskStride:Int, maskWidth:Int, maskHeight:Int, ..
+			x:Int, y:Int, scale:Int, clipX:Int, clipY:Int, clipWidth:Int, clipHeight:Int, ..
+			color:UInt = $ffffff)
+		If Not mask Or maskStride < (maskWidth + 7) / 8 Or maskWidth <= 0 Or ..
+				maskHeight <= 0 Or scale <= 0 Or clipWidth <= 0 Or clipHeight <= 0 Then Return
+		Local clipX1:Int = clipX + clipWidth
+		Local clipY1:Int = clipY + clipHeight
+		If clipX < 0 Then clipX = 0
+		If clipY < 0 Then clipY = 0
+		If clipX1 > bufferWidth Then clipX1 = bufferWidth
+		If clipY1 > bufferHeight Then clipY1 = bufferHeight
+		If clipX >= clipX1 Or clipY >= clipY1 Then Return
+		Local pixels:Byte Ptr = Pixels()
+		If pixels Then _DisplayDrawMono1Mask(pixels, bufferStride, bufferWidth, bufferHeight, ..
+			bufferFormat, mask, maskStride, maskWidth, maskHeight, x, y, scale, clipX, clipY, ..
+			clipX1 - clipX, clipY1 - clipY, color)
 	End Method
 
 	Rem

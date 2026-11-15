@@ -173,3 +173,66 @@ void bmx_embedded_display_draw_line(uint8_t *pixels, int32_t stride,
         }
     }
 }
+
+static void bmx_embedded_display_write_pixel(uint8_t *pixels, int32_t stride,
+        int32_t format, int32_t x, int32_t y, uint32_t color,
+        uint16_t rgb565) {
+    uint8_t *row = pixels + (size_t)y * (size_t)stride;
+    if (format == 1) {
+        uint8_t *pixel = row + (x >> 3);
+        const uint8_t mask = (uint8_t)(0x80U >> (x & 7));
+        if (color) *pixel |= mask;
+        else *pixel &= (uint8_t)~mask;
+    } else if (format == 2) {
+        uint8_t *pixel = row + (size_t)x * 2U;
+        pixel[0] = (uint8_t)rgb565;
+        pixel[1] = (uint8_t)(rgb565 >> 8);
+    } else {
+        uint8_t *pixel = row + (size_t)x * 3U;
+        pixel[0] = (uint8_t)(color >> 16);
+        pixel[1] = (uint8_t)(color >> 8);
+        pixel[2] = (uint8_t)color;
+    }
+}
+
+void bmx_embedded_display_draw_mono1_mask(uint8_t *pixels, int32_t stride,
+        int32_t buffer_width, int32_t buffer_height, int32_t format,
+        const uint8_t *mask, int32_t mask_stride, int32_t mask_width,
+        int32_t mask_height, int32_t x, int32_t y, int32_t scale,
+        int32_t clip_x, int32_t clip_y, int32_t clip_width,
+        int32_t clip_height, uint32_t color) {
+    if (!pixels || !mask || stride <= 0 || buffer_width <= 0 ||
+            buffer_height <= 0 || format < 1 || format > 3 ||
+            mask_width <= 0 || mask_height <= 0 ||
+            mask_stride < (mask_width + 7) / 8 || scale <= 0 ||
+            clip_x < 0 || clip_y < 0 || clip_width <= 0 || clip_height <= 0 ||
+            clip_x + clip_width > buffer_width ||
+            clip_y + clip_height > buffer_height) return;
+
+    const int32_t clip_x1 = clip_x + clip_width;
+    const int32_t clip_y1 = clip_y + clip_height;
+    const uint16_t rgb565 = (uint16_t)((((color >> 19) & 0x1fU) << 11) |
+        (((color >> 10) & 0x3fU) << 5) | ((color >> 3) & 0x1fU));
+    for (int32_t row = 0; row < mask_height; ++row) {
+        const int32_t output_y = y + row * scale;
+        if (output_y >= clip_y1 || output_y + scale <= clip_y) continue;
+        const uint8_t *mask_row = mask + (size_t)row * (size_t)mask_stride;
+        for (int32_t column = 0; column < mask_width; ++column) {
+            if (!(mask_row[column >> 3] & (uint8_t)(0x80U >> (column & 7)))) continue;
+            const int32_t output_x = x + column * scale;
+            if (output_x >= clip_x1 || output_x + scale <= clip_x) continue;
+            int32_t first_y = output_y < clip_y ? clip_y : output_y;
+            int32_t last_y = output_y + scale;
+            if (last_y > clip_y1) last_y = clip_y1;
+            int32_t first_x = output_x < clip_x ? clip_x : output_x;
+            int32_t last_x = output_x + scale;
+            if (last_x > clip_x1) last_x = clip_x1;
+            for (int32_t py = first_y; py < last_y; ++py) {
+                for (int32_t px = first_x; px < last_x; ++px) {
+                    bmx_embedded_display_write_pixel(pixels, stride, format,
+                        px, py, color, rgb565);
+                }
+            }
+        }
+    }
+}
