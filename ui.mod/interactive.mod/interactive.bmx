@@ -60,6 +60,11 @@ Type TUITouchInput Extends TUIInputBinding Final
 	Field touchStartY:Int
 	Field touchLastY:Int
 	Field touchScrolled:Int
+	Field pendingTrackWidget:TUIWidget
+	Field pendingTrackX:Int
+	Field pendingTrackY:Int
+	Field pendingTrack:Int
+	Field coalescePointerMoves:Int = True
 
 	Public
 	Rem
@@ -151,6 +156,46 @@ Type TUITouchInput Extends TUIInputBinding Final
 	End Method
 
 	Rem
+	bbdoc: Enables or disables frame-coalesced pointer movement.
+	param: True to retain only the latest move until Present or touch release.
+	about: Coalescing is enabled by default. It prevents callbacks, layout, and
+	invalidation for intermediate touch samples which cannot be displayed. Turn
+	it off only when an application requires every raw pointer movement.
+	End Rem
+	Method SetPointerMoveCoalescing(value:Int)
+		value = value <> 0
+		If coalescePointerMoves = value Then Return
+		FlushPendingInput()
+		coalescePointerMoves = value
+	End Method
+
+	Rem
+	bbdoc: Reports whether pointer moves are coalesced at the frame boundary.
+	returns: True when only the latest pending move is applied by Present.
+	End Rem
+	Method PointerMoveCoalescing:Int()
+		Return coalescePointerMoves
+	End Method
+
+	Rem
+	bbdoc: Applies the newest pointer movement retained for the next frame.
+	about: Called automatically by TUIContext.Present and before touch release.
+	End Rem
+	Method FlushPendingInput() Override
+		If Not pendingTrack Then Return
+		Local target:TUIWidget = pendingTrackWidget
+		Local x:Int = pendingTrackX
+		Local y:Int = pendingTrackY
+		pendingTrack = False
+		pendingTrackWidget = Null
+		If Not target Or target <> pressedWidget Then Return
+		If Not target._TrackPointer(x, y) Then
+			pressedArmed = target.Contains(x, y)
+			target._SetPressed(pressedArmed)
+		End If
+	End Method
+
+	Rem
 	bbdoc: Detaches the device and releases this adapter slot.
 	about: Closing is safe to repeat. TUIContext.Close calls this automatically
 	for its active input binding.
@@ -164,6 +209,8 @@ Type TUITouchInput Extends TUIInputBinding Final
 		device = Null
 		If pressedWidget Then pressedWidget._SetPressed(False)
 		pressedWidget = Null
+		pendingTrackWidget = Null
+		pendingTrack = False
 		pressedContact = -1
 		pressedArmed = False
 		touchScroll = Null
@@ -218,13 +265,20 @@ Type TUITouchInput Extends TUIInputBinding Final
 						If Not touchScrolled Then
 							touchScrolled = True
 							pressedArmed = False
+							pendingTrackWidget = Null
+							pendingTrack = False
 							If pressedWidget Then pressedWidget._SetPressed(False)
 						End If
 						Local now:UInt = UInt(MilliSecs())
 						touchScroll._DragBy(touchLastY - y, now)
 						touchLastY = y
 					Else If pressedWidget Then
-						If Not pressedWidget._TrackPointer(x, y) Then
+						If coalescePointerMoves Then
+							pendingTrackWidget = pressedWidget
+							pendingTrackX = x
+							pendingTrackY = y
+							pendingTrack = True
+						Else If Not pressedWidget._TrackPointer(x, y) Then
 							pressedArmed = pressedWidget.Contains(x, y)
 							pressedWidget._SetPressed(pressedArmed)
 						End If
@@ -236,12 +290,20 @@ Type TUITouchInput Extends TUIInputBinding Final
 					Local target:TUIWidget = pressedWidget
 					Local activate:Int
 					If target Then
-						If Not touchScrolled Then target._TrackPointer(x, y)
+						If Not touchScrolled Then
+							' The release coordinate is newer than any retained movement.
+							' Drop the intermediate sample and apply only the final state.
+							pendingTrackWidget = Null
+							pendingTrack = False
+							target._TrackPointer(x, y)
+						End If
 						target._EndPointer()
 						activate = Not touchScrolled And pressedArmed And target.Contains(x, y) And target.Enabled()
 						target._SetPressed(False)
 					End If
 					pressedWidget = Null
+					pendingTrackWidget = Null
+					pendingTrack = False
 					pressedContact = -1
 					pressedArmed = False
 					touchScroll = Null

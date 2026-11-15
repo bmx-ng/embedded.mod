@@ -51,6 +51,7 @@ Type TSteadyControl Extends TUIWidget
 	Field pointerBegins:Int
 	Field pointerTracks:Int
 	Field pointerEnds:Int
+	Field lastTrackX:Int
 
 	Method New()
 		SetFocusable(True)
@@ -79,6 +80,7 @@ Type TSteadyControl Extends TUIWidget
 
 	Method _TrackPointer:Int(x:Int, y:Int) Override
 		pointerTracks :+ 1
+		lastTrackX = x
 		Return True
 	End Method
 
@@ -103,6 +105,9 @@ Check(touch.StartEvents(), "could not start steady-state touch device")
 Local ui:TUIContext = TUITouchInput.CreateContextWithBuffer(frame, Null, touch, ..
 	TUITheme.Dark(Spleen5x8Font()))
 Check(ui <> Null, "could not create steady-state UI")
+Local touchInput:TUITouchInput = TUITouchInput(ui.inputBinding)
+Check(touchInput And touchInput.PointerMoveCoalescing(), ..
+	"touch movement was not frame-coalesced by default")
 
 Local page:TUIColumn = ui.Root()
 page.SetPadding(2)
@@ -167,11 +172,49 @@ For Local cycle:Int = 0 Until SteadyStateCycles
 	Check(ui.AdjustFocused(1), "focused steady-state adjustment failed")
 Next
 Check(control.pointerBegins = SteadyStateCycles And ..
-	control.pointerTracks = SteadyStateCycles * 2 And ..
+	control.pointerTracks = SteadyStateCycles And ..
 	control.pointerEnds = SteadyStateCycles And ..
 	control.activations = SteadyStateCycles * 2 And ..
 	control.adjustments = SteadyStateCycles, "steady-state input dispatch count was incorrect")
 CheckStable(allocations, used, collections, "steady-state input dispatch allocated managed memory")
+
+' Multiple device reports between frames collapse to the newest visible state.
+Local tracksBeforeCoalescing:Int = control.pointerTracks
+pointerEvent.id = EVENT_TOUCHDOWN
+pointerEvent.x = pointerX
+EmitEvent(pointerEvent)
+pointerEvent.id = EVENT_TOUCHMOVE
+pointerEvent.x = pointerX + 100
+EmitEvent(pointerEvent)
+pointerEvent.x = pointerX + 200
+EmitEvent(pointerEvent)
+pointerEvent.x = pointerX + 300
+EmitEvent(pointerEvent)
+Check(control.pointerTracks = tracksBeforeCoalescing, ..
+	"pointer movement was applied before the frame boundary")
+ui.Present()
+Check(control.pointerTracks = tracksBeforeCoalescing + 1, ..
+	"pointer movements were not coalesced into one frame update")
+Local expectedTrackX:Int = Int((Long(pointerX + 300) * (frame.Width() - 1) + 5000) / 10000)
+Check(control.lastTrackX = expectedTrackX, ..
+	"frame-coalesced pointer movement did not retain the newest coordinate")
+pointerEvent.id = EVENT_TOUCHUP
+EmitEvent(pointerEvent)
+
+' Raw movement remains available for applications which explicitly need it.
+touchInput.SetPointerMoveCoalescing(False)
+Local tracksBeforeRaw:Int = control.pointerTracks
+pointerEvent.id = EVENT_TOUCHDOWN
+pointerEvent.x = pointerX
+EmitEvent(pointerEvent)
+pointerEvent.id = EVENT_TOUCHMOVE
+pointerEvent.x = pointerX + 200
+EmitEvent(pointerEvent)
+Check(control.pointerTracks = tracksBeforeRaw + 1, ..
+	"raw pointer movement was not dispatched immediately")
+pointerEvent.id = EVENT_TOUCHUP
+EmitEvent(pointerEvent)
+touchInput.SetPointerMoveCoalescing(True)
 
 ui.Close()
 touch.StopEvents()

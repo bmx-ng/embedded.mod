@@ -632,6 +632,12 @@ Check(row.X() = 6 And row.Width() = 228, "row did not stretch")
 Check(cancel.Width() > 0 And Abs(connect.Width() - cancel.Width() * 2) <= 1, "weighted row growth failed")
 Check(cancel.Height() >= 30 And connect.Height() >= 30, ..
 	"theme button minimum height was coupled to the bitmap font height")
+title.SetText("Link", False)
+Check(Not ui.layoutPending, "fixed-bound label update requested unnecessary layout")
+Check(ui.Render(), "fixed-bound label update did not invalidate its pixels")
+title.SetText("Network")
+Check(ui.layoutPending, "normal label update did not request layout")
+Check(ui.Render(), "normal label update did not render")
 Local checkStyle:TUIStyle = checkBox.DefaultStyle()
 Local checkGap:Int = Max(checkStyle.fontScale * 4, 6)
 Local checkContentRight:Int = checkBox.X() + checkStyle.paddingLeft + ..

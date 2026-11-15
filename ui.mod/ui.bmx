@@ -3833,14 +3833,18 @@ Type TUILabel Extends TUIWidget Final
 	Rem
 	bbdoc: Sets the label text.
 	param: Text to display; Null is treated as an empty string.
+	param: True to recalculate layout, or False when the label's existing bounds
+	are known to accommodate the new text.
+	about: Dynamic readouts with fixed bounds can pass False to invalidate and
+	redraw the label without laying out the complete retained tree.
 	End Rem
-	Method SetText(text:String)
+	Method SetText(text:String, updateLayout:Int = True)
 		If Not text Then text = ""
 		If labelText = text Then Return
 		_Invalidate()
 		labelText = text
 		wrappedWidth = -1
-		_RequestLayout()
+		If updateLayout Then _RequestLayout()
 	End Method
 
 	Rem
@@ -6306,6 +6310,15 @@ automatically, allowing Embedded.UI itself to remain display-only.
 End Rem
 Type TUIInputBinding
 	Rem
+	bbdoc: Applies input work retained for the next rendered frame.
+	about: Interactive adapters may coalesce high-rate pointer samples so widget
+	callbacks and invalidation reflect the newest visible state rather than every
+	intermediate device report. TUIContext.Present calls this automatically.
+	End Rem
+	Method FlushPendingInput()
+	End Method
+
+	Rem
 	bbdoc: Releases adapter resources and detaches from its context.
 	End Rem
 	Method Close()
@@ -7120,6 +7133,7 @@ Graphics2D dirty-region presentation when a display is attached.
 	End Rem
 	Method Present:Int()
 		Local now:UInt = UInt(MilliSecs())
+		If inputBinding Then inputBinding.FlushPendingInput()
 		If inputBinding And inputBinding.UpdatesScrollMomentum() Then
 			_UpdateScrollMomentum(rootWidget, now)
 			If overlayWidget Then _UpdateScrollMomentum(overlayWidget, now)
@@ -7133,7 +7147,7 @@ Graphics2D dirty-region presentation when a display is attached.
 			If restore And _CanFocus(restore) Then SetFocus(restore) Else ClearFocus()
 		End If
 		Render()
-		If display Then Return graphics.PresentDirty(display)
+		If display And graphics.DirtyRegionCount() > 0 Then Return graphics.PresentDirty(display)
 		Return True
 	End Method
 
