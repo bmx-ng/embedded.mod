@@ -81,6 +81,13 @@ passed :& frame.Pixel(1, 1) And Not frame.Pixel(2, 1) And Not frame.Pixel(3, 1)
 passed :& frame.Pixel(4, 1) And Not frame.Pixel(5, 1)
 frame.Clear()
 
+' Packed circle outlines retain midpoint geometry and destination clipping.
+frame.DrawCircle(4, 4, 3, 2, 2, 5, 5)
+passed :& frame.Pixel(4, 1) = 0 And frame.Pixel(4, 2) = 0
+passed :& frame.Pixel(4, 7) = 0 And frame.Pixel(1, 4) = 0
+passed :& frame.Pixel(7, 4) = 0 And frame.Pixel(6, 6)
+frame.Clear()
+
 graphics.SetViewport(2, 2, 8, 8)
 graphics.SetColor(300, -1, 128)
 passed :& graphics.Color() = $ff0080

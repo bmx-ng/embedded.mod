@@ -195,6 +195,68 @@ static void bmx_embedded_display_write_pixel(uint8_t *pixels, int32_t stride,
     }
 }
 
+static void bmx_embedded_display_write_clipped_pixel(uint8_t *pixels,
+        int32_t stride, int32_t format, int32_t x, int32_t y,
+        int32_t clip_x, int32_t clip_y, int32_t clip_x1, int32_t clip_y1,
+        uint32_t color, uint16_t rgb565) {
+    if (x < clip_x || x >= clip_x1 || y < clip_y || y >= clip_y1) return;
+    bmx_embedded_display_write_pixel(pixels, stride, format, x, y, color,
+        rgb565);
+}
+
+void bmx_embedded_display_draw_circle(uint8_t *pixels, int32_t stride,
+        int32_t buffer_width, int32_t buffer_height, int32_t format,
+        int32_t center_x, int32_t center_y, int32_t radius,
+        int32_t clip_x, int32_t clip_y, int32_t clip_width,
+        int32_t clip_height, uint32_t color) {
+    if (!pixels || stride <= 0 || buffer_width <= 0 || buffer_height <= 0 ||
+            format < 1 || format > 3 || radius < 0 || clip_x < 0 ||
+            clip_y < 0 || clip_width <= 0 || clip_height <= 0 ||
+            clip_x + clip_width > buffer_width ||
+            clip_y + clip_height > buffer_height) return;
+
+    const int32_t clip_x1 = clip_x + clip_width;
+    const int32_t clip_y1 = clip_y + clip_height;
+    const uint16_t rgb565 = (uint16_t)((((color >> 19) & 0x1fU) << 11) |
+        (((color >> 10) & 0x3fU) << 5) | ((color >> 3) & 0x1fU));
+    int32_t x = radius;
+    int32_t y = 0;
+    int32_t error = 1 - radius;
+    while (x >= y) {
+        bmx_embedded_display_write_clipped_pixel(pixels, stride, format,
+            center_x + x, center_y + y, clip_x, clip_y, clip_x1, clip_y1,
+            color, rgb565);
+        bmx_embedded_display_write_clipped_pixel(pixels, stride, format,
+            center_x + y, center_y + x, clip_x, clip_y, clip_x1, clip_y1,
+            color, rgb565);
+        bmx_embedded_display_write_clipped_pixel(pixels, stride, format,
+            center_x - y, center_y + x, clip_x, clip_y, clip_x1, clip_y1,
+            color, rgb565);
+        bmx_embedded_display_write_clipped_pixel(pixels, stride, format,
+            center_x - x, center_y + y, clip_x, clip_y, clip_x1, clip_y1,
+            color, rgb565);
+        bmx_embedded_display_write_clipped_pixel(pixels, stride, format,
+            center_x - x, center_y - y, clip_x, clip_y, clip_x1, clip_y1,
+            color, rgb565);
+        bmx_embedded_display_write_clipped_pixel(pixels, stride, format,
+            center_x - y, center_y - x, clip_x, clip_y, clip_x1, clip_y1,
+            color, rgb565);
+        bmx_embedded_display_write_clipped_pixel(pixels, stride, format,
+            center_x + y, center_y - x, clip_x, clip_y, clip_x1, clip_y1,
+            color, rgb565);
+        bmx_embedded_display_write_clipped_pixel(pixels, stride, format,
+            center_x + x, center_y - y, clip_x, clip_y, clip_x1, clip_y1,
+            color, rgb565);
+        ++y;
+        if (error < 0) {
+            error += 2 * y + 1;
+        } else {
+            --x;
+            error += 2 * (y - x + 1);
+        }
+    }
+}
+
 void bmx_embedded_display_draw_mono1_mask(uint8_t *pixels, int32_t stride,
         int32_t buffer_width, int32_t buffer_height, int32_t format,
         const uint8_t *mask, int32_t mask_stride, int32_t mask_width,

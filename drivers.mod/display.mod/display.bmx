@@ -34,6 +34,10 @@ Extern "C"
 		bufferHeight:Int, format:Int, mask:Byte Ptr, maskStride:Int, maskWidth:Int, ..
 		maskHeight:Int, x:Int, y:Int, scale:Int, clipX:Int, clipY:Int, clipWidth:Int, ..
 		clipHeight:Int, color:UInt) = "bmx_embedded_display_draw_mono1_mask"
+	Function _DisplayDrawCircle(pixels:Byte Ptr, stride:Int, bufferWidth:Int, ..
+		bufferHeight:Int, format:Int, centerX:Int, centerY:Int, radius:Int, clipX:Int, ..
+		clipY:Int, clipWidth:Int, clipHeight:Int, color:UInt) = ..
+		"bmx_embedded_display_draw_circle"
 End Extern
 
 Public
@@ -539,6 +543,33 @@ Type TDisplayBuffer
 		If pixels Then _DisplayDrawMono1Mask(pixels, bufferStride, bufferWidth, bufferHeight, ..
 			bufferFormat, mask, maskStride, maskWidth, maskHeight, x, y, scale, clipX, clipY, ..
 			clipX1 - clipX, clipY1 - clipY, color)
+	End Method
+
+	Rem
+	bbdoc: Draws a clipped one-pixel circle outline using integer midpoint rasterisation.
+	param: The centre x coordinate.
+	param: The centre y coordinate.
+	param: The non-negative radius in pixels.
+	param: The clipping rectangle's left coordinate.
+	param: The clipping rectangle's top coordinate.
+	param: The clipping rectangle's width.
+	param: The clipping rectangle's height.
+	param: An $RRGGBB color; Mono1 treats zero as off and any non-zero value as on.
+	End Rem
+	Method DrawCircle(centerX:Int, centerY:Int, radius:Int, clipX:Int, clipY:Int, ..
+			clipWidth:Int, clipHeight:Int, color:UInt = $ffffff)
+		If radius < 0 Or clipWidth <= 0 Or clipHeight <= 0 Then Return
+		Local clipX1:Int = clipX + clipWidth
+		Local clipY1:Int = clipY + clipHeight
+		If clipX < 0 Then clipX = 0
+		If clipY < 0 Then clipY = 0
+		If clipX1 > bufferWidth Then clipX1 = bufferWidth
+		If clipY1 > bufferHeight Then clipY1 = bufferHeight
+		If clipX >= clipX1 Or clipY >= clipY1 Then Return
+		Local pixels:Byte Ptr = Pixels()
+		If pixels Then _DisplayDrawCircle(pixels, bufferStride, bufferWidth, bufferHeight, ..
+			bufferFormat, centerX, centerY, radius, clipX, clipY, clipX1 - clipX, ..
+			clipY1 - clipY, color)
 	End Method
 
 	Rem

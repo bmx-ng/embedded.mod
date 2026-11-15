@@ -233,7 +233,40 @@ Type TGraphicsDisplayBuffer Extends TDisplayBuffer
 		Next
 	End Method
 
+	Method DrawCircle(centerX:Int, centerY:Int, radius:Int, clipX:Int, clipY:Int, ..
+			clipWidth:Int, clipHeight:Int, color:UInt = $ffffff) Override
+		If Not target Or radius < 0 Or clipWidth <= 0 Or clipHeight <= 0 Then Return
+		Local clipX1:Int = clipX + clipWidth
+		Local clipY1:Int = clipY + clipHeight
+		Local x:Int = radius
+		Local y:Int
+		Local error:Int = 1 - radius
+		While x >= y
+			DrawCirclePoint(centerX + x, centerY + y, clipX, clipY, clipX1, clipY1, color)
+			DrawCirclePoint(centerX + y, centerY + x, clipX, clipY, clipX1, clipY1, color)
+			DrawCirclePoint(centerX - y, centerY + x, clipX, clipY, clipX1, clipY1, color)
+			DrawCirclePoint(centerX - x, centerY + y, clipX, clipY, clipX1, clipY1, color)
+			DrawCirclePoint(centerX - x, centerY - y, clipX, clipY, clipX1, clipY1, color)
+			DrawCirclePoint(centerX - y, centerY - x, clipX, clipY, clipX1, clipY1, color)
+			DrawCirclePoint(centerX + y, centerY - x, clipX, clipY, clipX1, clipY1, color)
+			DrawCirclePoint(centerX + x, centerY - y, clipX, clipY, clipX1, clipY1, color)
+			y :+ 1
+			If error < 0 Then
+				error :+ 2 * y + 1
+			Else
+				x :- 1
+				error :+ 2 * (y - x + 1)
+			End If
+		Wend
+	End Method
+
 	Private
+	Method DrawCirclePoint(x:Int, y:Int, clipX:Int, clipY:Int, clipX1:Int, ..
+			clipY1:Int, color:UInt)
+		If x >= clipX And x < clipX1 And y >= clipY And y < clipY1 Then ..
+			SetPixel(x, y, color)
+	End Method
+
 	Method MapPoint(x:Int, y:Int, targetX:Int Var, targetY:Int Var)
 		targetX = xx * x + xy * y + tx
 		targetY = yx * x + yy * y + ty
@@ -859,27 +892,8 @@ Type TEmbedded2DContext Final
 		centerX :+ originX
 		centerY :+ originY
 		MarkDirtyLogical(centerX - radius, centerY - radius, radius * 2 + 1, radius * 2 + 1)
-		Local raster:TDisplayBuffer = DrawingTarget()
-		Local x:Int = radius
-		Local y:Int
-		Local error:Int = 1 - radius
-		While x >= y
-			PlotLogicalUntracked(raster, centerX + x, centerY + y)
-			PlotLogicalUntracked(raster, centerX + y, centerY + x)
-			PlotLogicalUntracked(raster, centerX - y, centerY + x)
-			PlotLogicalUntracked(raster, centerX - x, centerY + y)
-			PlotLogicalUntracked(raster, centerX - x, centerY - y)
-			PlotLogicalUntracked(raster, centerX - y, centerY - x)
-			PlotLogicalUntracked(raster, centerX + y, centerY - x)
-			PlotLogicalUntracked(raster, centerX + x, centerY - y)
-			y :+ 1
-			If error < 0 Then
-				error :+ 2 * y + 1
-			Else
-				x :- 1
-				error :+ 2 * (y - x + 1)
-			End If
-		Wend
+		DrawingTarget().DrawCircle(centerX, centerY, radius, viewportX, viewportY, ..
+			viewportWidth, viewportHeight, drawColor)
 	End Method
 
 	Rem
@@ -1583,10 +1597,6 @@ Type TEmbedded2DContext Final
 	End Method
 
 	Private
-	Method PlotLogicalUntracked(raster:TDisplayBuffer, x:Int, y:Int)
-		If PointVisible(x, y) Then raster.SetPixel(x, y, drawColor)
-	End Method
-
 	Method FillLogicalSpanUntracked(raster:TDisplayBuffer, x0:Int, x1:Int, y:Int)
 		If y < viewportY Or y >= viewportY + viewportHeight Then Return
 		If x0 < viewportX Then x0 = viewportX
