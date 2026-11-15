@@ -19,6 +19,72 @@ void bmx_embedded_display_set_fill_rgb565_accelerator(
     bmx_embedded_display_fill_rgb565_accelerator = accelerator;
 }
 
+static void bmx_embedded_display_apply_mono1_mask(
+        uint8_t *pixel, uint8_t mask, int set) {
+    if (set) {
+        *pixel |= mask;
+    } else {
+        *pixel &= (uint8_t)~mask;
+    }
+}
+
+static void bmx_embedded_display_fill_mono1_bytes(
+        uint8_t *pixels, size_t count, uint8_t value) {
+    /* Keep packed writes direct: some embedded libc memset paths impose a
+       severe penalty on small or managed-PSRAM spans. */
+    volatile uint8_t *destination = pixels;
+    for (size_t index = 0; index < count; ++index) destination[index] = value;
+}
+
+void bmx_embedded_display_fill_mono1(uint8_t *pixels, int32_t stride,
+        int32_t buffer_width, int32_t buffer_height, int32_t x, int32_t y,
+        int32_t width, int32_t height, uint32_t color) {
+    if (!pixels || stride <= 0 || buffer_width <= 0 || buffer_height <= 0 ||
+            x < 0 || y < 0 || width <= 0 || height <= 0 ||
+            x > buffer_width - width || y > buffer_height - height) return;
+
+    const int32_t first_byte = x >> 3;
+    const int32_t last_x = x + width - 1;
+    const int32_t last_byte = last_x >> 3;
+    const uint8_t first_mask = (uint8_t)(0xffU >> (x & 7));
+    const uint8_t last_mask = (uint8_t)(0xffU << (7 - (last_x & 7)));
+    const int set = color != 0;
+    uint8_t *row = pixels + (size_t)y * (size_t)stride;
+
+    if (((x | width) & 7) == 0) {
+        const size_t byte_width = (size_t)width >> 3;
+        row += first_byte;
+        if (first_byte == 0 && byte_width == (size_t)stride) {
+            bmx_embedded_display_fill_mono1_bytes(row,
+                byte_width * (size_t)height, set ? 0xff : 0);
+            return;
+        }
+        for (int32_t line = 0; line < height; ++line) {
+            bmx_embedded_display_fill_mono1_bytes(row, byte_width,
+                set ? 0xff : 0);
+            row += stride;
+        }
+        return;
+    }
+
+    for (int32_t line = 0; line < height; ++line) {
+        if (first_byte == last_byte) {
+            bmx_embedded_display_apply_mono1_mask(row + first_byte,
+                (uint8_t)(first_mask & last_mask), set);
+        } else {
+            bmx_embedded_display_apply_mono1_mask(row + first_byte,
+                first_mask, set);
+            if (last_byte > first_byte + 1) {
+                bmx_embedded_display_fill_mono1_bytes(row + first_byte + 1,
+                    (size_t)(last_byte - first_byte - 1), set ? 0xff : 0);
+            }
+            bmx_embedded_display_apply_mono1_mask(row + last_byte,
+                last_mask, set);
+        }
+        row += stride;
+    }
+}
+
 static void bmx_embedded_display_fill_rgb565_pixels(
         uint16_t *pixels, size_t count, uint16_t color) {
     if (!count) return;

@@ -830,18 +830,23 @@ Type TEmbedded2DContext Final
 			Plot(centerX, centerY)
 			Return
 		End If
+		If Not target Or viewportWidth <= 0 Or viewportHeight <= 0 Then Return
+		centerX :+ originX
+		centerY :+ originY
+		MarkDirtyLogical(centerX - radius, centerY - radius, radius * 2 + 1, radius * 2 + 1)
+		Local raster:TDisplayBuffer = DrawingTarget()
 		Local x:Int = radius
 		Local y:Int
 		Local error:Int = 1 - radius
 		While x >= y
-			Plot(centerX + x, centerY + y)
-			Plot(centerX + y, centerY + x)
-			Plot(centerX - y, centerY + x)
-			Plot(centerX - x, centerY + y)
-			Plot(centerX - x, centerY - y)
-			Plot(centerX - y, centerY - x)
-			Plot(centerX + y, centerY - x)
-			Plot(centerX + x, centerY - y)
+			PlotLogicalUntracked(raster, centerX + x, centerY + y)
+			PlotLogicalUntracked(raster, centerX + y, centerY + x)
+			PlotLogicalUntracked(raster, centerX - y, centerY + x)
+			PlotLogicalUntracked(raster, centerX - x, centerY + y)
+			PlotLogicalUntracked(raster, centerX - x, centerY - y)
+			PlotLogicalUntracked(raster, centerX - y, centerY - x)
+			PlotLogicalUntracked(raster, centerX + y, centerY - x)
+			PlotLogicalUntracked(raster, centerX + x, centerY - y)
 			y :+ 1
 			If error < 0 Then
 				error :+ 2 * y + 1
@@ -860,6 +865,11 @@ Type TEmbedded2DContext Final
 	End Rem
 	Method FillCircle(centerX:Int, centerY:Int, radius:Int)
 		If radius < 0 Then Return
+		If Not target Or viewportWidth <= 0 Or viewportHeight <= 0 Then Return
+		centerX :+ originX
+		centerY :+ originY
+		MarkDirtyLogical(centerX - radius, centerY - radius, radius * 2 + 1, radius * 2 + 1)
+		Local raster:TDisplayBuffer = DrawingTarget()
 		Local extent:Int
 		Local radiusSquared:Long = Long(radius) * radius
 		For Local offset:Int = radius To 0 Step -1
@@ -867,9 +877,9 @@ Type TEmbedded2DContext Final
 				Long(offset) * offset <= radiusSquared
 				extent :+ 1
 			Wend
-			DrawLine(centerX - extent, centerY - offset, centerX + extent, centerY - offset)
-			If offset Then ..
-				DrawLine(centerX - extent, centerY + offset, centerX + extent, centerY + offset)
+			FillLogicalSpanUntracked(raster, centerX - extent, centerX + extent, centerY - offset)
+			If offset Then FillLogicalSpanUntracked(raster, centerX - extent, ..
+				centerX + extent, centerY + offset)
 		Next
 	End Method
 
@@ -1548,6 +1558,18 @@ Type TEmbedded2DContext Final
 	End Method
 
 	Private
+	Method PlotLogicalUntracked(raster:TDisplayBuffer, x:Int, y:Int)
+		If PointVisible(x, y) Then raster.SetPixel(x, y, drawColor)
+	End Method
+
+	Method FillLogicalSpanUntracked(raster:TDisplayBuffer, x0:Int, x1:Int, y:Int)
+		If y < viewportY Or y >= viewportY + viewportHeight Then Return
+		If x0 < viewportX Then x0 = viewportX
+		Local viewportX1:Int = viewportX + viewportWidth - 1
+		If x1 > viewportX1 Then x1 = viewportX1
+		If x0 <= x1 Then raster.FillRect(x0, y, x1 - x0 + 1, 1, drawColor)
+	End Method
+
 	Method TextLineCount:Int(text:String)
 		If Not text.length Then Return 0
 		Local lines:Int = 1

@@ -55,6 +55,16 @@ Local frame:TDisplayBuffer = TDisplayBuffer.Create(16, 16, DisplayPixelFormatMon
 Local display:TTestDisplay = New TTestDisplay
 Local graphics:TEmbedded2DContext = TEmbedded2DContext.Create(frame, display)
 
+' Packed Mono1 spans preserve the unmodified edge bits for both set and clear.
+frame.FillRect(3, 1, 10, 2, $ffffff)
+passed :& frame.Pixel(2, 1) = 0 And frame.Pixel(3, 1) = 1 And frame.Pixel(12, 2) = 1
+passed :& frame.Pixel(13, 2) = 0
+frame.Clear($ffffff)
+frame.FillRect(3, 1, 10, 2, 0)
+passed :& frame.Pixel(2, 1) = 1 And frame.Pixel(3, 1) = 0 And frame.Pixel(12, 2) = 0
+passed :& frame.Pixel(13, 2) = 1
+frame.Clear()
+
 graphics.SetViewport(2, 2, 8, 8)
 graphics.SetColor(300, -1, 128)
 passed :& graphics.Color() = $ff0080

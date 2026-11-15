@@ -5,6 +5,7 @@ SuperStrict
 
 Framework BRL.StandardIO
 Import Embedded.System.Time
+Import Embedded.Runtime.Memory
 Import "graphics2d_benchmark_core.bmx"
 
 Const BenchmarkWidth:Int = 160
@@ -18,6 +19,8 @@ Function RunFormat(pixelFormat:Int, formatName:String)
 		BenchmarkHeight, pixelFormat)
 	If Not benchmark Then RuntimeError "Unable to create " + formatName + " Graphics2D benchmark"
 	benchmark.RunRenderSuite()
+	benchmark = Null
+	CollectObjects()
 End Function
 
 RunFormat(DisplayPixelFormatRGB565, "RGB565")

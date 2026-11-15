@@ -21,6 +21,9 @@ Import "native/embedded_display_raster.c"
 Private
 
 Extern "C"
+	Function _DisplayFillMono1(pixels:Byte Ptr, stride:Int, bufferWidth:Int, ..
+		bufferHeight:Int, x:Int, y:Int, width:Int, height:Int, color:UInt) = ..
+		"bmx_embedded_display_fill_mono1"
 	Function _DisplayFillRGB565(pixels:Byte Ptr, stride:Int, bufferWidth:Int, ..
 		bufferHeight:Int, x:Int, y:Int, width:Int, height:Int, color:UInt) = ..
 		"bmx_embedded_display_fill_rgb565"
@@ -446,6 +449,10 @@ Type TDisplayBuffer
 		Local pixels:Byte Ptr = Pixels()
 		If Not pixels Then Return
 		Select bufferFormat
+			Case DisplayPixelFormatMono1
+				_DisplayFillMono1(pixels, bufferStride, bufferWidth, bufferHeight, ..
+					x0, y0, x1 - x0, y1 - y0, color)
+				Return
 			Case DisplayPixelFormatRGB565
 				_DisplayFillRGB565(pixels, bufferStride, bufferWidth, bufferHeight, ..
 					x0, y0, x1 - x0, y1 - y0, color)
@@ -501,6 +508,24 @@ Type TDisplayBuffer
 	param: An $RRGGBB color; Mono1 treats zero as off and any non-zero value as on.
 	End Rem
 	Method DrawLine(x0:Int, y0:Int, x1:Int, y1:Int, color:UInt = $ffffff)
+		If y0 = y1 Then
+			If x0 > x1 Then
+				Local swap:Int = x0
+				x0 = x1
+				x1 = swap
+			End If
+			FillRect(x0, y0, x1 - x0 + 1, 1, color)
+			Return
+		End If
+		If x0 = x1 Then
+			If y0 > y1 Then
+				Local swap:Int = y0
+				y0 = y1
+				y1 = swap
+			End If
+			FillRect(x0, y0, 1, y1 - y0 + 1, color)
+			Return
+		End If
 		Local dx:Int = x1 - x0
 		If dx < 0 Then
 			dx = -dx
