@@ -136,3 +136,10 @@ rendering from 49,788 us to 40,502 us (18.7%).
 The component breakdown then removes ticks, text, and arc thickness in stages.
 It shows that ticks are negligible, text contributes about 1.4 ms, and the two
 eight-pixel arc bands account for roughly 10.7 ms beyond the thin-arc control.
+
+Reusing each segment's sine and cosine across all thickness rings preserves the
+same geometry while reducing the full gauge from 16,121 us to 7,643 us (52.6%).
+The representative dashboard falls from 38,371 us to 25,196 us (34.3%), and a
+full retained redraw from 40,619 us to 27,323 us (32.7%). The one-pixel control
+case remains effectively unchanged, confirming that the gain comes from
+eliminating repeated thick-arc angle calculations.

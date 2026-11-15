@@ -461,28 +461,34 @@ void bmx_embedded_display_draw_arc(uint8_t *pixels, int32_t stride,
     const int32_t segment_count = absolute_sweep / 5 > 0 ? absolute_sweep / 5 : 1;
     const double degrees_to_radians = 0.01745329251994329576923690768489;
 
-    for (int32_t ring = 0; ring < line_width; ++ring) {
-        const int32_t ring_radius = radius - ring;
-        double angle = (double)start_degrees * degrees_to_radians;
-        double value = cos(angle) * (double)ring_radius;
-        int32_t previous_x = center_x + (int32_t)(value >= 0.0 ? value + 0.5 : value - 0.5);
-        value = sin(angle) * (double)ring_radius;
-        int32_t previous_y = center_y + (int32_t)(value >= 0.0 ? value + 0.5 : value - 0.5);
-        for (int32_t segment = 1; segment <= segment_count; ++segment) {
-            angle = ((double)start_degrees + (double)sweep_degrees *
-                (double)segment / (double)segment_count) * degrees_to_radians;
-            value = cos(angle) * (double)ring_radius;
+    double angle = (double)start_degrees * degrees_to_radians;
+    double previous_cosine = cos(angle);
+    double previous_sine = sin(angle);
+    for (int32_t segment = 1; segment <= segment_count; ++segment) {
+        angle = ((double)start_degrees + (double)sweep_degrees *
+            (double)segment / (double)segment_count) * degrees_to_radians;
+        const double cosine = cos(angle);
+        const double sine = sin(angle);
+        for (int32_t ring = 0; ring < line_width; ++ring) {
+            const int32_t ring_radius = radius - ring;
+            double value = previous_cosine * (double)ring_radius;
+            const int32_t previous_x = center_x +
+                (int32_t)(value >= 0.0 ? value + 0.5 : value - 0.5);
+            value = previous_sine * (double)ring_radius;
+            const int32_t previous_y = center_y +
+                (int32_t)(value >= 0.0 ? value + 0.5 : value - 0.5);
+            value = cosine * (double)ring_radius;
             const int32_t x = center_x +
                 (int32_t)(value >= 0.0 ? value + 0.5 : value - 0.5);
-            value = sin(angle) * (double)ring_radius;
+            value = sine * (double)ring_radius;
             const int32_t y = center_y +
                 (int32_t)(value >= 0.0 ? value + 0.5 : value - 0.5);
             bmx_embedded_display_draw_clipped_line(pixels, stride, format,
                 previous_x, previous_y, x, y, clip_x, clip_y, clip_x1,
                 clip_y1, color, rgb565);
-            previous_x = x;
-            previous_y = y;
         }
+        previous_cosine = cosine;
+        previous_sine = sine;
     }
 }
 
