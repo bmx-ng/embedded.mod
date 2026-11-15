@@ -330,6 +330,34 @@ void bmx_embedded_display_draw_mono1_mask(uint8_t *pixels, int32_t stride,
     const int32_t clip_y1 = clip_y + clip_height;
     const uint16_t rgb565 = (uint16_t)((((color >> 19) & 0x1fU) << 11) |
         (((color >> 10) & 0x3fU) << 5) | ((color >> 3) & 0x1fU));
+
+    /* Small bitmap fonts overwhelmingly use an unscaled RGB565 mask. Keep
+       that hot path free of generic scale loops and per-pixel format tests. */
+    if (format == 2 && scale == 1) {
+        int32_t first_column = clip_x - x;
+        int32_t last_column = clip_x1 - x;
+        if (first_column < 0) first_column = 0;
+        if (last_column > mask_width) last_column = mask_width;
+        if (first_column >= last_column) return;
+
+        for (int32_t row = 0; row < mask_height; ++row) {
+            const int32_t output_y = y + row;
+            if (output_y < clip_y || output_y >= clip_y1) continue;
+            const uint8_t *mask_row = mask + (size_t)row * (size_t)mask_stride;
+            uint8_t *output = pixels + (size_t)output_y * (size_t)stride +
+                (size_t)(x + first_column) * 2U;
+            for (int32_t column = first_column; column < last_column; ++column) {
+                if (mask_row[column >> 3] &
+                        (uint8_t)(0x80U >> (column & 7))) {
+                    output[0] = (uint8_t)rgb565;
+                    output[1] = (uint8_t)(rgb565 >> 8);
+                }
+                output += 2;
+            }
+        }
+        return;
+    }
+
     for (int32_t row = 0; row < mask_height; ++row) {
         const int32_t output_y = y + row * scale;
         if (output_y >= clip_y1 || output_y + scale <= clip_y) continue;
