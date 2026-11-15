@@ -8,7 +8,8 @@ DMA, VSync, or display-controller setup time.
 `graphics2d_render_benchmark.bmx` runs the same suite against 160x128 RGB565 and
 Mono1 buffers. It covers full and small fills, horizontal and diagonal lines,
 rectangle and circle primitives, unscaled and scale-3 bitmap text, RGB565
-copies, scaling, tinting, alpha blending, and a rotated drawing target.
+copies, scaling, tinting, alpha blending, rounded-rectangle outlines and fills,
+arcs, and a rotated drawing target.
 
 Each workload is warmed twice and measured seven times. Output uses stable
 comma-separated `key=value` records beginning with `G2D_BENCH`. Sample rows
@@ -157,3 +158,14 @@ capture, this reduces the sparkline from 6,638 us to 6,275 us (5.5%), the
 dashboard from 23,784 us to 22,995 us (3.3%), and full redraw from 27,023 us to
 26,064 us (3.5%). Thick arc cases also improve by roughly 4--5% because they
 share the same clipped line rasterizer.
+
+Native clipped rounded rectangles preserve the PPA-eligible rectangular centre
+while moving corner construction behind one Graphics2D call. The isolated
+progress bar remains effectively unchanged (3,508 us versus 3,536 us), showing
+that its large centre was already efficient. The broader dashboard improves
+from 22,995 us to 21,899 us (4.8%), and full redraw from 26,064 us to 25,333 us
+(2.8%), due to the other rounded retained surfaces. The raster suite includes
+dedicated outline and fill cases so corner and centre costs remain visible.
+The initial S31 reference records 96 RGB565 outlines in 2,848 us and 48 fills
+in 2,265 us; their Mono1 equivalents take 236 us and 143 us respectively at
+the format-adjusted iteration counts.

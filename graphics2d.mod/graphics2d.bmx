@@ -1217,6 +1217,17 @@ Type TEmbedded2DContext Final
 			DrawRect(x, y, width, height)
 			Return
 		End If
+		If target And viewportWidth > 0 And viewportHeight > 0 Then
+			Local raster:TDisplayBuffer = DrawingTarget()
+			If raster = target Then
+				x :+ originX
+				y :+ originY
+				MarkDirtyLogical(x, y, width, height)
+				target.DrawRoundRect(x, y, width, height, radius, viewportX, viewportY, ..
+					viewportWidth, viewportHeight, drawColor)
+				Return
+			End If
+		End If
 		Local leftCenter:Int = x + radius
 		Local rightCenter:Int = x + width - radius - 1
 		Local topCenter:Int = y + radius
@@ -1263,6 +1274,17 @@ Type TEmbedded2DContext Final
 		If radius = 0 Then
 			FillRect(x, y, width, height)
 			Return
+		End If
+		If target And viewportWidth > 0 And viewportHeight > 0 Then
+			Local raster:TDisplayBuffer = DrawingTarget()
+			If raster = target Then
+				x :+ originX
+				y :+ originY
+				MarkDirtyLogical(x, y, width, height)
+				target.FillRoundRect(x, y, width, height, radius, viewportX, viewportY, ..
+					viewportWidth, viewportHeight, drawColor)
+				Return
+			End If
 		End If
 		Local leftCenter:Int = x + radius
 		Local rightCenter:Int = x + width - radius - 1

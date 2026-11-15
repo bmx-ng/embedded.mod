@@ -53,6 +53,14 @@ Extern "C"
 		bufferHeight:Int, format:Int, centerX:Int, centerY:Int, radius:Int, ..
 		startDegrees:Int, sweepDegrees:Int, lineWidth:Int, clipX:Int, clipY:Int, ..
 		clipWidth:Int, clipHeight:Int, color:UInt) = "bmx_embedded_display_draw_arc"
+	Function _DisplayDrawRoundRect(pixels:Byte Ptr, stride:Int, bufferWidth:Int, ..
+		bufferHeight:Int, format:Int, x:Int, y:Int, width:Int, height:Int, radius:Int, ..
+		clipX:Int, clipY:Int, clipWidth:Int, clipHeight:Int, color:UInt) = ..
+		"bmx_embedded_display_draw_round_rect"
+	Function _DisplayFillRoundRect(pixels:Byte Ptr, stride:Int, bufferWidth:Int, ..
+		bufferHeight:Int, format:Int, x:Int, y:Int, width:Int, height:Int, radius:Int, ..
+		clipX:Int, clipY:Int, clipWidth:Int, clipHeight:Int, color:UInt) = ..
+		"bmx_embedded_display_fill_round_rect"
 End Extern
 
 Public
@@ -643,6 +651,64 @@ Type TDisplayBuffer
 		If pixels Then _DisplayDrawArc(pixels, bufferStride, bufferWidth, bufferHeight, ..
 			bufferFormat, centerX, centerY, radius, startDegrees, sweepDegrees, lineWidth, ..
 			clipX, clipY, clipX1 - clipX, clipY1 - clipY, color)
+	End Method
+
+	Rem
+	bbdoc: Draws a clipped rounded-rectangle outline using integer corner rasterisation.
+	param: The left coordinate.
+	param: The top coordinate.
+	param: The positive width in pixels.
+	param: The positive height in pixels.
+	param: The non-negative corner radius, clamped to half the shortest dimension.
+	param: The clipping rectangle's left coordinate.
+	param: The clipping rectangle's top coordinate.
+	param: The clipping rectangle's width.
+	param: The clipping rectangle's height.
+	param: An $RRGGBB color; Mono1 treats zero as off and any non-zero value as on.
+	End Rem
+	Method DrawRoundRect(x:Int, y:Int, width:Int, height:Int, radius:Int, clipX:Int, ..
+			clipY:Int, clipWidth:Int, clipHeight:Int, color:UInt = $ffffff)
+		If width <= 0 Or height <= 0 Or radius < 0 Or clipWidth <= 0 Or clipHeight <= 0 Then Return
+		Local clipX1:Int = clipX + clipWidth
+		Local clipY1:Int = clipY + clipHeight
+		If clipX < 0 Then clipX = 0
+		If clipY < 0 Then clipY = 0
+		If clipX1 > bufferWidth Then clipX1 = bufferWidth
+		If clipY1 > bufferHeight Then clipY1 = bufferHeight
+		If clipX >= clipX1 Or clipY >= clipY1 Then Return
+		Local pixels:Byte Ptr = Pixels()
+		If pixels Then _DisplayDrawRoundRect(pixels, bufferStride, bufferWidth, bufferHeight, ..
+			bufferFormat, x, y, width, height, radius, clipX, clipY, clipX1 - clipX, ..
+			clipY1 - clipY, color)
+	End Method
+
+	Rem
+	bbdoc: Draws a clipped filled rounded rectangle using integer horizontal spans.
+	param: The left coordinate.
+	param: The top coordinate.
+	param: The positive width in pixels.
+	param: The positive height in pixels.
+	param: The non-negative corner radius, clamped to half the shortest dimension.
+	param: The clipping rectangle's left coordinate.
+	param: The clipping rectangle's top coordinate.
+	param: The clipping rectangle's width.
+	param: The clipping rectangle's height.
+	param: An $RRGGBB color; Mono1 treats zero as off and any non-zero value as on.
+	End Rem
+	Method FillRoundRect(x:Int, y:Int, width:Int, height:Int, radius:Int, clipX:Int, ..
+			clipY:Int, clipWidth:Int, clipHeight:Int, color:UInt = $ffffff)
+		If width <= 0 Or height <= 0 Or radius < 0 Or clipWidth <= 0 Or clipHeight <= 0 Then Return
+		Local clipX1:Int = clipX + clipWidth
+		Local clipY1:Int = clipY + clipHeight
+		If clipX < 0 Then clipX = 0
+		If clipY < 0 Then clipY = 0
+		If clipX1 > bufferWidth Then clipX1 = bufferWidth
+		If clipY1 > bufferHeight Then clipY1 = bufferHeight
+		If clipX >= clipX1 Or clipY >= clipY1 Then Return
+		Local pixels:Byte Ptr = Pixels()
+		If pixels Then _DisplayFillRoundRect(pixels, bufferStride, bufferWidth, bufferHeight, ..
+			bufferFormat, x, y, width, height, radius, clipX, clipY, clipX1 - clipX, ..
+			clipY1 - clipY, color)
 	End Method
 
 	Rem

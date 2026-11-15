@@ -13,7 +13,7 @@ Import Embedded.System.Time
 Const GraphicsBenchmarkFormat:Int = 1
 Const GraphicsBenchmarkSamples:Int = 7
 Const GraphicsBenchmarkWarmups:Int = 2
-Const GraphicsBenchmarkCaseCount:Int = 17
+Const GraphicsBenchmarkCaseCount:Int = 19
 Const GraphicsBenchmarkPresentSamples:Int = 5
 
 Function BenchmarkHousekeeping()
@@ -379,6 +379,17 @@ Type TGraphics2DBenchmark
 					graphics.DrawArc(graphics.Width() / 2, graphics.Height() / 2, ..
 						24, 135, 270, 8)
 				Next
+			Case 17
+				For Local index:Int = 0 Until iterations
+					graphics.DrawRoundRect((index * 13) Mod (width - 48), ..
+						(index * 7) Mod (height - 28), 48, 28, 8)
+				Next
+			Case 18
+				For Local index:Int = 0 Until iterations
+					graphics.SetColorValue(UInt(index * $030507) & $ffffff)
+					graphics.FillRoundRect((index * 13) Mod (width - 48), ..
+						(index * 7) Mod (height - 28), 48, 28, 8)
+				Next
 		End Select
 	End Method
 
@@ -411,6 +422,8 @@ Type TGraphics2DBenchmark
 			Case 14 Return "text_spleen_5x8_scale3"
 			Case 15 Return "arc_270_w8"
 			Case 16 Return "arc_270_w8_rot90"
+			Case 17 Return "round_rect_outline_48x28_r8"
+			Case 18 Return "round_rect_fill_48x28_r8"
 		End Select
 		Return "unknown"
 	End Method
@@ -428,6 +441,8 @@ Type TGraphics2DBenchmark
 			Case 10 iterations = 64
 			Case 13 iterations = 192
 			Case 15, 16 iterations = 32
+			Case 17 iterations = 96
+			Case 18 iterations = 48
 		End Select
 		If iterations = 0 Then iterations = 1
 		' Mono1 uses generic colour conversion and bit-addressed writes. Keep a

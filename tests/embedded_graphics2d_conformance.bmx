@@ -270,6 +270,19 @@ shapeGraphics.DrawRoundRect(2, 2, 12, 8, 3)
 passed :& shapeFrame.Pixel(5, 2) = 1 And shapeFrame.Pixel(2, 5) = 1
 passed :& shapeFrame.Pixel(7, 5) = 0
 
+' The same native rounded paths preserve RGB565 colour and viewport clipping.
+Local rgbShapeFrame:TDisplayBuffer = TDisplayBuffer.Create(16, 12, DisplayPixelFormatRGB565)
+Local rgbShapeGraphics:TEmbedded2DContext = TEmbedded2DContext.Create(rgbShapeFrame)
+rgbShapeGraphics.SetColor($ff, $ff, $ff)
+rgbShapeGraphics.SetViewport(2, 2, 11, 8)
+rgbShapeGraphics.FillRoundRect(1, 1, 13, 10, 3)
+passed :& rgbShapeFrame.Pixel(2, 2) = $ffffff And rgbShapeFrame.Pixel(12, 9) = $ffffff
+passed :& rgbShapeFrame.Pixel(1, 2) = 0 And rgbShapeFrame.Pixel(13, 9) = 0
+rgbShapeFrame.Clear()
+rgbShapeGraphics.DrawRoundRect(1, 1, 13, 10, 3)
+passed :& rgbShapeFrame.Pixel(2, 2) = $ffffff And rgbShapeFrame.Pixel(12, 9) = $ffffff
+passed :& rgbShapeFrame.Pixel(7, 5) = 0 And rgbShapeFrame.Pixel(1, 2) = 0
+
 ' Wrapped text measurement, alignment, and ellipsis share the font's native
 ' glyph advances without constructing substrings while drawing.
 Local textFrame:TDisplayBuffer = TDisplayBuffer.Create(40, 32, DisplayPixelFormatMono1)
