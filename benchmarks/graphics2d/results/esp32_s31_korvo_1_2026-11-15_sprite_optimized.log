@@ -1,0 +1,13 @@
+G2D_SPRITE_BENCH,format=1,kind=summary,platform=esp32,width=160,height=128,pixel_format=rgb565,case=sheet_opaque_16x16,iterations=512,best_us=32646,mean_us=32669,checksum=2213543883
+G2D_SPRITE_BENCH,format=1,kind=summary,platform=esp32,width=160,height=128,pixel_format=rgb565,case=sheet_flip_x_16x16,iterations=512,best_us=40215,mean_us=40363,checksum=2630988300
+G2D_SPRITE_BENCH,format=1,kind=summary,platform=esp32,width=160,height=128,pixel_format=rgb565,case=sheet_tinted_16x16,iterations=512,best_us=53110,mean_us=53167,checksum=992375773
+G2D_SPRITE_BENCH,format=1,kind=summary,platform=esp32,width=160,height=128,pixel_format=rgb565,case=sheet_alpha_16x16,iterations=512,best_us=73523,mean_us=73685,checksum=2888260884
+G2D_SPRITE_BENCH,format=1,kind=summary,platform=esp32,width=160,height=128,pixel_format=rgb565,case=masked_opaque_16x16,iterations=512,best_us=29170,mean_us=29175,checksum=3580873668
+G2D_SPRITE_BENCH,format=1,kind=summary,platform=esp32,width=160,height=128,pixel_format=rgb565,case=masked_flip_x_16x16,iterations=512,best_us=29930,mean_us=29948,checksum=236827792
+G2D_SPRITE_BENCH,format=1,kind=summary,platform=esp32,width=160,height=128,pixel_format=rgb565,case=masked_tinted_16x16,iterations=512,best_us=38785,mean_us=38819,checksum=3917855229
+G2D_SPRITE_BENCH,format=1,kind=summary,platform=esp32,width=160,height=128,pixel_format=rgb565,case=masked_alpha_16x16,iterations=512,best_us=54636,mean_us=54690,checksum=2778730882
+G2D_SPRITE_BENCH,format=1,kind=summary,platform=esp32,width=160,height=128,pixel_format=rgb565,case=animation_frame_lookup,iterations=8192,best_us=32326,mean_us=32377,checksum=1984197295
+G2D_SPRITE_BENCH,format=1,kind=summary,platform=esp32,width=160,height=128,pixel_format=rgb565,case=player_advance_lookup,iterations=8192,best_us=78734,mean_us=79274,checksum=138659205
+G2D_SPRITE_BENCH,format=1,kind=summary,platform=esp32,width=160,height=128,pixel_format=rgb565,case=scene_24_opaque,iterations=64,best_us=95374,mean_us=95579,checksum=3815766223
+G2D_SPRITE_BENCH,format=1,kind=summary,platform=esp32,width=160,height=128,pixel_format=rgb565,case=scene_24_masked,iterations=64,best_us=86669,mean_us=86738,checksum=3152242867
+G2D_SPRITE_BENCH,format=1,kind=summary,platform=esp32,width=160,height=128,pixel_format=rgb565,case=player_animated_draw,iterations=512,best_us=33841,mean_us=33871,checksum=4123945604

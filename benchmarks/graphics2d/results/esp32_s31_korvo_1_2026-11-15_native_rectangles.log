@@ -1,0 +1,5 @@
+# ESP32-S31 Korvo-1 focused rectangle result after consolidated native outlines
+# ESP-IDF 6.1, 320 MHz, release, 512K managed heap in PSRAM
+# Checksums match the preceding native-filled-circle baseline.
+G2D_BENCH,format=1,kind=summary,phase=render,platform=esp32,width=160,height=128,pixel_format=rgb565,case=rect_outline_42x30,iterations=96,nominal_pixels=13440,best_us=1532,mean_us=1536,checksum=2798849729
+G2D_BENCH,format=1,kind=summary,phase=render,platform=esp32,width=160,height=128,pixel_format=mono1,case=rect_outline_42x30,iterations=6,nominal_pixels=840,best_us=159,mean_us=160,checksum=1503898085

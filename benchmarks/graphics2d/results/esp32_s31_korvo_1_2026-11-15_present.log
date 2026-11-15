@@ -1,0 +1,6 @@
+# ESP32-S31 Korvo-1 physical presentation checkpoint
+# ESP-IDF 6.1, 320 MHz, release, two 800x480 RGB565 framebuffers in PSRAM
+G2D_BENCH,format=1,kind=summary,phase=present,platform=esp32,width=800,height=480,pixel_format=rgb565,case=full_frame,iterations=1,nominal_pixels=384000,best_us=17816,mean_us=27470,checksum=1705702853
+G2D_BENCH,format=1,kind=summary,phase=present,platform=esp32,width=800,height=480,pixel_format=rgb565,case=center_half,iterations=1,nominal_pixels=96000,best_us=9175,mean_us=14327,checksum=1705702853
+G2D_BENCH,format=1,kind=summary,phase=present,platform=esp32,width=800,height=480,pixel_format=rgb565,case=center_32x32,iterations=1,nominal_pixels=1024,best_us=1160,mean_us=14331,checksum=1705702853
+G2D_BENCH,format=1,kind=summary,phase=present,platform=esp32,width=800,height=480,pixel_format=rgb565,case=two_32x32_regions,iterations=1,nominal_pixels=2048,best_us=17621,mean_us=28889,checksum=1705702853

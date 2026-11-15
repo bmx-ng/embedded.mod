@@ -1,0 +1,215 @@
+# Graphics2D benchmarks
+
+This directory contains deterministic, allocation-free timed workloads for the
+portable embedded Graphics2D renderer. The first benchmark deliberately draws
+only to memory. It measures raster performance without mixing in SPI bandwidth,
+DMA, VSync, or display-controller setup time.
+
+`graphics2d_render_benchmark.bmx` runs the same suite against 160x128 RGB565 and
+Mono1 buffers. It covers full and small fills, horizontal and diagonal lines,
+rectangle and circle primitives, unscaled and scale-3 bitmap text, RGB565
+copies, scaling, tinting, alpha blending, rounded-rectangle outlines and fills,
+arcs, and a rotated drawing target.
+
+Each workload is warmed twice and measured seven times. Output uses stable
+comma-separated `key=value` records beginning with `G2D_BENCH`. Sample rows
+preserve timing variation; summary rows provide the best and arithmetic mean.
+The best time is useful for comparing raster changes because it is least
+affected by interrupts. Every sample also checksums the complete framebuffer.
+The run fails if identical workloads produce different pixels.
+
+Build a release firmware in the usual way, for example:
+
+```sh
+bmk makeapp -r -a -board pico2 benchmarks/graphics2d/graphics2d_render_benchmark.bmx
+bmk makeapp -r -a -board baguette_s3 benchmarks/graphics2d/graphics2d_render_benchmark.bmx
+```
+
+Graphics workloads may use a larger managed heap. On a PSRAM-equipped ESP32,
+for example:
+
+```sh
+bmk makeapp -r -a -board esp32_s31_korvo_1 -heap-region psram -heap 512k \
+    benchmarks/graphics2d/graphics2d_render_benchmark.bmx
+```
+
+Capture the serial output before and after a renderer change, then compare it:
+
+```sh
+python3 benchmarks/graphics2d/compare_results.py before.log after.log
+```
+
+The comparison reports `old / new` speedup and elapsed-time percentage change.
+A positive speedup above `1.00x`, or a negative percentage, is an improvement.
+
+## Sprite workloads
+
+`graphics2d_sprite_benchmark.bmx` isolates the sprite layer from the broader
+primitive suite. It measures opaque, flipped, tinted and translucent atlas
+frames; the same operations with a one-bit transparency mask; animation-frame
+selection; player advancement; animated drawing; and 24-sprite scenes. It also
+measures filling and submitting a reusable `TEmbeddedSpriteBatch`, compares the
+submission with an equivalent manual scene, and records old/new sprite damage
+tracking independently from raster work. The timed sections allocate no memory
+and use stable `G2D_SPRITE_BENCH` records.
+
+The benchmark runs against both RGB565 and Mono1 memory targets. Build it with
+the same board, compiler, CPU frequency and heap options before and after a
+sprite change, for example:
+
+```sh
+bmk makeapp -r -a -board esp32_s31_korvo_1 -heap-region psram -heap 512k -x \
+    benchmarks/graphics2d/graphics2d_sprite_benchmark.bmx
+```
+
+Frame lookup and player cases fold their numerical result into the checksum as
+well as checking the framebuffer, so an apparently faster timing cannot hide a
+playback-semantics change.
+
+Sprite sheets expose logical `FrameBounds`, `InvalidateFrame`, and
+`InvalidateTransition` operations. These use the complete untrimmed frame
+canvas, so moving a trimmed atlas frame cannot leave stale edge pixels behind.
+Invalidation changes no pixels: the application remains responsible for
+restoring the previous background before drawing the new sprite. Fixed-capacity
+sprite batches retain painter-order commands and reuse all command storage
+after construction.
+
+The initial S31 captures in `results` provide the first sprite reference. A
+packed-channel lookup table for opaque masked tinting preserves identical
+output while reducing 512 tinted 16x16 draws from 47,131 us to 38,785 us
+(17.7%).
+
+The S31 sprite-batch capture shows 64 submissions of 24 static masked sprites
+falling from 128,499 us through ordinary sheet calls to 81,423 us through a
+prepared batch (36.6%). Both cases produce checksum `2036932855`; the batch
+caches validated source and destination rectangles but traverses exactly the
+same pixels. Preparing all 24 commands takes about 152 us per preparation, so
+longer-lived batches provide the greatest benefit.
+
+## Benchmark rules
+
+- Use release builds; debug builds measure checking and instrumentation.
+- Keep the board, CPU frequency, compiler and build options unchanged.
+- Do not compare results with different `format` values.
+- Preserve workload iteration counts when creating an optimisation baseline.
+- Rendering and physical presentation must remain separate measurements.
+- Add a new workload rather than changing an existing workload's meaning.
+
+Physical presentation benchmarks will use this core with an initialized display
+and driver-owned framebuffer. Create the benchmark with `CreateWithBuffer`, then
+call `RunPresentationSuite(display)`. It measures complete, half-size, 32x32,
+and two-region updates. Those results use `phase=present` so SPI or parallel-
+transfer improvements cannot be mistaken for raster improvements. A hardware
+launcher is intentionally responsible for pins, bus rate and display setup,
+which must be recorded alongside its captured results.
+
+The ESP32-S31 Korvo-1 800x480 RGB launcher is provided as a reference physical
+adapter:
+
+```sh
+bmk makeapp -r -a -board esp32_s31_korvo_1 -heap-region psram -heap 512k -x \
+    benchmarks/graphics2d/graphics2d_present_esp32_s31_korvo_1.bmx
+```
+
+## Representative UI frames
+
+`graphics2d_ui_frame_esp32_s31_korvo_1.bmx` measures a deterministic retained
+dashboard built from `Embedded.UI`. It exercises real layout, labels, status
+indicators, an arc gauge, a sparkline, and a progress bar. The three cases are:
+
+- `single_status`: one small status indicator changes;
+- `dashboard_tick`: several separated dashboard values change together;
+- `full_redraw`: the complete retained tree is redrawn.
+- `arc_gauge`, `sparkline`, and `progress_bar`: one dashboard widget changes in
+  isolation, making remaining widget-level rendering costs visible.
+- `arc_gauge_no_ticks`, `arc_gauge_no_text`, `arc_gauge_arcs_only`, and
+  `arc_gauge_thin_arc_only`: progressively remove gauge decoration and arc
+  width so track/value raster cost can be separated from text and ticks.
+
+Each case reports four separate phases. `ui_prepare` measures widget state
+updates and invalid-region merging, `ui_render` measures retained-tree drawing,
+`ui_present` measures physical display submission, and `ui_frame` is their sum.
+The records also include the mean dirty-region count and pixel area, making it
+possible to distinguish drawing improvements from better damage tracking or
+display-driver behaviour.
+
+Run the S31 reference workload with:
+
+```sh
+bmk makeapp -r -a -board esp32_s31_korvo_1 -heap-region psram -heap 512k -x \
+    benchmarks/graphics2d/graphics2d_ui_frame_esp32_s31_korvo_1.bmx
+```
+
+This is intentionally a display-only scene. It does not import touch or the
+interactive control adapter, so input polling cannot distort the frame timings.
+
+The checked-in `results` directory contains matching S31 baseline and optimized
+captures. The optimized renderer temporarily disables primitive-level damage
+tracking while a retained UI region is drawn, then publishes the UI's already
+merged regions once. Compare the captures with:
+
+```sh
+python3 benchmarks/graphics2d/compare_results.py \
+    benchmarks/graphics2d/results/esp32_s31_korvo_1_2026-11-15_ui_frame.log \
+    benchmarks/graphics2d/results/esp32_s31_korvo_1_2026-11-15_ui_frame_optimized.log
+```
+
+On the reference device this reduces best dashboard render time from 56,075 us
+to 47,290 us (15.7%) and full-redraw render time from 69,544 us to 51,473 us
+(26.0%). Physical presentation is synchronized to the display and can therefore
+move between refresh boundaries even when drawing becomes faster; use
+`ui_render` when evaluating renderer-only changes.
+
+The scaled-text captures add `text_spleen_5x8_scale3` to the raster suite. On
+the S31, emitting enlarged RGB565 mask rows as horizontal runs reduces this
+case from 23,523 us to 21,084 us (10.4%) without changing unscaled RGB565 or
+Mono1 output. In the representative dashboard capture, the same change reduces
+best dashboard rendering from 47,290 us to 45,670 us (3.4%) and full redraw
+rendering from 51,473 us to 49,556 us (3.7%).
+
+The isolated-widget profile records the cost of the same dashboard components
+without changing their normal retained rendering. Its S31 baseline identifies
+the arc gauge as the dominant widget at 22,165 us, compared with 7,040 us for
+the sparkline and 4,354 us for the progress bar.
+
+The native-arc capture moves complete clipped arc rasterization behind one
+Graphics2D call while preserving the transformed fallback. On the S31 this
+reduces isolated arc-gauge rendering from 22,165 us to 15,906 us (28.2%), the
+multi-widget dashboard from 46,153 us to 37,285 us (19.2%), and full redraw
+rendering from 49,788 us to 40,502 us (18.7%).
+
+The component breakdown then removes ticks, text, and arc thickness in stages.
+It shows that ticks are negligible, text contributes about 1.4 ms, and the two
+eight-pixel arc bands account for roughly 10.7 ms beyond the thin-arc control.
+
+Reusing each segment's sine and cosine across all thickness rings preserves the
+same geometry while reducing the full gauge from 16,121 us to 7,643 us (52.6%).
+The representative dashboard falls from 38,371 us to 25,196 us (34.3%), and a
+full retained redraw from 40,619 us to 27,323 us (32.7%). The one-pixel control
+case remains effectively unchanged, confirming that the gain comes from
+eliminating repeated thick-arc angle calculations.
+
+The batched-polyline capture reuses the sparkline's coordinate storage and
+submits all connected segments through one native raster call. Isolated
+sparkline rendering falls from 7,289 us to 6,638 us (8.9%), and the dashboard
+update containing it falls from 25,196 us to 23,784 us (5.6%). Full redraw is
+effectively unchanged at 1.1%, as expected: the optimization removes repeated
+language/native boundary work rather than reducing the number of line pixels.
+
+Selecting the clipped RGB565 pixel writer once per segment then removes the
+generic format dispatch from every line pixel. Against the batched-polyline
+capture, this reduces the sparkline from 6,638 us to 6,275 us (5.5%), the
+dashboard from 23,784 us to 22,995 us (3.3%), and full redraw from 27,023 us to
+26,064 us (3.5%). Thick arc cases also improve by roughly 4--5% because they
+share the same clipped line rasterizer.
+
+Native clipped rounded rectangles preserve the PPA-eligible rectangular centre
+while moving corner construction behind one Graphics2D call. The isolated
+progress bar remains effectively unchanged (3,508 us versus 3,536 us), showing
+that its large centre was already efficient. The broader dashboard improves
+from 22,995 us to 21,899 us (4.8%), and full redraw from 26,064 us to 25,333 us
+(2.8%), due to the other rounded retained surfaces. The raster suite includes
+dedicated outline and fill cases so corner and centre costs remain visible.
+The initial S31 reference records 96 RGB565 outlines in 2,848 us and 48 fills
+in 2,265 us; their Mono1 equivalents take 236 us and 143 us respectively at
+the format-adjusted iteration counts.

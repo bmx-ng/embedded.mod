@@ -1,0 +1,5 @@
+G2D_SPRITE_BENCH,format=1,kind=meta,platform=esp32,width=160,height=128,pixel_format=rgb565,samples=7
+G2D_SPRITE_BENCH,format=1,kind=summary,platform=esp32,width=160,height=128,pixel_format=rgb565,case=batch_prepare_24_masked,iterations=256,best_us=38869,mean_us=38901,checksum=1171649823
+G2D_SPRITE_BENCH,format=1,kind=summary,platform=esp32,width=160,height=128,pixel_format=rgb565,case=batch_draw_24_masked,iterations=64,best_us=81423,mean_us=81559,checksum=2036932855
+G2D_SPRITE_BENCH,format=1,kind=summary,platform=esp32,width=160,height=128,pixel_format=rgb565,case=scene_24_masked_static,iterations=64,best_us=128499,mean_us=138604,checksum=2036932855
+G2D_SPRITE_BENCH,format=1,kind=summary,platform=esp32,width=160,height=128,pixel_format=rgb565,case=transition_damage_24,iterations=256,best_us=230010,mean_us=230971,checksum=2853333715

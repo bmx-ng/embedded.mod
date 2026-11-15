@@ -1,0 +1,5 @@
+# ESP32-S31 Korvo-1 focused bitmap-text result after contiguous ASCII lookup
+# ESP-IDF 6.1, 320 MHz, release, 512K managed heap in PSRAM
+# Checksums match the preceding RGB565 scale-1 mask result.
+G2D_BENCH,format=1,kind=summary,phase=render,platform=esp32,width=160,height=128,pixel_format=rgb565,case=text_spleen_5x8,iterations=64,nominal_pixels=46080,best_us=17310,mean_us=17402,checksum=4257442166
+G2D_BENCH,format=1,kind=summary,phase=render,platform=esp32,width=160,height=128,pixel_format=mono1,case=text_spleen_5x8,iterations=1,nominal_pixels=720,best_us=327,mean_us=336,checksum=3486693707

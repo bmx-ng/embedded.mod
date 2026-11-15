@@ -76,7 +76,19 @@ and other capabilities that do not share equivalent semantics.
 | `Embedded.Hardware.ADC` | Pin-oriented one-shot conversion, resolution, and input-range discovery |
 | `Embedded.Hardware.PWM` | Pin-oriented frequency, polarity, enable, and 16-bit-scaled duty control |
 | `Embedded.Hardware.I2C` | Master setup, deadline reads and writes, and repeated-Start write/read transactions |
-| `Embedded.Hardware.SPI` | 8-bit and 16-bit blocking simplex and full-duplex transfers |
+| `Embedded.Hardware.SPI` | 8-bit and 16-bit blocking simplex and full-duplex transfers, including omitted RX/TX signals for one-way devices |
+| [`Embedded.Drivers.Display`](drivers.mod/README.md) | Mono1, RGB565, and RGB888 raster buffers with full or dirty-region presentation |
+| [`Embedded.Drivers.Display.Image`](drivers.mod/README.md) | Validated firmware-resident Mono1, RGB565, and RGB888 images with transparency, clipping, tinting, and scaling |
+| [`Embedded.Drivers.Display.Font`](drivers.mod/README.md) | Allocation-free Unicode bitmap-font measurement and rendering |
+| [`Embedded.Drivers.Display.Fonts.*`](drivers.mod/README.md) | Independently imported ANAKRON, Cozette, Scientifica, Spleen, Tamzen, and Terminus bitmap fonts |
+| [`Embedded.Drivers.Displays.SSD1306`](drivers.mod/README.md) | Portable I2C SSD1306 OLED driver, including the 72x40 0.42-inch panel preset |
+| [`Embedded.Drivers.Displays.ST7735`](drivers.mod/README.md#st7735-spi-colour-displays) | Configurable SPI ST7735 colour TFT driver with RGB565 and dirty-region presentation |
+| [`Embedded.Drivers.Displays.ST7789`](drivers.mod/README.md#st7789-spi-colour-displays) | Configurable SPI ST7789 colour TFT driver with a full-size 240x320 preset |
+| [`Embedded.Drivers.Displays.ST7796`](drivers.mod/README.md#st7796-spi-colour-displays) | Configurable SPI ST7796 320x480 colour TFT driver with RGB565 and dirty-region presentation |
+| [`Embedded.Drivers.Touch`](drivers.mod/README.md) | Controller-neutral multitouch polling translated to standard `BRL.Event` touch events |
+| [`Embedded.Graphics2D`](graphics2d.mod/README.md) | Optional Max2D-style stateful drawing facade over portable display buffers |
+| [`Embedded.Graphics2D.Sprite`](graphics2d.mod/README.md#sprite-sheets-and-animation) | Flash-resident sprite sheets, atlas metadata, and deterministic animation playback |
+| [`Embedded.UI`](ui.mod/README.md) | Lightweight retained widget trees and passive presentation, with optional controls and touch adapters |
 | `Embedded.Hardware.UART` | Controller setup, pin routing, framing, flow control, synchronous I/O, deadlines, break, and error state |
 | `Embedded.IO.BufferedUART` | A managed receive buffer and `TStream`-compatible, line-oriented UART access |
 | `Embedded.Hardware.Watchdog` | Enable, feed, disable, timeout validation, status, and reset detection |
