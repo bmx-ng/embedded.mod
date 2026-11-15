@@ -13,7 +13,7 @@ Import Embedded.System.Time
 Const SpriteBenchmarkFormat:Int = 1
 Const SpriteBenchmarkSamples:Int = 7
 Const SpriteBenchmarkWarmups:Int = 2
-Const SpriteBenchmarkCaseCount:Int = 13
+Const SpriteBenchmarkCaseCount:Int = 17
 
 ?pico
 Const SpriteBenchmarkPlatform:String = "pico"
@@ -40,6 +40,7 @@ Type TGraphics2DSpriteBenchmark
 	Field maskedSheet:TEmbeddedSpriteSheet
 	Field animation:TEmbeddedSpriteAnimation
 	Field player:TEmbeddedSpritePlayer
+	Field maskedBatch:TEmbeddedSpriteBatch
 	Field samples:ULong[] = New ULong[SpriteBenchmarkSamples]
 	Field checksums:UInt[] = New UInt[SpriteBenchmarkSamples]
 	Field resultValue:UInt
@@ -68,7 +69,8 @@ Type TGraphics2DSpriteBenchmark
 		benchmark.animation = TEmbeddedSpriteAnimation.Create(benchmark.maskedSheet, ..
 			[0, 1, 2, 3], [37, 71, 113, 59])
 		benchmark.player = TEmbeddedSpritePlayer.Create(benchmark.animation)
-		If Not benchmark.animation Or Not benchmark.player Then Return Null
+		benchmark.maskedBatch = TEmbeddedSpriteBatch.Create(benchmark.maskedSheet, 24)
+		If Not benchmark.animation Or Not benchmark.player Or Not benchmark.maskedBatch Then Return Null
 		Select pixelFormat
 			Case DisplayPixelFormatRGB565
 				benchmark.pixelFormatName = "rgb565"
@@ -142,7 +144,15 @@ Type TGraphics2DSpriteBenchmark
 		graphics.ResetViewport()
 		graphics.SetColorValue($ffffff)
 		player.Reset()
+		PrepareMaskedBatch()
 		resultValue = 0
+	End Method
+
+	Method PrepareMaskedBatch()
+		maskedBatch.Clear()
+		For Local sprite:Int = 0 Until 24
+			maskedBatch.Add(sprite & 3, 12 + (sprite Mod 8) * 18, 12 + (sprite / 8) * 24)
+		Next
 	End Method
 
 	Method ExecuteCase(caseId:Int, iterations:Int)
@@ -220,6 +230,39 @@ Type TGraphics2DSpriteBenchmark
 					player.Draw(graphics, 8 + (index * 13) Mod (width - 16), ..
 						8 + (index * 7) Mod (height - 16))
 				Next
+			Case 13
+				For Local pass:Int = 0 Until iterations
+					PrepareMaskedBatch()
+					resultValue :+ UInt(maskedBatch.Count())
+				Next
+			Case 14
+				For Local pass:Int = 0 Until iterations
+					maskedBatch.Draw(graphics)
+				Next
+			Case 15
+				For Local pass:Int = 0 Until iterations
+					For Local sprite:Int = 0 Until 24
+						maskedSheet.Draw(graphics, sprite & 3, ..
+							12 + (sprite Mod 8) * 18, 12 + (sprite / 8) * 24)
+					Next
+				Next
+			Case 16
+				graphics.SetDirtyTracking(True)
+				For Local pass:Int = 0 Until iterations
+					graphics.ResetDirty()
+					For Local sprite:Int = 0 Until 24
+						Local oldX:Int = 12 + (sprite Mod 8) * 18
+						Local oldY:Int = 12 + (sprite / 8) * 24
+						maskedSheet.InvalidateTransition(graphics, sprite & 3, oldX, oldY, ..
+							(sprite + 1) & 3, oldX + 3, oldY + 2)
+					Next
+				Next
+				Local dirtyX:Int, dirtyY:Int, dirtyWidth:Int, dirtyHeight:Int
+				If graphics.DirtyRect(dirtyX, dirtyY, dirtyWidth, dirtyHeight) Then
+					resultValue = UInt(dirtyX) ~ (UInt(dirtyY) Shl 8) ~ ..
+						(UInt(dirtyWidth) Shl 16) ~ (UInt(dirtyHeight) Shl 24)
+				End If
+				graphics.SetDirtyTracking(False)
 		End Select
 	End Method
 
@@ -250,6 +293,10 @@ Type TGraphics2DSpriteBenchmark
 			Case 10 Return "scene_24_opaque"
 			Case 11 Return "scene_24_masked"
 			Case 12 Return "player_animated_draw"
+			Case 13 Return "batch_prepare_24_masked"
+			Case 14 Return "batch_draw_24_masked"
+			Case 15 Return "scene_24_masked_static"
+			Case 16 Return "transition_damage_24"
 		End Select
 		Return "unknown"
 	End Method
@@ -258,10 +305,11 @@ Type TGraphics2DSpriteBenchmark
 		Local iterations:Int = 512
 		Select caseId
 			Case 8, 9 iterations = 8192
-			Case 10, 11 iterations = 64
+			Case 10, 11, 14, 15 iterations = 64
+			Case 13, 16 iterations = 256
 		End Select
 		If frame.Format() = DisplayPixelFormatMono1 Then
-			If caseId = 10 Or caseId = 11 Then Return 1
+			If caseId = 10 Or caseId = 11 Or caseId = 14 Or caseId = 15 Then Return 1
 			If caseId <> 8 And caseId <> 9 Then Return 8
 		End If
 		Return iterations

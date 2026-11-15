@@ -251,6 +251,79 @@ Type TEmbeddedSpriteSheet Final
 	End Method
 
 	Rem
+	bbdoc: Returns one frame's logical destination bounds without drawing it.
+	param: Zero-based frame index.
+	param: Destination handle x coordinate.
+	param: Destination handle y coordinate.
+	param: Receives the logical left edge.
+	param: Receives the logical top edge.
+	param: Receives the logical untrimmed width.
+	param: Receives the logical untrimmed height.
+	returns: True for a valid frame index; otherwise False with empty bounds.
+	about: Bounds cover the complete untrimmed frame canvas, including transparent
+	space removed from an atlas frame. They are therefore suitable for restoring
+	or invalidating both the old and new positions of a moving sprite.
+	End Rem
+	Method FrameBounds:Int(index:Int, x:Int, y:Int, left:Int Var, top:Int Var, ..
+			width:Int Var, height:Int Var)
+		Local frame:TEmbeddedSpriteFrame = Frame(index)
+		If Not frame Then
+			left = 0
+			top = 0
+			width = 0
+			height = 0
+			Return False
+		End If
+		left = x - frame.HandleX()
+		top = y - frame.HandleY()
+		width = frame.Width()
+		height = frame.Height()
+		Return True
+	End Method
+
+	Rem
+	bbdoc: Adds one frame's logical canvas to a context's dirty regions without drawing it.
+	param: Drawing context, or Null to use the module-level Graphics2D context.
+	param: Zero-based frame index.
+	param: Destination handle x coordinate.
+	param: Destination handle y coordinate.
+	returns: True when the frame index is valid.
+	about: This is useful when an application restores a sprite's previous
+	background separately from drawing its new frame.
+	End Rem
+	Method InvalidateFrame:Int(context:TEmbedded2DContext, index:Int, x:Int, y:Int)
+		Local left:Int, top:Int, width:Int, height:Int
+		If Not FrameBounds(index, x, y, left, top, width, height) Then Return False
+		If context Then
+			context.InvalidateRect(left, top, width, height)
+		Else
+			InvalidateRect(left, top, width, height)
+		End If
+		Return True
+	End Method
+
+	Rem
+	bbdoc: Invalidates both positions involved in a sprite transition.
+	param: Drawing context, or Null to use the module-level Graphics2D context.
+	param: Previous frame index, or a negative value when there was no previous sprite.
+	param: Previous destination handle x coordinate.
+	param: Previous destination handle y coordinate.
+	param: New frame index, or a negative value when the sprite is no longer visible.
+	param: New destination handle x coordinate.
+	param: New destination handle y coordinate.
+	returns: Number of valid frame canvases submitted for invalidation.
+	about: Dirty-region tracking may merge overlapping old and new bounds. This
+	method changes no pixels and does not prescribe how the old background is restored.
+	End Rem
+	Method InvalidateTransition:Int(context:TEmbedded2DContext, oldIndex:Int, oldX:Int, oldY:Int, ..
+			newIndex:Int, newX:Int, newY:Int)
+		Local invalidated:Int
+		If oldIndex >= 0 And InvalidateFrame(context, oldIndex, oldX, oldY) Then invalidated :+ 1
+		If newIndex >= 0 And InvalidateFrame(context, newIndex, newX, newY) Then invalidated :+ 1
+		Return invalidated
+	End Method
+
+	Rem
 	bbdoc: Draws one frame using the supplied context or the default context.
 	param: Drawing context, or Null to use the module-level Graphics2D context.
 	param: Zero-based frame index.
@@ -276,6 +349,137 @@ Type TEmbeddedSpriteSheet Final
 				frame.SourceY(), frame.StoredWidth(), frame.StoredHeight(), ..
 				drawFlags, opacity, colorKey)
 		End If
+	End Method
+End Type
+
+Rem
+bbdoc: Reusable fixed-capacity drawing commands for one sprite sheet.
+about: Command storage is allocated by Create and reused by Clear, Add, and Draw.
+Submitting a batch performs no managed allocation. Commands retain their insertion
+order, so the usual painter's-order layering rules apply.
+End Rem
+Type TEmbeddedSpriteBatch Final
+	Private
+	Field spriteSheet:TEmbeddedSpriteSheet
+	Field sourceImage:TEmbeddedImage
+	Field batchCapacity:Int
+	Field commandCount:Int
+	Field sourcePositionsX:Int[]
+	Field sourcePositionsY:Int[]
+	Field sourceWidths:Int[]
+	Field sourceHeights:Int[]
+	Field destinationPositionsX:Int[]
+	Field destinationPositionsY:Int[]
+	Field drawingFlags:Int[]
+	Field drawingOpacities:Int[]
+	Field drawingColorKeys:UInt[]
+
+	Public
+	Rem
+	bbdoc: Creates reusable command storage for a sprite sheet.
+	param: Sprite sheet drawn by every command.
+	param: Positive maximum number of commands.
+	returns: Empty batch, or Null when the arguments are invalid.
+	End Rem
+	Function Create:TEmbeddedSpriteBatch(sheet:TEmbeddedSpriteSheet, capacity:Int)
+		If Not sheet Or capacity <= 0 Then Return Null
+		Local batch:TEmbeddedSpriteBatch = New TEmbeddedSpriteBatch
+		batch.spriteSheet = sheet
+		batch.sourceImage = sheet.Image()
+		batch.batchCapacity = capacity
+		batch.sourcePositionsX = New Int[capacity]
+		batch.sourcePositionsY = New Int[capacity]
+		batch.sourceWidths = New Int[capacity]
+		batch.sourceHeights = New Int[capacity]
+		batch.destinationPositionsX = New Int[capacity]
+		batch.destinationPositionsY = New Int[capacity]
+		batch.drawingFlags = New Int[capacity]
+		batch.drawingOpacities = New Int[capacity]
+		batch.drawingColorKeys = New UInt[capacity]
+		Return batch
+	End Function
+
+	Rem
+	bbdoc: Returns the sprite sheet shared by every command.
+	returns: Batch sprite sheet.
+	End Rem
+	Method Sheet:TEmbeddedSpriteSheet()
+		Return spriteSheet
+	End Method
+
+	Rem
+	bbdoc: Returns the maximum number of commands retained by this batch.
+	returns: Fixed command capacity.
+	End Rem
+	Method Capacity:Int()
+		Return batchCapacity
+	End Method
+
+	Rem
+	bbdoc: Returns the number of commands currently retained.
+	returns: Command count from zero through Capacity.
+	End Rem
+	Method Count:Int()
+		Return commandCount
+	End Method
+
+	Rem
+	bbdoc: Removes every command while retaining the allocated storage.
+	End Rem
+	Method Clear()
+		commandCount = 0
+	End Method
+
+	Rem
+	bbdoc: Appends one sprite drawing command.
+	param: Zero-based sheet-frame index.
+	param: Destination handle x coordinate.
+	param: Destination handle y coordinate.
+	param: ImageFlipX, ImageFlipY, or combined drawing flags.
+	param: Opacity from zero through 255.
+	param: Optional RGB color key, or ImageColorKeyDisabled.
+	returns: True when retained; False for an invalid frame or a full batch.
+	about: Tint comes from the drawing context at submission time, allowing one
+	batch to be recolored without rebuilding its commands.
+	End Rem
+	Method Add:Int(index:Int, x:Int, y:Int, drawFlags:Int = 0, opacity:Int = 255, ..
+			colorKey:UInt = ImageColorKeyDisabled)
+		If commandCount >= batchCapacity Then Return False
+		Local frame:TEmbeddedSpriteFrame = spriteSheet.Frame(index)
+		If Not frame Then Return False
+		sourcePositionsX[commandCount] = frame.SourceX()
+		sourcePositionsY[commandCount] = frame.SourceY()
+		sourceWidths[commandCount] = frame.StoredWidth()
+		sourceHeights[commandCount] = frame.StoredHeight()
+		destinationPositionsX[commandCount] = x - frame.HandleX() + frame.OffsetX()
+		destinationPositionsY[commandCount] = y - frame.HandleY() + frame.OffsetY()
+		drawingFlags[commandCount] = drawFlags
+		drawingOpacities[commandCount] = opacity
+		drawingColorKeys[commandCount] = colorKey
+		commandCount :+ 1
+		Return True
+	End Method
+
+	Rem
+	bbdoc: Draws all retained commands in insertion order.
+	param: Drawing context, or Null to use the module-level Graphics2D context.
+	returns: Number of commands submitted.
+	End Rem
+	Method Draw:Int(context:TEmbedded2DContext)
+		For Local index:Int = 0 Until commandCount
+			If context Then
+				context.DrawImageRegion(sourceImage, destinationPositionsX[index], ..
+					destinationPositionsY[index], sourcePositionsX[index], sourcePositionsY[index], ..
+					sourceWidths[index], sourceHeights[index], drawingFlags[index], ..
+					drawingOpacities[index], drawingColorKeys[index])
+			Else
+				DrawImageRegion(sourceImage, destinationPositionsX[index], ..
+					destinationPositionsY[index], sourcePositionsX[index], sourcePositionsY[index], ..
+					sourceWidths[index], sourceHeights[index], drawingFlags[index], ..
+					drawingOpacities[index], drawingColorKeys[index])
+			End If
+		Next
+		Return commandCount
 	End Method
 End Type
 

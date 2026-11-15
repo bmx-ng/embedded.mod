@@ -47,8 +47,11 @@ A positive speedup above `1.00x`, or a negative percentage, is an improvement.
 `graphics2d_sprite_benchmark.bmx` isolates the sprite layer from the broader
 primitive suite. It measures opaque, flipped, tinted and translucent atlas
 frames; the same operations with a one-bit transparency mask; animation-frame
-selection; player advancement; animated drawing; and 24-sprite scenes. The
-timed sections allocate no memory and use stable `G2D_SPRITE_BENCH` records.
+selection; player advancement; animated drawing; and 24-sprite scenes. It also
+measures filling and submitting a reusable `TEmbeddedSpriteBatch`, compares the
+submission with an equivalent manual scene, and records old/new sprite damage
+tracking independently from raster work. The timed sections allocate no memory
+and use stable `G2D_SPRITE_BENCH` records.
 
 The benchmark runs against both RGB565 and Mono1 memory targets. Build it with
 the same board, compiler, CPU frequency and heap options before and after a
@@ -63,10 +66,25 @@ Frame lookup and player cases fold their numerical result into the checksum as
 well as checking the framebuffer, so an apparently faster timing cannot hide a
 playback-semantics change.
 
+Sprite sheets expose logical `FrameBounds`, `InvalidateFrame`, and
+`InvalidateTransition` operations. These use the complete untrimmed frame
+canvas, so moving a trimmed atlas frame cannot leave stale edge pixels behind.
+Invalidation changes no pixels: the application remains responsible for
+restoring the previous background before drawing the new sprite. Fixed-capacity
+sprite batches retain painter-order commands and reuse all command storage
+after construction.
+
 The initial S31 captures in `results` provide the first sprite reference. A
 packed-channel lookup table for opaque masked tinting preserves identical
 output while reducing 512 tinted 16x16 draws from 47,131 us to 38,785 us
 (17.7%).
+
+The S31 sprite-batch capture shows 64 submissions of 24 static masked sprites
+falling from 128,499 us through ordinary sheet calls to 81,423 us through a
+prepared batch (36.6%). Both cases produce checksum `2036932855`; the batch
+caches validated source and destination rectangles but traverses exactly the
+same pixels. Preparing all 24 commands takes about 152 us per preparation, so
+longer-lived batches provide the greatest benefit.
 
 ## Benchmark rules
 

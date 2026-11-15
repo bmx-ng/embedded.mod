@@ -65,8 +65,36 @@ target.Clear()
 trimmedSheet.Draw(context, 0, 2, 1)
 passed :& target.Pixel(2, 1) = $ffffff
 passed :& target.Pixel(1, 1) = 0 And target.Pixel(3, 1) = 0
+Local boundsX:Int, boundsY:Int, boundsWidth:Int, boundsHeight:Int
+passed :& trimmedSheet.FrameBounds(0, 2, 1, boundsX, boundsY, boundsWidth, boundsHeight)
+passed :& boundsX = 1 And boundsY = 0 And boundsWidth = 3 And boundsHeight = 3
+passed :& Not trimmedSheet.FrameBounds(1, 2, 1, boundsX, boundsY, boundsWidth, boundsHeight)
+passed :& boundsWidth = 0 And boundsHeight = 0
+
+' A transition dirties complete old and new logical canvases, even for trimmed frames.
+context.SetDirtyTracking(True)
+context.ResetDirty()
+passed :& trimmedSheet.InvalidateTransition(context, 0, 1, 1, 0, 2, 1) = 2
+passed :& context.DirtyRegionCount() = 1
+passed :& context.DirtyRect(boundsX, boundsY, boundsWidth, boundsHeight)
+passed :& boundsX = 0 And boundsY = 0 And boundsWidth = 4 And boundsHeight = 3
+context.SetDirtyTracking(False)
 passed :& TEmbeddedSpriteSheet.Create(image, ..
 	[TEmbeddedSpriteFrame.Create(4, 0, 1, 1)]) = Null
+
+' Fixed-capacity batches retain commands and draw in insertion order.
+Local batch:TEmbeddedSpriteBatch = TEmbeddedSpriteBatch.Create(sheet, 2)
+passed :& batch <> Null And batch.Capacity() = 2 And batch.Count() = 0
+passed :& batch.Add(0, 1, 1)
+passed :& batch.Add(1, 3, 1)
+passed :& Not batch.Add(0, 1, 1) And batch.Count() = 2
+target.Clear()
+passed :& batch.Draw(context) = 2
+passed :& target.Pixel(0, 0) = $ff0000 And target.Pixel(1, 1) = $0000ff
+passed :& target.Pixel(2, 0) = $00ff00 And target.Pixel(3, 1) = $ffffff
+batch.Clear()
+passed :& batch.Count() = 0 And Not batch.Add(2, 1, 1)
+passed :& TEmbeddedSpriteBatch.Create(sheet, 0) = Null
 
 Local animation:TEmbeddedSpriteAnimation = TEmbeddedSpriteAnimation.Create(sheet, [0, 1], [100, 200])
 passed :& animation <> Null And animation.FrameCount() = 2 And animation.Duration() = 300
