@@ -316,6 +316,27 @@ static void bmx_embedded_display_draw_clipped_line(uint8_t *pixels,
     const int32_t sx = x0 < x1 ? 1 : -1;
     const int32_t sy = y0 < y1 ? 1 : -1;
     int32_t error = dx + dy;
+    if (format == 2) {
+        for (;;) {
+            if (x0 >= clip_x && x0 < clip_x1 &&
+                    y0 >= clip_y && y0 < clip_y1) {
+                uint16_t *pixel = (uint16_t *)(pixels +
+                    (size_t)y0 * (size_t)stride + (size_t)x0 * 2U);
+                *pixel = rgb565;
+            }
+            if (x0 == x1 && y0 == y1) break;
+            const int32_t twice_error = error * 2;
+            if (twice_error >= dy) {
+                error += dy;
+                x0 += sx;
+            }
+            if (twice_error <= dx) {
+                error += dx;
+                y0 += sy;
+            }
+        }
+        return;
+    }
     for (;;) {
         bmx_embedded_display_write_clipped_pixel(pixels, stride, format,
             x0, y0, clip_x, clip_y, clip_x1, clip_y1, color, rgb565);

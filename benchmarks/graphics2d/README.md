@@ -150,3 +150,10 @@ sparkline rendering falls from 7,289 us to 6,638 us (8.9%), and the dashboard
 update containing it falls from 25,196 us to 23,784 us (5.6%). Full redraw is
 effectively unchanged at 1.1%, as expected: the optimization removes repeated
 language/native boundary work rather than reducing the number of line pixels.
+
+Selecting the clipped RGB565 pixel writer once per segment then removes the
+generic format dispatch from every line pixel. Against the batched-polyline
+capture, this reduces the sparkline from 6,638 us to 6,275 us (5.5%), the
+dashboard from 23,784 us to 22,995 us (3.3%), and full redraw from 27,023 us to
+26,064 us (3.5%). Thick arc cases also improve by roughly 4--5% because they
+share the same clipped line rasterizer.
