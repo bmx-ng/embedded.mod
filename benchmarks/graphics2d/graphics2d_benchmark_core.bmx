@@ -13,7 +13,7 @@ Import Embedded.System.Time
 Const GraphicsBenchmarkFormat:Int = 1
 Const GraphicsBenchmarkSamples:Int = 7
 Const GraphicsBenchmarkWarmups:Int = 2
-Const GraphicsBenchmarkCaseCount:Int = 14
+Const GraphicsBenchmarkCaseCount:Int = 15
 Const GraphicsBenchmarkPresentSamples:Int = 5
 
 Function BenchmarkHousekeeping()
@@ -364,6 +364,11 @@ Type TGraphics2DBenchmark
 					graphics.FillRect((index * 13) Mod (logicalWidth - 24), ..
 						(index * 7) Mod (logicalHeight - 16), 24, 16)
 				Next
+			Case 14
+				For Local index:Int = 0 Until iterations
+					graphics.DrawText("Graphics2D 012345", (index * 3) Mod 24, ..
+						(index * 9) Mod (height - 24), 3)
+				Next
 		End Select
 	End Method
 
@@ -393,6 +398,7 @@ Type TGraphics2DBenchmark
 			Case 11 Return "image_tinted_16x16"
 			Case 12 Return "image_alpha_16x16"
 			Case 13 Return "fill_24x16_rot90"
+			Case 14 Return "text_spleen_5x8_scale3"
 		End Select
 		Return "unknown"
 	End Method
@@ -405,7 +411,7 @@ Type TGraphics2DBenchmark
 			Case 3, 4 iterations = 128
 			Case 5, 6 iterations = 96
 			Case 7 iterations = 48
-			Case 8 iterations = 64
+			Case 8, 14 iterations = 64
 			Case 9, 11, 12 iterations = 128
 			Case 10 iterations = 64
 			Case 13 iterations = 192
@@ -415,7 +421,7 @@ Type TGraphics2DBenchmark
 		' single timed batch below embedded watchdog intervals while preserving
 		' enough work for stable microsecond measurements.
 		If frame.Format() = DisplayPixelFormatMono1 Then
-			If caseId >= 8 And caseId <= 12 Then
+			If (caseId >= 8 And caseId <= 12) Or caseId = 14 Then
 				iterations = 1
 			Else
 				iterations :/ 16
@@ -434,6 +440,7 @@ Type TGraphics2DBenchmark
 			Case 5 Return Long((42 + 30) * 2 - 4) * iterations
 			Case 7 Return Long(531) * iterations
 			Case 8 Return Long(18 * 5 * 8) * iterations
+			Case 14 Return Long(18 * 5 * 8 * 9) * iterations
 			Case 9, 11, 12 Return Long(16 * 16) * iterations
 			Case 10 Return Long(32 * 32) * iterations
 		End Select

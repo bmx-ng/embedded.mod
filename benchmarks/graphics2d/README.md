@@ -7,8 +7,8 @@ DMA, VSync, or display-controller setup time.
 
 `graphics2d_render_benchmark.bmx` runs the same suite against 160x128 RGB565 and
 Mono1 buffers. It covers full and small fills, horizontal and diagonal lines,
-rectangle and circle primitives, bitmap text, RGB565 copies, scaling, tinting,
-alpha blending, and a rotated drawing target.
+rectangle and circle primitives, unscaled and scale-3 bitmap text, RGB565
+copies, scaling, tinting, alpha blending, and a rotated drawing target.
 
 Each workload is warmed twice and measured seven times. Output uses stable
 comma-separated `key=value` records beginning with `G2D_BENCH`. Sample rows
@@ -109,3 +109,10 @@ to 47,290 us (15.7%) and full-redraw render time from 69,544 us to 51,473 us
 (26.0%). Physical presentation is synchronized to the display and can therefore
 move between refresh boundaries even when drawing becomes faster; use
 `ui_render` when evaluating renderer-only changes.
+
+The scaled-text captures add `text_spleen_5x8_scale3` to the raster suite. On
+the S31, emitting enlarged RGB565 mask rows as horizontal runs reduces this
+case from 23,523 us to 21,084 us (10.4%) without changing unscaled RGB565 or
+Mono1 output. In the representative dashboard capture, the same change reduces
+best dashboard rendering from 47,290 us to 45,670 us (3.4%) and full redraw
+rendering from 51,473 us to 49,556 us (3.7%).

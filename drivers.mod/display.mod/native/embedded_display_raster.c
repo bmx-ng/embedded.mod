@@ -433,7 +433,8 @@ void bmx_embedded_display_draw_mono1_mask(uint8_t *pixels, int32_t stride,
         (((color >> 10) & 0x3fU) << 5) | ((color >> 3) & 0x1fU));
 
     /* Small bitmap fonts overwhelmingly use an unscaled RGB565 mask. Keep
-       that hot path free of generic scale loops and per-pixel format tests. */
+       that hot path free of run detection, generic scale loops, and per-pixel
+       format tests. */
     if (format == 2 && scale == 1) {
         int32_t first_column = clip_x - x;
         int32_t last_column = clip_x1 - x;
@@ -454,6 +455,40 @@ void bmx_embedded_display_draw_mono1_mask(uint8_t *pixels, int32_t stride,
                     output[1] = (uint8_t)(rgb565 >> 8);
                 }
                 output += 2;
+            }
+        }
+        return;
+    }
+
+    /* Convert scaled RGB565 mask rows into horizontal runs so enlarged glyphs
+       use wide fills instead of the generic per-destination-pixel path. */
+    if (format == 2) {
+        for (int32_t row = 0; row < mask_height; ++row) {
+            const int32_t output_y = y + row * scale;
+            if (output_y >= clip_y1 || output_y + scale <= clip_y) continue;
+            const uint8_t *mask_row = mask + (size_t)row * (size_t)mask_stride;
+            int32_t first_y = output_y < clip_y ? clip_y : output_y;
+            int32_t last_y = output_y + scale;
+            if (last_y > clip_y1) last_y = clip_y1;
+            int32_t column = 0;
+            while (column < mask_width) {
+                while (column < mask_width && !(mask_row[column >> 3] &
+                        (uint8_t)(0x80U >> (column & 7)))) ++column;
+                const int32_t run_start = column;
+                while (column < mask_width && (mask_row[column >> 3] &
+                        (uint8_t)(0x80U >> (column & 7)))) ++column;
+                if (run_start == column) break;
+                int32_t first_x = x + run_start * scale;
+                int32_t last_x = x + column * scale;
+                if (first_x < clip_x) first_x = clip_x;
+                if (last_x > clip_x1) last_x = clip_x1;
+                if (first_x >= last_x) continue;
+                for (int32_t py = first_y; py < last_y; ++py) {
+                    uint8_t *output = pixels + (size_t)py * (size_t)stride +
+                        (size_t)first_x * 2U;
+                    bmx_embedded_display_fill_rgb565_pixels((uint16_t *)output,
+                        (size_t)(last_x - first_x), rgb565);
+                }
             }
         }
         return;
