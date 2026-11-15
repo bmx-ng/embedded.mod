@@ -5,6 +5,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
+#include <math.h>
 
 typedef int32_t (*bmx_embedded_display_fill_rgb565_accelerator_t)(
     uint8_t *pixels, int32_t stride, int32_t buffer_width,
@@ -305,6 +306,32 @@ static void bmx_embedded_display_write_clipped_pixel(uint8_t *pixels,
         rgb565);
 }
 
+static void bmx_embedded_display_draw_clipped_line(uint8_t *pixels,
+        int32_t stride, int32_t format, int32_t x0, int32_t y0,
+        int32_t x1, int32_t y1, int32_t clip_x, int32_t clip_y,
+        int32_t clip_x1, int32_t clip_y1, uint32_t color, uint16_t rgb565) {
+    const int32_t dx = x1 >= x0 ? x1 - x0 : x0 - x1;
+    const int32_t dy_abs = y1 >= y0 ? y1 - y0 : y0 - y1;
+    const int32_t dy = -dy_abs;
+    const int32_t sx = x0 < x1 ? 1 : -1;
+    const int32_t sy = y0 < y1 ? 1 : -1;
+    int32_t error = dx + dy;
+    for (;;) {
+        bmx_embedded_display_write_clipped_pixel(pixels, stride, format,
+            x0, y0, clip_x, clip_y, clip_x1, clip_y1, color, rgb565);
+        if (x0 == x1 && y0 == y1) break;
+        const int32_t twice_error = error * 2;
+        if (twice_error >= dy) {
+            error += dy;
+            x0 += sx;
+        }
+        if (twice_error <= dx) {
+            error += dx;
+            y0 += sy;
+        }
+    }
+}
+
 void bmx_embedded_display_draw_circle(uint8_t *pixels, int32_t stride,
         int32_t buffer_width, int32_t buffer_height, int32_t format,
         int32_t center_x, int32_t center_y, int32_t radius,
@@ -409,6 +436,52 @@ void bmx_embedded_display_fill_circle(uint8_t *pixels, int32_t stride,
             bmx_embedded_display_fill_clipped_span(pixels, stride, buffer_width,
                 buffer_height, format, center_x - extent, center_x + extent,
                 center_y + offset, clip_x, clip_y, clip_x1, clip_y1, color);
+        }
+    }
+}
+
+void bmx_embedded_display_draw_arc(uint8_t *pixels, int32_t stride,
+        int32_t buffer_width, int32_t buffer_height, int32_t format,
+        int32_t center_x, int32_t center_y, int32_t radius,
+        int32_t start_degrees, int32_t sweep_degrees, int32_t line_width,
+        int32_t clip_x, int32_t clip_y, int32_t clip_width,
+        int32_t clip_height, uint32_t color) {
+    if (!pixels || stride <= 0 || buffer_width <= 0 || buffer_height <= 0 ||
+            format < 1 || format > 3 || radius <= 0 || sweep_degrees == 0 ||
+            line_width <= 0 || clip_x < 0 || clip_y < 0 || clip_width <= 0 ||
+            clip_height <= 0 || clip_x + clip_width > buffer_width ||
+            clip_y + clip_height > buffer_height) return;
+    if (line_width > radius) line_width = radius;
+
+    const int32_t clip_x1 = clip_x + clip_width;
+    const int32_t clip_y1 = clip_y + clip_height;
+    const uint16_t rgb565 = (uint16_t)((((color >> 19) & 0x1fU) << 11) |
+        (((color >> 10) & 0x3fU) << 5) | ((color >> 3) & 0x1fU));
+    const int32_t absolute_sweep = sweep_degrees < 0 ? -sweep_degrees : sweep_degrees;
+    const int32_t segment_count = absolute_sweep / 5 > 0 ? absolute_sweep / 5 : 1;
+    const double degrees_to_radians = 0.01745329251994329576923690768489;
+
+    for (int32_t ring = 0; ring < line_width; ++ring) {
+        const int32_t ring_radius = radius - ring;
+        double angle = (double)start_degrees * degrees_to_radians;
+        double value = cos(angle) * (double)ring_radius;
+        int32_t previous_x = center_x + (int32_t)(value >= 0.0 ? value + 0.5 : value - 0.5);
+        value = sin(angle) * (double)ring_radius;
+        int32_t previous_y = center_y + (int32_t)(value >= 0.0 ? value + 0.5 : value - 0.5);
+        for (int32_t segment = 1; segment <= segment_count; ++segment) {
+            angle = ((double)start_degrees + (double)sweep_degrees *
+                (double)segment / (double)segment_count) * degrees_to_radians;
+            value = cos(angle) * (double)ring_radius;
+            const int32_t x = center_x +
+                (int32_t)(value >= 0.0 ? value + 0.5 : value - 0.5);
+            value = sin(angle) * (double)ring_radius;
+            const int32_t y = center_y +
+                (int32_t)(value >= 0.0 ? value + 0.5 : value - 0.5);
+            bmx_embedded_display_draw_clipped_line(pixels, stride, format,
+                previous_x, previous_y, x, y, clip_x, clip_y, clip_x1,
+                clip_y1, color, rgb565);
+            previous_x = x;
+            previous_y = y;
         }
     }
 }

@@ -123,3 +123,9 @@ The isolated-widget profile records the cost of the same dashboard components
 without changing their normal retained rendering. Its S31 baseline identifies
 the arc gauge as the dominant widget at 22,165 us, compared with 7,040 us for
 the sparkline and 4,354 us for the progress bar.
+
+The native-arc capture moves complete clipped arc rasterization behind one
+Graphics2D call while preserving the transformed fallback. On the S31 this
+reduces isolated arc-gauge rendering from 22,165 us to 15,906 us (28.2%), the
+multi-widget dashboard from 46,153 us to 37,285 us (19.2%), and full redraw
+rendering from 49,788 us to 40,502 us (18.7%).

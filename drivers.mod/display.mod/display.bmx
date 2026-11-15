@@ -45,6 +45,10 @@ Extern "C"
 		bufferHeight:Int, format:Int, centerX:Int, centerY:Int, radius:Int, clipX:Int, ..
 		clipY:Int, clipWidth:Int, clipHeight:Int, color:UInt) = ..
 		"bmx_embedded_display_fill_circle"
+	Function _DisplayDrawArc(pixels:Byte Ptr, stride:Int, bufferWidth:Int, ..
+		bufferHeight:Int, format:Int, centerX:Int, centerY:Int, radius:Int, ..
+		startDegrees:Int, sweepDegrees:Int, lineWidth:Int, clipX:Int, clipY:Int, ..
+		clipWidth:Int, clipHeight:Int, color:UInt) = "bmx_embedded_display_draw_arc"
 End Extern
 
 Public
@@ -602,6 +606,39 @@ Type TDisplayBuffer
 		If pixels Then _DisplayFillCircle(pixels, bufferStride, bufferWidth, bufferHeight, ..
 			bufferFormat, centerX, centerY, radius, clipX, clipY, clipX1 - clipX, ..
 			clipY1 - clipY, color)
+	End Method
+
+	Rem
+	bbdoc: Draws a clipped circular arc with a positive pixel width.
+	param: The centre x coordinate.
+	param: The centre y coordinate.
+	param: The positive outer radius in pixels.
+	param: The starting angle in clockwise screen degrees, where zero points right.
+	param: The signed sweep angle in degrees.
+	param: The arc width in pixels, drawn inward from the outer radius.
+	param: The clipping rectangle's left coordinate.
+	param: The clipping rectangle's top coordinate.
+	param: The clipping rectangle's width.
+	param: The clipping rectangle's height.
+	param: An $RRGGBB color; Mono1 treats zero as off and any non-zero value as on.
+	End Rem
+	Method DrawArc(centerX:Int, centerY:Int, radius:Int, startDegrees:Int, ..
+			sweepDegrees:Int, lineWidth:Int, clipX:Int, clipY:Int, clipWidth:Int, ..
+			clipHeight:Int, color:UInt = $ffffff)
+		If radius <= 0 Or sweepDegrees = 0 Or lineWidth <= 0 Or ..
+				clipWidth <= 0 Or clipHeight <= 0 Then Return
+		If lineWidth > radius Then lineWidth = radius
+		Local clipX1:Int = clipX + clipWidth
+		Local clipY1:Int = clipY + clipHeight
+		If clipX < 0 Then clipX = 0
+		If clipY < 0 Then clipY = 0
+		If clipX1 > bufferWidth Then clipX1 = bufferWidth
+		If clipY1 > bufferHeight Then clipY1 = bufferHeight
+		If clipX >= clipX1 Or clipY >= clipY1 Then Return
+		Local pixels:Byte Ptr = Pixels()
+		If pixels Then _DisplayDrawArc(pixels, bufferStride, bufferWidth, bufferHeight, ..
+			bufferFormat, centerX, centerY, radius, startDegrees, sweepDegrees, lineWidth, ..
+			clipX, clipY, clipX1 - clipX, clipY1 - clipY, color)
 	End Method
 
 	Rem

@@ -88,6 +88,7 @@ The primitive set comprises:
 - `DrawRect` and `FillRect`
 - `DrawRoundRect` and `FillRoundRect`
 - `DrawCircle` and `FillCircle`
+- `DrawArc`
 - `DrawEllipse` and `FillEllipse`
 - `DrawTriangle` and `FillTriangle`
 
@@ -100,6 +101,7 @@ FillRoundRect(12, 12, 120, 48, 10)
 
 SetColor(255, 220, 60)
 DrawCircle(172, 36, 22)
+DrawArc(172, 36, 18, 135, 270, 4)
 FillTriangle(220, 58, 252, 12, 284, 58)
 ```
 
@@ -460,4 +462,3 @@ The executable conformance coverage is in:
 - [`embedded_display_image_conformance.bmx`](../tests/embedded_display_image_conformance.bmx)
 - [`embedded_display_font_conformance.bmx`](../tests/embedded_display_font_conformance.bmx)
 - [`embedded_sprite_conformance.bmx`](../tests/embedded_sprite_conformance.bmx)
-

@@ -95,6 +95,13 @@ passed :& frame.Pixel(4, 6) And frame.Pixel(2, 2) And frame.Pixel(6, 2)
 passed :& Not frame.Pixel(1, 4) And Not frame.Pixel(7, 4)
 frame.Clear()
 
+' Native arcs draw inward from their outer radius and respect destination clipping.
+frame.DrawArc(8, 8, 5, 180, 90, 2, 0, 0, 16, 16)
+passed :& frame.Pixel(3, 8) And frame.Pixel(4, 8)
+passed :& frame.Pixel(8, 3) And frame.Pixel(8, 4)
+passed :& Not frame.Pixel(13, 8) And Not frame.Pixel(8, 13)
+frame.Clear()
+
 graphics.SetViewport(2, 2, 8, 8)
 graphics.SetColor(300, -1, 128)
 passed :& graphics.Color() = $ff0080
@@ -150,6 +157,10 @@ rotated.Clear()
 rotatedGraphics.SetFont(Spleen5x8Font())
 rotatedGraphics.DrawText("A", 0, 0)
 passed :& rotated.Pixel(8, 1) = 1 And rotated.Pixel(8, 2) = 1
+rotated.Clear()
+rotatedGraphics.DrawArc(3, 5, 2, 0, 90, 1)
+passed :& rotated.Pixel(4, 5) And rotated.Pixel(2, 3)
+passed :& Not rotated.Pixel(4, 1)
 rotated.Clear()
 passed :& rotatedGraphics.SetRotation(180)
 rotatedGraphics.Plot(0, 0)

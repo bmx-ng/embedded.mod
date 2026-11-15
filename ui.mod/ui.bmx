@@ -526,21 +526,7 @@ Function _UIDrawArc(graphics:TEmbedded2DContext, centerX:Int, centerY:Int, radiu
 	If Not graphics Or radius <= 0 Or sweepDegrees = 0 Then Return
 	If width < 1 Then width = 1
 	If width > radius Then width = radius
-	Local segmentCount:Int = Max(Abs(sweepDegrees) / 5, 1)
-	For Local ring:Int = 0 Until width
-		Local ringRadius:Int = radius - ring
-		Local previousX:Int = centerX + _UIRounded(_UICos(Double(startDegrees)) * Double(ringRadius))
-		Local previousY:Int = centerY + _UIRounded(_UISin(Double(startDegrees)) * Double(ringRadius))
-		For Local segment:Int = 1 To segmentCount
-			Local angle:Double = Double(startDegrees) + ..
-				Double(sweepDegrees) * Double(segment) / Double(segmentCount)
-			Local x:Int = centerX + _UIRounded(_UICos(angle) * Double(ringRadius))
-			Local y:Int = centerY + _UIRounded(_UISin(angle) * Double(ringRadius))
-			graphics.DrawLine(previousX, previousY, x, y)
-			previousX = x
-			previousY = y
-		Next
-	Next
+	graphics.DrawArc(centerX, centerY, radius, startDegrees, sweepDegrees, width)
 End Function
 
 Function _UIDrawImageRect(graphics:TEmbedded2DContext, image:TEmbeddedImage, ..

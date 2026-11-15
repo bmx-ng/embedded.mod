@@ -18,8 +18,19 @@ ModuleInfo "License: zlib/libpng"
 Import Embedded.Drivers.Display
 Import Embedded.Drivers.Display.Font
 Import Embedded.Drivers.Display.Image
+Import "native/graphics2d_math.c"
 
 Private
+
+Extern "C"
+	Function _GraphicsSin:Double(degrees:Double) = "bmx_graphics2d_sin"
+	Function _GraphicsCos:Double(degrees:Double) = "bmx_graphics2d_cos"
+End Extern
+
+Function GraphicsRounded:Int(value:Double)
+	If value >= 0.0 Then Return Int(value + 0.5)
+	Return Int(value - 0.5)
+End Function
 
 Function ClampColorComponent:Int(value:Int)
 	If value < 0 Then Return 0
@@ -948,6 +959,47 @@ Type TEmbedded2DContext Final
 		MarkDirtyLogical(centerX - radius, centerY - radius, radius * 2 + 1, radius * 2 + 1)
 		DrawingTarget().FillCircle(centerX, centerY, radius, viewportX, viewportY, ..
 			viewportWidth, viewportHeight, drawColor)
+	End Method
+
+	Rem
+	bbdoc: Draws a circular arc using the current color.
+	param: The centre x coordinate relative to the current origin.
+	param: The centre y coordinate relative to the current origin.
+	param: The positive outer radius in pixels.
+	param: The starting angle in clockwise screen degrees, where zero points right.
+	param: The signed sweep angle in degrees.
+	param: The positive arc width, drawn inward from the outer radius.
+	End Rem
+	Method DrawArc(centerX:Int, centerY:Int, radius:Int, startDegrees:Int, ..
+			sweepDegrees:Int, lineWidth:Int = 1)
+		If radius <= 0 Or sweepDegrees = 0 Or lineWidth <= 0 Or Not target Or ..
+				viewportWidth <= 0 Or viewportHeight <= 0 Then Return
+		If lineWidth > radius Then lineWidth = radius
+		Local raster:TDisplayBuffer = DrawingTarget()
+		If raster = target Then
+			centerX :+ originX
+			centerY :+ originY
+			MarkDirtyLogical(centerX - radius, centerY - radius, radius * 2 + 1, radius * 2 + 1)
+			target.DrawArc(centerX, centerY, radius, startDegrees, sweepDegrees, lineWidth, ..
+				viewportX, viewportY, viewportWidth, viewportHeight, drawColor)
+			Return
+		End If
+
+		Local segmentCount:Int = Max(Abs(sweepDegrees) / 5, 1)
+		For Local ring:Int = 0 Until lineWidth
+			Local ringRadius:Int = radius - ring
+			Local previousX:Int = centerX + GraphicsRounded(_GraphicsCos(Double(startDegrees)) * ringRadius)
+			Local previousY:Int = centerY + GraphicsRounded(_GraphicsSin(Double(startDegrees)) * ringRadius)
+			For Local segment:Int = 1 To segmentCount
+				Local angle:Double = Double(startDegrees) + ..
+					Double(sweepDegrees) * Double(segment) / Double(segmentCount)
+				Local x:Int = centerX + GraphicsRounded(_GraphicsCos(angle) * ringRadius)
+				Local y:Int = centerY + GraphicsRounded(_GraphicsSin(angle) * ringRadius)
+				DrawLine(previousX, previousY, x, y)
+				previousX = x
+				previousY = y
+			Next
+		Next
 	End Method
 
 	Rem
@@ -2372,6 +2424,20 @@ param: The radius in pixels.
 End Rem
 Function DrawCircle(centerX:Int, centerY:Int, radius:Int)
 	Default2DContext().DrawCircle(centerX, centerY, radius)
+End Function
+
+Rem
+bbdoc: Draws a circular arc using the current color.
+param: The centre x coordinate.
+param: The centre y coordinate.
+param: The positive outer radius in pixels.
+param: The starting angle in clockwise screen degrees, where zero points right.
+param: The signed sweep angle in degrees.
+param: The positive arc width, drawn inward from the outer radius.
+End Rem
+Function DrawArc(centerX:Int, centerY:Int, radius:Int, startDegrees:Int, ..
+		sweepDegrees:Int, lineWidth:Int = 1)
+	Default2DContext().DrawArc(centerX, centerY, radius, startDegrees, sweepDegrees, lineWidth)
 End Function
 
 Rem
