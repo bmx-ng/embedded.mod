@@ -12,7 +12,7 @@ Import Embedded.UI
 
 Const UIFrameBenchmarkSamples:Int = 7
 Const UIFrameBenchmarkWarmups:Int = 2
-Const UIFrameBenchmarkCaseCount:Int = 3
+Const UIFrameBenchmarkCaseCount:Int = 6
 Const UIFrameBenchmarkFormat:Int = 1
 
 ?pico
@@ -151,6 +151,12 @@ Type TUIFrameBenchmark
 				storageState.SetActive(Not storageState.Active())
 			Case 2
 				ui.InvalidateAll()
+			Case 3
+				loadGauge.SetValue(15 + (tickIndex * 17) Mod 80)
+			Case 4
+				history.AddValue(15 + (tickIndex * 17) Mod 80)
+			Case 5
+				progress.SetValue(15 + (tickIndex * 17) Mod 80)
 		End Select
 	End Method
 
@@ -267,6 +273,9 @@ Type TUIFrameBenchmark
 			Case 0 Return "single_status"
 			Case 1 Return "dashboard_tick"
 			Case 2 Return "full_redraw"
+			Case 3 Return "arc_gauge"
+			Case 4 Return "sparkline"
+			Case 5 Return "progress_bar"
 		End Select
 		Return "unknown"
 	End Method

@@ -75,6 +75,8 @@ indicators, an arc gauge, a sparkline, and a progress bar. The three cases are:
 - `single_status`: one small status indicator changes;
 - `dashboard_tick`: several separated dashboard values change together;
 - `full_redraw`: the complete retained tree is redrawn.
+- `arc_gauge`, `sparkline`, and `progress_bar`: one dashboard widget changes in
+  isolation, making remaining widget-level rendering costs visible.
 
 Each case reports four separate phases. `ui_prepare` measures widget state
 updates and invalid-region merging, `ui_render` measures retained-tree drawing,
@@ -116,3 +118,8 @@ case from 23,523 us to 21,084 us (10.4%) without changing unscaled RGB565 or
 Mono1 output. In the representative dashboard capture, the same change reduces
 best dashboard rendering from 47,290 us to 45,670 us (3.4%) and full redraw
 rendering from 51,473 us to 49,556 us (3.7%).
+
+The isolated-widget profile records the cost of the same dashboard components
+without changing their normal retained rendering. Its S31 baseline identifies
+the arc gauge as the dominant widget at 22,165 us, compared with 7,040 us for
+the sparkline and 4,354 us for the progress bar.
