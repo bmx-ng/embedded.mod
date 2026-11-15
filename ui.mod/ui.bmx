@@ -7096,7 +7096,10 @@ Present for the normal render-and-submit path.
 	Method Render:Int()
 		If layoutPending Then Layout()
 		If invalidCount = 0 Then Return False
-		graphics.ResetDirty()
+		' The retained UI already owns a bounded, merged invalid-region list.
+		' Avoid repeating the same dirty-region bookkeeping for every primitive
+		' drawn within those clips; publish the final UI regions once instead.
+		graphics.SetDirtyTracking(False)
 		For Local index:Int = 0 Until invalidCount
 			Local x:Int = invalidX0[index]
 			Local y:Int = invalidY0[index]
@@ -7110,6 +7113,11 @@ Present for the normal render-and-submit path.
 				_DrawWidget(toast, x, y, width, height)
 			Next
 			graphics.PopState()
+		Next
+		graphics.SetDirtyTracking(True)
+		For Local index:Int = 0 Until invalidCount
+			graphics.InvalidateRect(invalidX0[index], invalidY0[index], ..
+				invalidX1[index] - invalidX0[index], invalidY1[index] - invalidY0[index])
 		Next
 		invalidCount = 0
 		Return True

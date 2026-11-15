@@ -92,3 +92,20 @@ bmk makeapp -r -a -board esp32_s31_korvo_1 -heap-region psram -heap 512k -x \
 
 This is intentionally a display-only scene. It does not import touch or the
 interactive control adapter, so input polling cannot distort the frame timings.
+
+The checked-in `results` directory contains matching S31 baseline and optimized
+captures. The optimized renderer temporarily disables primitive-level damage
+tracking while a retained UI region is drawn, then publishes the UI's already
+merged regions once. Compare the captures with:
+
+```sh
+python3 benchmarks/graphics2d/compare_results.py \
+    benchmarks/graphics2d/results/esp32_s31_korvo_1_2026-11-15_ui_frame.log \
+    benchmarks/graphics2d/results/esp32_s31_korvo_1_2026-11-15_ui_frame_optimized.log
+```
+
+On the reference device this reduces best dashboard render time from 56,075 us
+to 47,290 us (15.7%) and full-redraw render time from 69,544 us to 51,473 us
+(26.0%). Physical presentation is synchronized to the display and can therefore
+move between refresh boundaries even when drawing becomes faster; use
+`ui_render` when evaluating renderer-only changes.
