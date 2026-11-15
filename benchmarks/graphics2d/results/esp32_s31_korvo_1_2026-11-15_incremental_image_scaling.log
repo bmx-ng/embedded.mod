@@ -1,0 +1,31 @@
+# ESP32-S31 Korvo-1 renderer baseline after incremental image sampling
+# ESP-IDF 6.1, 320 MHz, release, 512K managed heap in PSRAM
+# Summary rows from a clean two-format run; checksums were stable across all seven samples.
+G2D_BENCH,format=1,kind=summary,phase=render,platform=esp32,width=160,height=128,pixel_format=rgb565,case=buffer_clear,iterations=32,nominal_pixels=655360,best_us=5725,mean_us=5728,checksum=3782770117
+G2D_BENCH,format=1,kind=summary,phase=render,platform=esp32,width=160,height=128,pixel_format=rgb565,case=fill_full,iterations=32,nominal_pixels=655360,best_us=6466,mean_us=6469,checksum=1692736965
+G2D_BENCH,format=1,kind=summary,phase=render,platform=esp32,width=160,height=128,pixel_format=rgb565,case=fill_24x16,iterations=192,nominal_pixels=73728,best_us=3474,mean_us=3500,checksum=3177816963
+G2D_BENCH,format=1,kind=summary,phase=render,platform=esp32,width=160,height=128,pixel_format=rgb565,case=line_horizontal,iterations=128,nominal_pixels=20480,best_us=1726,mean_us=1754,checksum=3406347717
+G2D_BENCH,format=1,kind=summary,phase=render,platform=esp32,width=160,height=128,pixel_format=rgb565,case=line_diagonal,iterations=128,nominal_pixels=20480,best_us=3559,mean_us=3579,checksum=258301125
+G2D_BENCH,format=1,kind=summary,phase=render,platform=esp32,width=160,height=128,pixel_format=rgb565,case=rect_outline_42x30,iterations=96,nominal_pixels=13440,best_us=5389,mean_us=5473,checksum=2798849729
+G2D_BENCH,format=1,kind=summary,phase=render,platform=esp32,width=160,height=128,pixel_format=rgb565,case=circle_outline_r15,iterations=96,nominal_pixels=0,best_us=4319,mean_us=4322,checksum=175221665
+G2D_BENCH,format=1,kind=summary,phase=render,platform=esp32,width=160,height=128,pixel_format=rgb565,case=circle_fill_r13,iterations=48,nominal_pixels=25488,best_us=1708,mean_us=1710,checksum=4091241705
+G2D_BENCH,format=1,kind=summary,phase=render,platform=esp32,width=160,height=128,pixel_format=rgb565,case=text_spleen_5x8,iterations=64,nominal_pixels=46080,best_us=22411,mean_us=22434,checksum=4257442166
+G2D_BENCH,format=1,kind=summary,phase=render,platform=esp32,width=160,height=128,pixel_format=rgb565,case=image_rgb565_16x16,iterations=128,nominal_pixels=32768,best_us=5946,mean_us=5954,checksum=830134047
+G2D_BENCH,format=1,kind=summary,phase=render,platform=esp32,width=160,height=128,pixel_format=rgb565,case=image_scaled_32x32,iterations=64,nominal_pixels=65536,best_us=6660,mean_us=6663,checksum=48025222
+G2D_BENCH,format=1,kind=summary,phase=render,platform=esp32,width=160,height=128,pixel_format=rgb565,case=image_tinted_16x16,iterations=128,nominal_pixels=32768,best_us=16146,mean_us=16200,checksum=720584565
+G2D_BENCH,format=1,kind=summary,phase=render,platform=esp32,width=160,height=128,pixel_format=rgb565,case=image_alpha_16x16,iterations=128,nominal_pixels=32768,best_us=18520,mean_us=18536,checksum=1260655676
+G2D_BENCH,format=1,kind=summary,phase=render,platform=esp32,width=160,height=128,pixel_format=rgb565,case=fill_24x16_rot90,iterations=192,nominal_pixels=73728,best_us=4015,mean_us=4033,checksum=2525872242
+G2D_BENCH,format=1,kind=summary,phase=render,platform=esp32,width=160,height=128,pixel_format=mono1,case=buffer_clear,iterations=2,nominal_pixels=40960,best_us=122,mean_us=122,checksum=3668139973
+G2D_BENCH,format=1,kind=summary,phase=render,platform=esp32,width=160,height=128,pixel_format=mono1,case=fill_full,iterations=2,nominal_pixels=40960,best_us=114,mean_us=116,checksum=3668139973
+G2D_BENCH,format=1,kind=summary,phase=render,platform=esp32,width=160,height=128,pixel_format=mono1,case=fill_24x16,iterations=12,nominal_pixels=4608,best_us=225,mean_us=226,checksum=2352720573
+G2D_BENCH,format=1,kind=summary,phase=render,platform=esp32,width=160,height=128,pixel_format=mono1,case=line_horizontal,iterations=8,nominal_pixels=1280,best_us=118,mean_us=120,checksum=2039032101
+G2D_BENCH,format=1,kind=summary,phase=render,platform=esp32,width=160,height=128,pixel_format=mono1,case=line_diagonal,iterations=8,nominal_pixels=1280,best_us=266,mean_us=267,checksum=4048067599
+G2D_BENCH,format=1,kind=summary,phase=render,platform=esp32,width=160,height=128,pixel_format=mono1,case=rect_outline_42x30,iterations=6,nominal_pixels=840,best_us=355,mean_us=357,checksum=1503898085
+G2D_BENCH,format=1,kind=summary,phase=render,platform=esp32,width=160,height=128,pixel_format=mono1,case=circle_outline_r15,iterations=6,nominal_pixels=0,best_us=304,mean_us=309,checksum=2802218706
+G2D_BENCH,format=1,kind=summary,phase=render,platform=esp32,width=160,height=128,pixel_format=mono1,case=circle_fill_r13,iterations=3,nominal_pixels=1593,best_us=125,mean_us=126,checksum=2367706706
+G2D_BENCH,format=1,kind=summary,phase=render,platform=esp32,width=160,height=128,pixel_format=mono1,case=text_spleen_5x8,iterations=1,nominal_pixels=720,best_us=394,mean_us=397,checksum=3486693707
+G2D_BENCH,format=1,kind=summary,phase=render,platform=esp32,width=160,height=128,pixel_format=mono1,case=image_rgb565_16x16,iterations=1,nominal_pixels=256,best_us=188,mean_us=195,checksum=2654423717
+G2D_BENCH,format=1,kind=summary,phase=render,platform=esp32,width=160,height=128,pixel_format=mono1,case=image_scaled_32x32,iterations=1,nominal_pixels=1024,best_us=528,mean_us=534,checksum=2163199813
+G2D_BENCH,format=1,kind=summary,phase=render,platform=esp32,width=160,height=128,pixel_format=mono1,case=image_tinted_16x16,iterations=1,nominal_pixels=256,best_us=238,mean_us=246,checksum=2654423717
+G2D_BENCH,format=1,kind=summary,phase=render,platform=esp32,width=160,height=128,pixel_format=mono1,case=image_alpha_16x16,iterations=1,nominal_pixels=256,best_us=220,mean_us=220,checksum=2654423717
+G2D_BENCH,format=1,kind=summary,phase=render,platform=esp32,width=160,height=128,pixel_format=mono1,case=fill_24x16_rot90,iterations=12,nominal_pixels=4608,best_us=279,mean_us=283,checksum=210139534

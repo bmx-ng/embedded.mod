@@ -246,27 +246,82 @@ int32_t bmx_embedded_display_blit_rgb565(uint8_t *target,
         return 1;
     }
 
+    const int32_t first_source_x = (int32_t)(((int64_t)(clip_x - destination_x) *
+        source_width) / destination_width);
+    const int32_t first_source_x_remainder = (int32_t)(
+        ((int64_t)(clip_x - destination_x) * source_width) % destination_width);
+    const int32_t source_x_step = source_width / destination_width;
+    const int32_t source_x_step_remainder = source_width % destination_width;
+    int32_t source_y = (int32_t)(((int64_t)(clip_y - destination_y) *
+        source_height) / destination_height);
+    int32_t source_y_remainder = (int32_t)(
+        ((int64_t)(clip_y - destination_y) * source_height) % destination_height);
+    const int32_t source_y_step = source_height / destination_height;
+    const int32_t source_y_step_remainder = source_height % destination_height;
+
+    /* Preserve packed RGB565 values directly when scaling or mirroring does
+       not require tinting or compositing. Incremental nearest-neighbour
+       coordinates avoid a 64-bit division for every destination pixel. */
+    if (source_format == BMX_DISPLAY_PIXEL_FORMAT_RGB565 &&
+            tint == 0xFFFFFFU && opacity == 255) {
+        for (int32_t y = clip_y; y < clip_y + clip_height; ++y) {
+            int32_t sampled_y = source_y;
+            if (draw_flags & BMX_EMBEDDED_IMAGE_FLIP_Y) {
+                sampled_y = source_height - 1 - sampled_y;
+            }
+            const uint8_t *in = source +
+                (size_t)sampled_y * (size_t)source_stride;
+            uint8_t *out = target + (size_t)y * (size_t)target_stride +
+                (size_t)clip_x * 2U;
+            int32_t source_x = first_source_x;
+            int32_t source_x_remainder = first_source_x_remainder;
+            for (int32_t x = 0; x < clip_width; ++x) {
+                int32_t sampled_x = source_x;
+                if (draw_flags & BMX_EMBEDDED_IMAGE_FLIP_X) {
+                    sampled_x = source_width - 1 - sampled_x;
+                }
+                const uint8_t *pixel = in + (size_t)sampled_x * 2U;
+                out[0] = pixel[0];
+                out[1] = pixel[1];
+                out += 2;
+                source_x += source_x_step;
+                source_x_remainder += source_x_step_remainder;
+                if (source_x_remainder >= destination_width) {
+                    ++source_x;
+                    source_x_remainder -= destination_width;
+                }
+            }
+            source_y += source_y_step;
+            source_y_remainder += source_y_step_remainder;
+            if (source_y_remainder >= destination_height) {
+                ++source_y;
+                source_y_remainder -= destination_height;
+            }
+        }
+        return 1;
+    }
+
     for (int32_t y = clip_y; y < clip_y + clip_height; ++y) {
-        int32_t source_y = (int32_t)(((int64_t)(y - destination_y) *
-            source_height) / destination_height);
+        int32_t sampled_y = source_y;
         if (draw_flags & BMX_EMBEDDED_IMAGE_FLIP_Y) {
-            source_y = source_height - 1 - source_y;
+            sampled_y = source_height - 1 - sampled_y;
         }
         uint8_t *out = target + (size_t)y * (size_t)target_stride +
             (size_t)clip_x * 2U;
         const uint8_t *in = source +
-            (size_t)source_y * (size_t)source_stride;
+            (size_t)sampled_y * (size_t)source_stride;
+        int32_t source_x = first_source_x;
+        int32_t source_x_remainder = first_source_x_remainder;
         for (int32_t x = clip_x; x < clip_x + clip_width; ++x) {
-            int32_t source_x = (int32_t)(((int64_t)(x - destination_x) *
-                source_width) / destination_width);
+            int32_t sampled_x = source_x;
             if (draw_flags & BMX_EMBEDDED_IMAGE_FLIP_X) {
-                source_x = source_width - 1 - source_x;
+                sampled_x = source_width - 1 - sampled_x;
             }
             uint32_t red;
             uint32_t green;
             uint32_t blue;
             if (source_format == BMX_DISPLAY_PIXEL_FORMAT_RGB565) {
-                const uint8_t *pixel = in + (size_t)source_x * 2U;
+                const uint8_t *pixel = in + (size_t)sampled_x * 2U;
                 const uint32_t rgb565 = (uint32_t)pixel[0] |
                     ((uint32_t)pixel[1] << 8);
                 red = (rgb565 >> 11) & 0x1FU;
@@ -276,7 +331,7 @@ int32_t bmx_embedded_display_blit_rgb565(uint8_t *target,
                 green = (green << 2) | (green >> 4);
                 blue = (blue << 3) | (blue >> 2);
             } else {
-                const uint8_t *pixel = in + (size_t)source_x * 3U;
+                const uint8_t *pixel = in + (size_t)sampled_x * 3U;
                 red = pixel[0];
                 green = pixel[1];
                 blue = pixel[2];
@@ -307,6 +362,18 @@ int32_t bmx_embedded_display_blit_rgb565(uint8_t *target,
             out[0] = (uint8_t)rgb565;
             out[1] = (uint8_t)(rgb565 >> 8);
             out += 2;
+            source_x += source_x_step;
+            source_x_remainder += source_x_step_remainder;
+            if (source_x_remainder >= destination_width) {
+                ++source_x;
+                source_x_remainder -= destination_width;
+            }
+        }
+        source_y += source_y_step;
+        source_y_remainder += source_y_step_remainder;
+        if (source_y_remainder >= destination_height) {
+            ++source_y;
+            source_y_remainder -= destination_height;
         }
     }
     return 1;
