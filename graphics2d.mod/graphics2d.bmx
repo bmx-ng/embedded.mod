@@ -260,11 +260,38 @@ Type TGraphicsDisplayBuffer Extends TDisplayBuffer
 		Wend
 	End Method
 
+	Method FillCircle(centerX:Int, centerY:Int, radius:Int, clipX:Int, clipY:Int, ..
+			clipWidth:Int, clipHeight:Int, color:UInt = $ffffff) Override
+		If Not target Or radius < 0 Or clipWidth <= 0 Or clipHeight <= 0 Then Return
+		Local clipX1:Int = clipX + clipWidth
+		Local clipY1:Int = clipY + clipHeight
+		Local extent:Int
+		Local radiusSquared:Long = Long(radius) * radius
+		For Local offset:Int = radius To 0 Step -1
+			While extent < radius And Long(extent + 1) * (extent + 1) + ..
+					Long(offset) * offset <= radiusSquared
+				extent :+ 1
+			Wend
+			FillCircleSpan(centerX - extent, centerX + extent, centerY - offset, ..
+				clipX, clipY, clipX1, clipY1, color)
+			If offset Then FillCircleSpan(centerX - extent, centerX + extent, ..
+				centerY + offset, clipX, clipY, clipX1, clipY1, color)
+		Next
+	End Method
+
 	Private
 	Method DrawCirclePoint(x:Int, y:Int, clipX:Int, clipY:Int, clipX1:Int, ..
 			clipY1:Int, color:UInt)
 		If x >= clipX And x < clipX1 And y >= clipY And y < clipY1 Then ..
 			SetPixel(x, y, color)
+	End Method
+
+	Method FillCircleSpan(x0:Int, x1:Int, y:Int, clipX:Int, clipY:Int, ..
+			clipX1:Int, clipY1:Int, color:UInt)
+		If y < clipY Or y >= clipY1 Then Return
+		If x0 < clipX Then x0 = clipX
+		If x1 >= clipX1 Then x1 = clipX1 - 1
+		If x0 <= x1 Then FillRect(x0, y, x1 - x0 + 1, 1, color)
 	End Method
 
 	Method MapPoint(x:Int, y:Int, targetX:Int Var, targetY:Int Var)
@@ -908,18 +935,8 @@ Type TEmbedded2DContext Final
 		centerX :+ originX
 		centerY :+ originY
 		MarkDirtyLogical(centerX - radius, centerY - radius, radius * 2 + 1, radius * 2 + 1)
-		Local raster:TDisplayBuffer = DrawingTarget()
-		Local extent:Int
-		Local radiusSquared:Long = Long(radius) * radius
-		For Local offset:Int = radius To 0 Step -1
-			While extent < radius And Long(extent + 1) * (extent + 1) + ..
-				Long(offset) * offset <= radiusSquared
-				extent :+ 1
-			Wend
-			FillLogicalSpanUntracked(raster, centerX - extent, centerX + extent, centerY - offset)
-			If offset Then FillLogicalSpanUntracked(raster, centerX - extent, ..
-				centerX + extent, centerY + offset)
-		Next
+		DrawingTarget().FillCircle(centerX, centerY, radius, viewportX, viewportY, ..
+			viewportWidth, viewportHeight, drawColor)
 	End Method
 
 	Rem
