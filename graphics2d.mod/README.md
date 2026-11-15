@@ -85,6 +85,7 @@ The primitive set comprises:
 
 - `Plot`
 - `DrawLine`
+- `DrawPolyline`
 - `DrawRect` and `FillRect`
 - `DrawRoundRect` and `FillRoundRect`
 - `DrawCircle` and `FillCircle`

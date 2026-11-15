@@ -72,6 +72,17 @@ passed :& frame.Pixel(0, 1) = 0 And frame.Pixel(5, 5) = 0
 frame.DrawLine(4, 4, 0, 0, 0)
 passed :& frame.Pixel(0, 0) = 0 And frame.Pixel(2, 2) = 0 And frame.Pixel(4, 4) = 0
 
+' Native polylines join all supplied points while applying one shared clip.
+Local polyX:Int[] = New Int[3]
+Local polyY:Int[] = New Int[3]
+polyX[0] = -2; polyY[0] = 2
+polyX[1] = 4; polyY[1] = 2
+polyX[2] = 4; polyY[2] = 6
+frame.DrawPolyline(Varptr polyX[0], Varptr polyY[0], 3, 0, 0, 1, 1, 5, 5)
+passed :& frame.Pixel(1, 2) And frame.Pixel(4, 2) And frame.Pixel(4, 5)
+passed :& Not frame.Pixel(0, 2) And Not frame.Pixel(4, 6)
+frame.Clear()
+
 ' Packed transparent masks support scaled drawing with destination clipping.
 Local maskBits:Byte[] = New Byte[1]
 maskBits[0] = $a0
@@ -161,6 +172,13 @@ rotated.Clear()
 rotatedGraphics.DrawArc(3, 5, 2, 0, 90, 1)
 passed :& rotated.Pixel(4, 5) And rotated.Pixel(2, 3)
 passed :& Not rotated.Pixel(4, 1)
+rotated.Clear()
+polyX[0] = 0; polyY[0] = 0
+polyX[1] = 2; polyY[1] = 0
+polyX[2] = 2; polyY[2] = 2
+rotatedGraphics.DrawPolyline(polyX, polyY)
+passed :& rotated.Pixel(9, 0) And rotated.Pixel(9, 2) And rotated.Pixel(7, 2)
+passed :& Not rotated.Pixel(7, 0)
 rotated.Clear()
 passed :& rotatedGraphics.SetRotation(180)
 rotatedGraphics.Plot(0, 0)

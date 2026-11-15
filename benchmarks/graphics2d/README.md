@@ -143,3 +143,10 @@ The representative dashboard falls from 38,371 us to 25,196 us (34.3%), and a
 full retained redraw from 40,619 us to 27,323 us (32.7%). The one-pixel control
 case remains effectively unchanged, confirming that the gain comes from
 eliminating repeated thick-arc angle calculations.
+
+The batched-polyline capture reuses the sparkline's coordinate storage and
+submits all connected segments through one native raster call. Isolated
+sparkline rendering falls from 7,289 us to 6,638 us (8.9%), and the dashboard
+update containing it falls from 25,196 us to 23,784 us (5.6%). Full redraw is
+effectively unchanged at 1.1%, as expected: the optimization removes repeated
+language/native boundary work rather than reducing the number of line pixels.

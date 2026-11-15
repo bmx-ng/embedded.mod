@@ -900,6 +900,44 @@ Type TEmbedded2DContext Final
 	End Method
 
 	Rem
+	bbdoc: Draws connected one-pixel line segments from reusable coordinate arrays.
+	param: X coordinates in drawing order.
+	param: Y coordinates in drawing order.
+	param: Number of points to use, or a negative value to use both complete arrays.
+	about: The shorter array limits the point count. The native untransformed path
+	draws the complete strip in one call; rotated and nested views retain the exact
+	per-segment transform path. No temporary array is allocated while drawing.
+	End Rem
+	Method DrawPolyline(x:Int[], y:Int[], count:Int = -1)
+		If Not target Or Not x Or Not y Or viewportWidth <= 0 Or viewportHeight <= 0 Then Return
+		Local available:Int = Min(x.Length, y.Length)
+		If count < 0 Or count > available Then count = available
+		If count < 2 Then Return
+		Local raster:TDisplayBuffer = DrawingTarget()
+		If raster = target Then
+			Local minimumX:Int = x[0] + originX
+			Local maximumX:Int = minimumX
+			Local minimumY:Int = y[0] + originY
+			Local maximumY:Int = minimumY
+			For Local index:Int = 1 Until count
+				Local px:Int = x[index] + originX
+				Local py:Int = y[index] + originY
+				If px < minimumX Then minimumX = px
+				If px > maximumX Then maximumX = px
+				If py < minimumY Then minimumY = py
+				If py > maximumY Then maximumY = py
+			Next
+			MarkDirtyLogical(minimumX, minimumY, maximumX - minimumX + 1, maximumY - minimumY + 1)
+			target.DrawPolyline(Varptr x[0], Varptr y[0], count, originX, originY, ..
+				viewportX, viewportY, viewportWidth, viewportHeight, drawColor)
+			Return
+		End If
+		For Local index:Int = 1 Until count
+			DrawLine(x[index - 1], y[index - 1], x[index], y[index])
+		Next
+	End Method
+
+	Rem
 	bbdoc: Draws the one-pixel outline of a rectangle using the current color.
 	param: The left coordinate relative to the current origin.
 	param: The top coordinate relative to the current origin.
@@ -2403,6 +2441,16 @@ param: The ending y coordinate.
 End Rem
 Function DrawLine(x0:Int, y0:Int, x1:Int, y1:Int)
 	Default2DContext().DrawLine(x0, y0, x1, y1)
+End Function
+
+Rem
+bbdoc: Draws connected one-pixel line segments from reusable coordinate arrays.
+param: X coordinates in drawing order.
+param: Y coordinates in drawing order.
+param: Number of points to use, or a negative value to use both complete arrays.
+End Rem
+Function DrawPolyline(x:Int[], y:Int[], count:Int = -1)
+	Default2DContext().DrawPolyline(x, y, count)
 End Function
 
 Rem

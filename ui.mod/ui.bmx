@@ -5604,6 +5604,8 @@ End Rem
 Type TUISparkline Extends TUIWidget Final
 	Private
 	Field samples:Int[] = New Int[0]
+	Field pointX:Int[] = New Int[0]
+	Field pointY:Int[] = New Int[0]
 	Field sampleStart:Int
 	Field sampleCount:Int
 	Field minimumValue:Int
@@ -5619,6 +5621,8 @@ Type TUISparkline Extends TUIWidget Final
 		value = Max(value, 2)
 		If samples.Length = value Then Return
 		samples = New Int[value]
+		pointX = New Int[value]
+		pointY = New Int[value]
 		sampleStart = 0
 		sampleCount = 0
 		_Invalidate()
@@ -5749,19 +5753,17 @@ Type TUISparkline Extends TUIWidget Final
 		Local top:Int = Y() + Max(style.paddingTop, 2)
 		Local graphWidth:Int = Max(Width() - Max(style.paddingLeft, 2) - Max(style.paddingRight, 2) - 1, 1)
 		Local graphHeight:Int = Max(Height() - Max(style.paddingTop, 2) - Max(style.paddingBottom, 2) - 1, 1)
-		Local previousX:Int = left
-		Local previousY:Int = top + graphHeight - ..
-			Int(Long(ValueAt(0) - minimum) * graphHeight / Long(maximum - minimum))
-		graphics.SetColorValue(activeStyle.background)
-		For Local index:Int = 1 Until sampleCount
-			Local x:Int = left + Int(Long(index) * graphWidth / Long(Max(sampleCount - 1, 1)))
-			Local y:Int = top + graphHeight - ..
+		For Local index:Int = 0 Until sampleCount
+			pointX[index] = left + Int(Long(index) * graphWidth / Long(Max(sampleCount - 1, 1)))
+			pointY[index] = top + graphHeight - ..
 				Int(Long(ValueAt(index) - minimum) * graphHeight / Long(maximum - minimum))
-			graphics.DrawLine(previousX, previousY, x, y)
-			previousX = x
-			previousY = y
 		Next
-		If sampleCount = 1 Then graphics.DrawLine(previousX, previousY, previousX, previousY)
+		graphics.SetColorValue(activeStyle.background)
+		If sampleCount > 1 Then
+			graphics.DrawPolyline(pointX, pointY, sampleCount)
+		Else
+			graphics.Plot(pointX[0], pointY[0])
+		End If
 	End Method
 End Type
 

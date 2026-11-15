@@ -30,6 +30,10 @@ Extern "C"
 	Function _DisplayDrawLine(pixels:Byte Ptr, stride:Int, bufferWidth:Int, ..
 		bufferHeight:Int, format:Int, x0:Int, y0:Int, x1:Int, y1:Int, color:UInt) = ..
 		"bmx_embedded_display_draw_line"
+	Function _DisplayDrawPolyline(pixels:Byte Ptr, stride:Int, bufferWidth:Int, ..
+		bufferHeight:Int, format:Int, x:Int Ptr, y:Int Ptr, count:Int, offsetX:Int, ..
+		offsetY:Int, clipX:Int, clipY:Int, clipWidth:Int, clipHeight:Int, color:UInt) = ..
+		"bmx_embedded_display_draw_polyline"
 	Function _DisplayDrawRect(pixels:Byte Ptr, stride:Int, bufferWidth:Int, ..
 		bufferHeight:Int, format:Int, x:Int, y:Int, width:Int, height:Int, color:UInt) = ..
 		"bmx_embedded_display_draw_rect"
@@ -673,6 +677,35 @@ Type TDisplayBuffer
 			_DisplayDrawLine(pixels, bufferStride, bufferWidth, bufferHeight, bufferFormat, ..
 				x0, y0, x1, y1, color)
 		End If
+	End Method
+
+	Rem
+	bbdoc: Draws connected clipped one-pixel line segments from caller-owned point arrays.
+	param: Pointer to the first x coordinate.
+	param: Pointer to the first y coordinate.
+	param: Number of points; values below two draw nothing.
+	param: Horizontal offset added to every point.
+	param: Vertical offset added to every point.
+	param: The clipping rectangle's left coordinate.
+	param: The clipping rectangle's top coordinate.
+	param: The clipping rectangle's width.
+	param: The clipping rectangle's height.
+	param: An $RRGGBB color; Mono1 treats zero as off and any non-zero value as on.
+	End Rem
+	Method DrawPolyline(x:Int Ptr, y:Int Ptr, count:Int, offsetX:Int, offsetY:Int, ..
+			clipX:Int, clipY:Int, clipWidth:Int, clipHeight:Int, color:UInt = $ffffff)
+		If Not x Or Not y Or count < 2 Or clipWidth <= 0 Or clipHeight <= 0 Then Return
+		Local clipX1:Int = clipX + clipWidth
+		Local clipY1:Int = clipY + clipHeight
+		If clipX < 0 Then clipX = 0
+		If clipY < 0 Then clipY = 0
+		If clipX1 > bufferWidth Then clipX1 = bufferWidth
+		If clipY1 > bufferHeight Then clipY1 = bufferHeight
+		If clipX >= clipX1 Or clipY >= clipY1 Then Return
+		Local pixels:Byte Ptr = Pixels()
+		If pixels Then _DisplayDrawPolyline(pixels, bufferStride, bufferWidth, bufferHeight, ..
+			bufferFormat, x, y, count, offsetX, offsetY, clipX, clipY, clipX1 - clipX, ..
+			clipY1 - clipY, color)
 	End Method
 End Type
 

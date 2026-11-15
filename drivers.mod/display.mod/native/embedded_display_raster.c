@@ -332,6 +332,28 @@ static void bmx_embedded_display_draw_clipped_line(uint8_t *pixels,
     }
 }
 
+void bmx_embedded_display_draw_polyline(uint8_t *pixels, int32_t stride,
+        int32_t buffer_width, int32_t buffer_height, int32_t format,
+        const int32_t *x, const int32_t *y, int32_t count,
+        int32_t offset_x, int32_t offset_y, int32_t clip_x, int32_t clip_y,
+        int32_t clip_width, int32_t clip_height, uint32_t color) {
+    if (!pixels || stride <= 0 || buffer_width <= 0 || buffer_height <= 0 ||
+            format < 1 || format > 3 || !x || !y || count < 2 || clip_x < 0 ||
+            clip_y < 0 || clip_width <= 0 || clip_height <= 0 ||
+            clip_x + clip_width > buffer_width ||
+            clip_y + clip_height > buffer_height) return;
+    const int32_t clip_x1 = clip_x + clip_width;
+    const int32_t clip_y1 = clip_y + clip_height;
+    const uint16_t rgb565 = (uint16_t)((((color >> 19) & 0x1fU) << 11) |
+        (((color >> 10) & 0x3fU) << 5) | ((color >> 3) & 0x1fU));
+    for (int32_t index = 1; index < count; ++index) {
+        bmx_embedded_display_draw_clipped_line(pixels, stride, format,
+            x[index - 1] + offset_x, y[index - 1] + offset_y,
+            x[index] + offset_x, y[index] + offset_y,
+            clip_x, clip_y, clip_x1, clip_y1, color, rgb565);
+    }
+}
+
 void bmx_embedded_display_draw_circle(uint8_t *pixels, int32_t stride,
         int32_t buffer_width, int32_t buffer_height, int32_t format,
         int32_t center_x, int32_t center_y, int32_t radius,
