@@ -2,192 +2,96 @@
 
 `Embedded.Drivers.*` contains portable drivers for devices attached to the
 shared embedded hardware APIs. A controller driver belongs here when it can use
-the same public API and behaviour on Pico, ESP32, ESP8266, and future embedded
-targets. Board profiles remain target-owned and describe how a particular board
-wires those devices.
+the same public API and behaviour on Pico, ESP32, nRF52, ESP8266, and future
+embedded targets where the hardware and resources permit it. Board profiles
+remain target-owned and describe how a particular board wires those devices.
 
-## Displays
+This guide covers the portable driver boundary, supported display controllers,
+touch input, and the asset conversion pipeline. For drawing primitives, views,
+rotation, presentation strategies, and sprites, see the
+[Graphics2D guide](../graphics2d.mod/README.md). For retained layouts, controls,
+dashboards, navigation, and touch interaction, see the
+[Embedded.UI guide](../ui.mod/README.md).
 
-`Embedded.Drivers.Display` defines the common raster and presentation boundary:
+## Start here
 
-- `TDisplayBuffer` owns a compact Mono1, RGB565, or RGB888 raster, or wraps a
+Choose the smallest layer that meets the application's needs:
+
+| Need | Import |
+| --- | --- |
+| Own a framebuffer and present it to a controller | `Embedded.Drivers.Display` plus one `Embedded.Drivers.Displays.*` module |
+| Draw shapes, text, images, and sprites | `Embedded.Graphics2D` |
+| Build dashboards or interactive controls | `Embedded.UI`, with `Embedded.UI.Interactive` when input is required |
+| Receive portable touch events | `Embedded.Drivers.Touch` plus a target-specific touch controller |
+
+A typical display application performs four steps:
+
+1. configure the portable I2C or SPI controller and its pins;
+2. create and initialize the matching display driver;
+3. create a framebuffer and bind it to Graphics2D; and
+4. draw and present either the complete frame or its dirty regions.
+
+The application chooses pins and bus speed. A controller name alone does not
+identify a complete module: panels using the same controller can differ in
+visible dimensions, RAM offsets, component order, inversion, and safe transfer
+rate. Begin conservatively and record verified settings in a board profile or
+application configuration.
+
+## Driver catalogue
+
+| Module | Bus | Native raster | Included configuration |
+| --- | --- | --- | --- |
+| `Embedded.Drivers.Displays.SSD1306` | I2C | Mono1, up to 128x64 | Configurable window and 72x40 OLED preset |
+| `Embedded.Drivers.Displays.SH1107` | SPI | Mono1, up to 128x128 | Configurable window and 128x128 preset |
+| `Embedded.Drivers.Displays.ST7735` | SPI | RGB565 | Configurable window and 128x160 preset |
+| `Embedded.Drivers.Displays.ST7789` | SPI | RGB565 | Configurable window and 240x320 preset |
+| `Embedded.Drivers.Displays.ST7796` | SPI | RGB565 | Configurable window and 320x480 preset |
+| `Embedded.Drivers.Displays.ILI9341` | SPI | RGB565 | 240x320 panel |
+
+All concrete drivers implement `TDisplay`, so Graphics2D and UI code remains
+independent of the controller. Controller modules are linked only when imported.
+
+## Display architecture
+
+`Embedded.Drivers.Display` defines the stable raster and presentation boundary:
+
+- `TDisplayBuffer` owns a Mono1, RGB565, or RGB888 raster, or wraps a
   driver-owned external framebuffer without copying it;
-- drawing is independent of the physical display controller;
-- a `TDisplay` advertises its preferred format and accepts full or dirty-region
-  presentation; and
-- `PresentPixels` accepts an external raster pointer, providing the low-level
-  flush boundary needed by graphics libraries without requiring them to own the
-  controller driver.
+- `TDisplay` reports dimensions, preferred format, orientation, capabilities,
+  and full or partial presentation operations;
+- `PresentPixels` accepts an external raster pointer for renderers which do not
+  own the controller driver; and
+- `PresentRegions` submits multiple dirty rectangles while allowing a driver
+  to preserve an atomic framebuffer transition.
 
-Mono1 rows are top-to-bottom and most-significant-bit first. RGB565 is stored
-little-endian, and RGB888 is stored red, green, blue. Drivers convert this
-stable representation to any controller-specific page or transfer layout.
+Mono1 rows run top-to-bottom and are most-significant-bit first. RGB565 is
+little-endian; RGB888 is red, green, blue. Controller drivers convert this
+stable representation to their wire format.
 
-The base layer deliberately remains useful without a full UI library. Small
-status applications can allocate one buffer, draw pixels, lines and rectangles,
-then present it without additional frame-time allocation.
+The base layer is useful without Graphics2D: a small status application can own
+one buffer, modify its pixels directly, and present it. Higher layers do not
+allocate a second framebuffer. Display capabilities distinguish partial
+presentation, live scanout buffers, vertical synchronization, true buffer
+swapping, discard presentation, accelerated fills, and accelerated blits.
 
-`Embedded.Graphics2D` is an optional familiar drawing facade over this layer.
-It provides `Cls`, `SetColor`, `SetFont`, `DrawText`, `DrawImage`,
-`DrawImageRect`, `DrawImageRegion`, `Plot`, `DrawLine`, `DrawRect`, `FillRect`,
-origins, viewports, nested local views, saved drawing state, text metrics, exact
-quarter-turn canvas rotation, and `Present`. The global functions use one default
-context for compact applications;
-`TEmbedded2DContext` exposes the same operations without global state for
-libraries or applications using multiple displays. It owns no second buffer and
-does not allocate while drawing.
+Orientation belongs to the display configuration. `SetOrientation` defines
+which physical edge is logical rotation zero; Graphics2D can then apply a
+separate relative drawing rotation. Set the same orientation on the touch
+device so displayed and reported coordinates agree.
 
-```blitzmax
-SetRenderTarget frame, display
-SetFont Spleen5x8Font()
-SetColor 255, 255, 255
-Cls
-DrawText "Hello", 2, 2
-DrawLine 0, 12, 71, 12
-Present
-```
+## Display controller drivers
 
-For displays where transfer bandwidth matters, Graphics2D accumulates a small
-fixed list of physical dirty rectangles without inspecting the framebuffer or
-allocating while drawing. Overlapping and edge-adjacent changes are merged;
-distant changes remain independent. Tracking is opt-in, so applications that
-always present complete frames do no dirty-bound calculations:
+### SSD1306 I2C monochrome displays
 
-```blitzmax
-SetDirtyTracking True
+`Embedded.Drivers.Displays.SSD1306` uses `Embedded.Hardware.I2C`, presents only
+the affected display pages, and supports configurable visible dimensions and
+RAM offsets. `Create72x40()` supplies the offsets and analogue settings used by
+common EastRising-compatible 0.42-inch OLED modules. The general `Create()`
+constructor supports panels up to 128x64.
 
-' Draw one update. Viewports, origins, nested views and rotations are reflected
-' in the physical framebuffer rectangle automatically.
-FillRect 20, 12, 40, 18
-DrawText "42", 24, 16
-PresentDirty
-```
-
-`PresentDirty` submits the complete list through `TDisplay.PresentRegions` and
-clears it only after a successful transfer. The default synchronous driver
-implementation presents each region in order; framebuffer-swap drivers can
-override the method to preserve one atomic frame transition. If nothing
-changed, it succeeds without calling the driver. A failed transfer retains all
-regions for retry. `DirtyRegionCount` and `DirtyRegion` expose individual
-rectangles, while `DirtyRect` retains the convenient bounding-union view.
-`ResetDirty` discards them, and `InvalidateRect` or `InvalidateAll` covers
-changes made outside Graphics2D.
-
-The tracker holds at most eight rectangles. A ninth independent fragment, or
-dirty coverage reaching 60 percent of the framebuffer, deterministically
-collapses the list to one full-screen update. This bounds bookkeeping and
-driver-call costs without heap allocation. Drivers remain free to expand a
-request to page, row, DMA, or controller-specific transfer boundaries.
-
-`TDisplay.Capabilities` distinguishes partial presentation, a live scanout
-framebuffer, vertical synchronization, true buffer swapping, optimized discard
-presentation, accelerated solid fills, and accelerated image blits. Existing
-drivers retain the original synchronous partial-presentation behavior without
-needing an override. A driver which exchanges its own framebuffers can use
-`TDisplayBuffer.RetargetExternal` to keep the buffer object—and therefore the
-renderer bound to it—stable while changing the underlying pixel storage.
-
-`PresentDiscard` is the explicit full-redraw fast path. It permits a driver to
-leave the next render buffer with stale or undefined contents after presenting;
-the application must overwrite every pixel before presenting again. Drivers
-which do not advertise `DisplayCapabilityDiscardPresent` safely fall back to
-ordinary coherent presentation.
-
-`SetRotation` accepts clockwise `0`, `90`, `180`, or `270` degree orientation.
-All primitives, text, and images use the rotated logical canvas; `GraphicsWidth`
-and `GraphicsHeight` report its dimensions. Rotation remaps integer coordinates
-without trigonometry, filtering, another framebuffer, or frame-time allocation:
-
-```blitzmax
-SetRotation 90
-DrawText "Portrait", 4, 4
-Present
-```
-
-Display orientation is device configuration rather than a drawing transform.
-Call `display.SetOrientation(90)` before `SetRenderTarget` to make portrait the
-default, so `SetRotation(0)` uses that orientation and the logical dimensions are
-swapped. `SetDisplayOrientation` changes it through the active Graphics2D context
-at runtime, retaining the current relative drawing rotation and resetting the
-viewport. This supports sensor-driven auto-rotation without rotating the complete
-framebuffer or allocating another one.
-
-`BeginView` creates a clipped local coordinate system within the current view.
-Its optional rotation is clockwise and limited to exact `0`, `90`, `180`, or
-`270` degree turns. Views compose when nested, so a widget or library can draw
-at `(0, 0)` without knowing its final position or orientation. `EndView`
-restores the parent automatically:
-
-```blitzmax
-BeginView 20, 12, 120, 64
-SetClsColor 12, 20, 32
-Cls
-DrawText "Status", 4, 4
-
-BeginView 88, 8, 24, 48, 90
-DrawRect 0, 0, GraphicsWidth(), GraphicsHeight()
-EndView
-EndView
-```
-
-`PushGraphicsState` and `PopGraphicsState` save and restore the font, colours,
-origin, viewport, relative canvas rotation, and current view transform. The
-stack has sixteen entries which are allocated with the context, so pushing,
-popping, and drawing do not allocate. Overflow and underflow return `False`.
-Device orientation is hardware configuration and deliberately is not part of
-the saved drawing state.
-
-`ViewToScreen` and `ScreenToView` convert between the current local view and
-the root orientation-aware screen. They include the current origin, relative
-drawing rotation, and every nested quarter-turn, while remaining independent
-of the framebuffer's physical orientation. `PointInView` additionally tests
-the current viewport, making it suitable for touch hit-testing while traversing
-nested UI views. `GraphicsScreenWidth` and `GraphicsScreenHeight` provide the
-correct root extents even when a relative drawing rotation is active:
-
-```blitzmax
-Local screenX:Int = event.x * (GraphicsScreenWidth() - 1) / 10000
-Local screenY:Int = event.y * (GraphicsScreenHeight() - 1) / 10000
-
-BeginView 20, 12, 120, 64, 90
-If PointInView(screenX, screenY) Then
-	Local x:Int, y:Int
-	ScreenToView screenX, screenY, x, y
-	' x and y are now local drawing coordinates for this view.
-End If
-EndView
-```
-
-The shared primitive set includes outlined and filled rectangles, circles,
-ellipses, triangles, and rounded rectangles. Curves and fills use deterministic
-integer rasterisation, inherit the current colour, origin, viewport, and nested
-view transform, and do not allocate while drawing:
-
-```blitzmax
-SetColor 40, 170, 255
-FillRoundRect 12, 12, 120, 48, 10
-DrawCircle 172, 36, 22
-FillTriangle 220, 58, 252, 12, 284, 58
-```
-
-Text can be measured and laid out without creating temporary strings.
-`TextBoxSize` reports the wrapped dimensions, while `DrawTextBox` supports left,
-centre, and right alignment, explicit newlines, word wrapping, clipping, integer
-font scaling, and optional final-line ellipsis:
-
-```blitzmax
-Local textWidth:Int
-Local textHeight:Int
-Local lines:Int = TextBoxSize(message, 180, textWidth, textHeight)
-
-SetColor 235, 240, 255
-DrawTextBox message, 12, 12, 180, 72, TextAlignCenter, 1, True
-```
-
-Concrete display drivers live beneath `Embedded.Drivers.Displays.*`.
-`Embedded.Drivers.Displays.SSD1306` is the first controller implementation. It uses
-`Embedded.Hardware.I2C`, supports dirty page updates, and includes the 72x40
-EastRising-compatible preset used by common 0.42-inch OLED boards.
+Initialize and select the I2C controller before creating the driver. The
+application remains responsible for SDA/SCL pin routing, bus speed, and the
+panel's seven-bit address.
 
 ### ST7735 SPI colour displays
 
@@ -201,9 +105,22 @@ with other peripherals.
 For example, a write-only SPI0 connection on a Pico 2 W can use GP18 for SCK,
 GP19 for MOSI, GP17 for chip-select, GP16 for data/command, and GP20 for reset:
 
+| Display signal | Pico 2 W pin in this example |
+| --- | --- |
+| SCK/CLK | GP18 |
+| MOSI/SDA | GP19 |
+| CS | GP17 |
+| D/C or A0 | GP16 |
+| RESET/RES | GP20 |
+| MISO | Not connected for display-only use |
+
+Power, ground, and backlight wiring depend on the complete display module and
+are not controller GPIO signals.
+
 ```blitzmax
 Import Embedded.Drivers.Displays.ST7735
 Import Embedded.Hardware.SPI
+Import Embedded.Graphics2D
 
 Const Controller:Int = SPIController0
 
@@ -220,6 +137,11 @@ If Not display Or Not display.Initialize() Then ..
 
 Local frame:TDisplayBuffer = display.CreateBuffer()
 SetRenderTarget(frame, display)
+SetClsColor 8, 16, 28
+Cls
+SetColor 255, 210, 40
+FillRect 8, 8, 48, 24
+Present
 ```
 
 The final two Boolean arguments select BGR component order and display
@@ -319,6 +241,27 @@ SPI limits are properties of the complete controller board, wiring, and panel
 combination rather than the ST7796 controller alone, so initial bring-up should
 use a conservative rate and secure, short connections.
 
+### ILI9341 SPI colour displays
+
+`Embedded.Drivers.Displays.ILI9341` drives the common 240x320 RGB565 panel.
+Its constructor accepts the initialized SPI controller, chip-select,
+data/command and reset GPIOs, component order, inversion, and initial
+orientation. As with the ST drivers, the application owns SPI pin routing and
+clock selection, and no MISO connection is required for display-only use.
+
+The same portable driver has been validated on Pico and ESP32-S3. Modules which
+also carry an XPT2046 touch controller or SD-card slot expose those as separate
+SPI devices with their own chip-select lines; importing the display driver does
+not claim or configure them.
+
+### SH1107 SPI monochrome displays
+
+`Embedded.Drivers.Displays.SH1107` presents Mono1 buffers to SH1107-compatible
+panels. `Create128x128()` covers the common full-size OLED, while `Create()`
+accepts smaller visible windows and controller-RAM offsets. Reset is optional
+when the module does not expose it. Dirty updates are expanded to the
+controller's eight-pixel page boundaries.
+
 ## Touch input
 
 `Embedded.Drivers.Touch` is the controller-neutral touch boundary. A
@@ -343,7 +286,23 @@ Concrete controller modules only read the hardware and expose the current
 contact snapshot, so future Pico and ESP32 adapters can share identical event
 semantics.
 
-## Images and bitmaps
+Touch controller adapters whose SDK or bus integration is target-specific live
+in the target repository. For example, `ESP32.Drivers.Touch.GT1151` implements
+this contract for supported ESP32 RGB display boards.
+
+## Assets and conversion tools
+
+Display assets are converted on the desktop and embedded as compact,
+validated data. Firmware does not link PNG, JPEG, SVG, BDF, or other desktop
+decoders.
+
+| Tool | Input | Output | Runtime module |
+| --- | --- | --- | --- |
+| `tools/image2embedded.bmx` | Images supported by `image.mod` | EBI1 image | `Embedded.Drivers.Display.Image` |
+| `tools/spriteatlas.bmx` | Named image frames | Atlas PNG and BlitzMax metadata | `Embedded.Graphics2D.Sprite` |
+| `tools/bdf2embeddedfont.bmx` | BDF bitmap font | EBF1 font | `Embedded.Drivers.Display.Font` |
+
+### Images and bitmaps
 
 `Embedded.Drivers.Display.Image` loads the compact EBI1 format from persistent
 firmware memory. An EBI1 image contains raw Mono1, RGB565, RGB888, or packed
@@ -429,7 +388,7 @@ zero returns without touching the framebuffer.
 Image pixels live in flash through `Incbin`; only the display framebuffer uses
 RAM. Applications only pay for assets and the image module when they import it.
 
-## Sprite sheets and animation
+### Sprite sheets and animation
 
 `Embedded.Graphics2D.Sprite` treats frames as lightweight views into one
 `TEmbeddedImage`. A regular grid is enough for conventional sprite strips:
@@ -508,7 +467,7 @@ visible animation jitter. Fully transparent frames use a masked 1x1 placeholder.
 configured page fails rather than silently dropping a frame; increase
 `--page-size` or divide unrelated assets into separate atlases.
 
-## Bitmap fonts and text
+### Bitmap fonts and text
 
 `Embedded.Drivers.Display.Font` renders compact, Unicode-addressed bitmap fonts
 into any `TDisplayBuffer`. Rendering and measurement perform no allocation, and
@@ -596,16 +555,17 @@ should be reserved for genuinely dynamic values such as numbers or user input.
 Font modules should retain the upstream font copyright and licence beside the
 generated data. The converter does not change or replace the font's licence.
 
-## Graphics and UI libraries
+## Related guides
 
-The display contract is intended to support an optional higher-level renderer.
-LVGL is the leading candidate for widgets, layout, animation, input devices and
-touch. It should be integrated as an adapter above `TDisplay`, not embedded in
-individual controller drivers. That keeps tiny applications small and lets the
-same LVGL integration work with monochrome, RGB565, and later accelerated or
-DMA-backed displays.
+- [Embedded.Graphics2D](../graphics2d.mod/README.md) documents the complete
+  drawing API, fonts, images, sprites, views, rotation, dirty presentation, and
+  performance guidance.
+- [Embedded.UI](../ui.mod/README.md) documents display-only dashboards,
+  retained layout, controls, navigation, notifications, themes, and optional
+  interaction.
+- The [embedded module overview](../README.md) explains the portable-versus-
+  target-specific boundary and links to the hardware buses used by drivers.
 
-U8g2 is also useful as a focused monochrome option because it supports many
-controllers and fonts. Its transport callbacks can sit on the same portable
-I2C/SPI APIs. Whether to vendor selected U8g2 support or expose it as a separate
-optional module should be decided independently from the core display contract.
+External libraries such as LVGL or U8g2 can still be adapted above `TDisplay`
+and the portable I2C/SPI APIs. They are optional alternatives, not required by
+the built-in Graphics2D and UI layers.

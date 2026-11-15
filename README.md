@@ -15,6 +15,8 @@ native adapter behind each portable API:
   devices.
 - [esp8266.mod](https://github.com/bmx-ng/esp8266.mod) supports legacy
   Espressif ESP8266 devices.
+- [nrf52.mod](https://github.com/bmx-ng/nrf52.mod) supports nRF52840 boards
+  through Zephyr.
 
 For dual-core devices, see [Writing multicore embedded apps](docs/multicore-apps.md)
 for a short introduction and runnable worker and web-server examples.
@@ -77,15 +79,17 @@ and other capabilities that do not share equivalent semantics.
 | `Embedded.Hardware.PWM` | Pin-oriented frequency, polarity, enable, and 16-bit-scaled duty control |
 | `Embedded.Hardware.I2C` | Master setup, deadline reads and writes, and repeated-Start write/read transactions |
 | `Embedded.Hardware.SPI` | 8-bit and 16-bit blocking simplex and full-duplex transfers, including omitted RX/TX signals for one-way devices |
-| [`Embedded.Drivers.Display`](drivers.mod/README.md) | Mono1, RGB565, and RGB888 raster buffers with full or dirty-region presentation |
-| [`Embedded.Drivers.Display.Image`](drivers.mod/README.md) | Validated firmware-resident Mono1, RGB565, and RGB888 images with transparency, clipping, tinting, and scaling |
-| [`Embedded.Drivers.Display.Font`](drivers.mod/README.md) | Allocation-free Unicode bitmap-font measurement and rendering |
-| [`Embedded.Drivers.Display.Fonts.*`](drivers.mod/README.md) | Independently imported ANAKRON, Cozette, Scientifica, Spleen, Tamzen, and Terminus bitmap fonts |
-| [`Embedded.Drivers.Displays.SSD1306`](drivers.mod/README.md) | Portable I2C SSD1306 OLED driver, including the 72x40 0.42-inch panel preset |
+| [`Embedded.Drivers.Display`](drivers.mod/README.md#display-architecture) | Mono1, RGB565, and RGB888 raster buffers with full or dirty-region presentation |
+| [`Embedded.Drivers.Display.Image`](drivers.mod/README.md#images-and-bitmaps) | Validated firmware-resident Mono1, RGB565, and RGB888 images with transparency, clipping, tinting, and scaling |
+| [`Embedded.Drivers.Display.Font`](drivers.mod/README.md#bitmap-fonts-and-text) | Allocation-free Unicode bitmap-font measurement and rendering |
+| [`Embedded.Drivers.Display.Fonts.*`](drivers.mod/README.md#bitmap-fonts-and-text) | Independently imported ANAKRON, Cozette, Scientifica, Spleen, Tamzen, and Terminus bitmap fonts |
+| [`Embedded.Drivers.Displays.SSD1306`](drivers.mod/README.md#ssd1306-i2c-monochrome-displays) | Portable I2C SSD1306 OLED driver, including the 72x40 0.42-inch panel preset |
+| [`Embedded.Drivers.Displays.SH1107`](drivers.mod/README.md#sh1107-spi-monochrome-displays) | Configurable SPI SH1107 monochrome OLED driver with a 128x128 preset |
 | [`Embedded.Drivers.Displays.ST7735`](drivers.mod/README.md#st7735-spi-colour-displays) | Configurable SPI ST7735 colour TFT driver with RGB565 and dirty-region presentation |
 | [`Embedded.Drivers.Displays.ST7789`](drivers.mod/README.md#st7789-spi-colour-displays) | Configurable SPI ST7789 colour TFT driver with a full-size 240x320 preset |
 | [`Embedded.Drivers.Displays.ST7796`](drivers.mod/README.md#st7796-spi-colour-displays) | Configurable SPI ST7796 320x480 colour TFT driver with RGB565 and dirty-region presentation |
-| [`Embedded.Drivers.Touch`](drivers.mod/README.md) | Controller-neutral multitouch polling translated to standard `BRL.Event` touch events |
+| [`Embedded.Drivers.Displays.ILI9341`](drivers.mod/README.md#ili9341-spi-colour-displays) | Portable SPI ILI9341 240x320 colour TFT driver with RGB565 presentation |
+| [`Embedded.Drivers.Touch`](drivers.mod/README.md#touch-input) | Controller-neutral multitouch polling translated to standard `BRL.Event` touch events |
 | [`Embedded.Graphics2D`](graphics2d.mod/README.md) | Optional Max2D-style stateful drawing facade over portable display buffers |
 | [`Embedded.Graphics2D.Sprite`](graphics2d.mod/README.md#sprite-sheets-and-animation) | Flash-resident sprite sheets, atlas metadata, and deterministic animation playback |
 | [`Embedded.UI`](ui.mod/README.md) | Lightweight retained widget trees and passive presentation, with optional controls and touch adapters |
