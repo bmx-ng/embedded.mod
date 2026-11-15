@@ -12,7 +12,7 @@ Import Embedded.UI
 
 Const UIFrameBenchmarkSamples:Int = 7
 Const UIFrameBenchmarkWarmups:Int = 2
-Const UIFrameBenchmarkCaseCount:Int = 6
+Const UIFrameBenchmarkCaseCount:Int = 10
 Const UIFrameBenchmarkFormat:Int = 1
 
 ?pico
@@ -157,7 +157,34 @@ Type TUIFrameBenchmark
 				history.AddValue(15 + (tickIndex * 17) Mod 80)
 			Case 5
 				progress.SetValue(15 + (tickIndex * 17) Mod 80)
+			Case 6, 7, 8, 9
+				loadGauge.SetValue(15 + (tickIndex * 17) Mod 80)
 		End Select
+	End Method
+
+	Method ConfigureCase(caseId:Int)
+		loadGauge.SetTickCount(10)
+		loadGauge.SetShowValue(True)
+		loadGauge.SetLabel("Current")
+		loadGauge.SetArcWidth(8)
+		Select caseId
+			Case 6
+				loadGauge.SetTickCount(0)
+			Case 7
+				loadGauge.SetShowValue(False)
+				loadGauge.SetLabel("")
+			Case 8
+				loadGauge.SetTickCount(0)
+				loadGauge.SetShowValue(False)
+				loadGauge.SetLabel("")
+			Case 9
+				loadGauge.SetTickCount(0)
+				loadGauge.SetShowValue(False)
+				loadGauge.SetLabel("")
+				loadGauge.SetArcWidth(1)
+		End Select
+		If Not ui.Present() Then RuntimeError "UI frame benchmark case setup failed"
+		UIFrameBenchmarkHousekeeping()
 	End Method
 
 	Method DirtyPixels:Long()
@@ -199,6 +226,7 @@ Type TUIFrameBenchmark
 	End Method
 
 	Method RunCase(caseId:Int)
+		ConfigureCase(caseId)
 		For Local warmup:Int = 0 Until UIFrameBenchmarkWarmups
 			Local prepareUs:ULong, renderUs:ULong, presentUs:ULong
 			Local dirtyRegions:Int, dirtyPixels:Long
@@ -276,6 +304,10 @@ Type TUIFrameBenchmark
 			Case 3 Return "arc_gauge"
 			Case 4 Return "sparkline"
 			Case 5 Return "progress_bar"
+			Case 6 Return "arc_gauge_no_ticks"
+			Case 7 Return "arc_gauge_no_text"
+			Case 8 Return "arc_gauge_arcs_only"
+			Case 9 Return "arc_gauge_thin_arc_only"
 		End Select
 		Return "unknown"
 	End Method

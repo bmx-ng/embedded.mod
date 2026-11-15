@@ -77,6 +77,9 @@ indicators, an arc gauge, a sparkline, and a progress bar. The three cases are:
 - `full_redraw`: the complete retained tree is redrawn.
 - `arc_gauge`, `sparkline`, and `progress_bar`: one dashboard widget changes in
   isolation, making remaining widget-level rendering costs visible.
+- `arc_gauge_no_ticks`, `arc_gauge_no_text`, `arc_gauge_arcs_only`, and
+  `arc_gauge_thin_arc_only`: progressively remove gauge decoration and arc
+  width so track/value raster cost can be separated from text and ticks.
 
 Each case reports four separate phases. `ui_prepare` measures widget state
 updates and invalid-region merging, `ui_render` measures retained-tree drawing,
@@ -129,3 +132,7 @@ Graphics2D call while preserving the transformed fallback. On the S31 this
 reduces isolated arc-gauge rendering from 22,165 us to 15,906 us (28.2%), the
 multi-widget dashboard from 46,153 us to 37,285 us (19.2%), and full redraw
 rendering from 49,788 us to 40,502 us (18.7%).
+
+The component breakdown then removes ticks, text, and arc thickness in stages.
+It shows that ticks are negligible, text contributes about 1.4 ms, and the two
+eight-pixel arc bands account for roughly 10.7 ms beyond the thin-arc control.

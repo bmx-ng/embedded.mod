@@ -13,7 +13,7 @@ Import Embedded.System.Time
 Const GraphicsBenchmarkFormat:Int = 1
 Const GraphicsBenchmarkSamples:Int = 7
 Const GraphicsBenchmarkWarmups:Int = 2
-Const GraphicsBenchmarkCaseCount:Int = 15
+Const GraphicsBenchmarkCaseCount:Int = 17
 Const GraphicsBenchmarkPresentSamples:Int = 5
 
 Function BenchmarkHousekeeping()
@@ -369,6 +369,16 @@ Type TGraphics2DBenchmark
 					graphics.DrawText("Graphics2D 012345", (index * 3) Mod 24, ..
 						(index * 9) Mod (height - 24), 3)
 				Next
+			Case 15
+				For Local index:Int = 0 Until iterations
+					graphics.DrawArc(width / 2, height / 2, 24, 135, 270, 8)
+				Next
+			Case 16
+				graphics.SetRotation(GraphicsRotation90)
+				For Local index:Int = 0 Until iterations
+					graphics.DrawArc(graphics.Width() / 2, graphics.Height() / 2, ..
+						24, 135, 270, 8)
+				Next
 		End Select
 	End Method
 
@@ -399,6 +409,8 @@ Type TGraphics2DBenchmark
 			Case 12 Return "image_alpha_16x16"
 			Case 13 Return "fill_24x16_rot90"
 			Case 14 Return "text_spleen_5x8_scale3"
+			Case 15 Return "arc_270_w8"
+			Case 16 Return "arc_270_w8_rot90"
 		End Select
 		Return "unknown"
 	End Method
@@ -415,6 +427,7 @@ Type TGraphics2DBenchmark
 			Case 9, 11, 12 iterations = 128
 			Case 10 iterations = 64
 			Case 13 iterations = 192
+			Case 15, 16 iterations = 32
 		End Select
 		If iterations = 0 Then iterations = 1
 		' Mono1 uses generic colour conversion and bit-addressed writes. Keep a
@@ -441,6 +454,7 @@ Type TGraphics2DBenchmark
 			Case 7 Return Long(531) * iterations
 			Case 8 Return Long(18 * 5 * 8) * iterations
 			Case 14 Return Long(18 * 5 * 8 * 9) * iterations
+			Case 15, 16 Return Long(904) * iterations
 			Case 9, 11, 12 Return Long(16 * 16) * iterations
 			Case 10 Return Long(32 * 32) * iterations
 		End Select
