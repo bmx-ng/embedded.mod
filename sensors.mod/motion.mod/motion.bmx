@@ -15,12 +15,12 @@ Module Embedded.Sensors.Motion
 ModuleInfo "Version: 0.1"
 ModuleInfo "License: zlib/libpng"
 
-?nrf52
+?embedded And nrf52
 Extern "C"
 	Function MotionSensorCount:Int() = "bmx_embedded_motion_sensor_count"
 	Function MotionRead:Int(sensor:Int, accelX:Float Var, accelY:Float Var, accelZ:Float Var, gyroX:Float Var, gyroY:Float Var, gyroZ:Float Var, timestampMicroseconds:Long Var) = "bmx_embedded_motion_read"
 End Extern
-?Not nrf52
+?embedded And Not nrf52
 Function MotionSensorCount:Int()
 	Return 0
 End Function
@@ -28,8 +28,7 @@ End Function
 Function MotionRead:Int(sensor:Int, accelX:Float Var, accelY:Float Var, accelZ:Float Var, gyroX:Float Var, gyroY:Float Var, gyroZ:Float Var, timestampMicroseconds:Long Var)
 	Return False
 End Function
-?
-
+?embedded
 Rem
 bbdoc: Reports inversion relative to an acceleration vector recorded while upright.
 about: Both vectors use the same sensor axes. A reading near zero magnitude is

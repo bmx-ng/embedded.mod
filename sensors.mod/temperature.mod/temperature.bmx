@@ -19,13 +19,13 @@ Const TemperatureKindUnknown:Int = 0
 Const TemperatureKindDevice:Int = 1
 Const TemperatureKindAmbient:Int = 2
 
-?nrf52
+?embedded And nrf52
 Extern "C"
 	Function TemperatureSensorCount:Int() = "bmx_embedded_temperature_sensor_count"
 	Function TemperatureSensorKind:Int(sensor:Int) = "bmx_embedded_temperature_sensor_kind"
 	Function TemperatureReadCelsius:Int(sensor:Int, celsius:Float Var) = "bmx_embedded_temperature_read_celsius"
 End Extern
-?Not nrf52
+?embedded And Not nrf52
 Function TemperatureSensorCount:Int()
 	Return 0
 End Function
@@ -37,5 +37,4 @@ End Function
 Function TemperatureReadCelsius:Int(sensor:Int, celsius:Float Var)
 	Return False
 End Function
-?
 ?
