@@ -76,6 +76,8 @@ and other capabilities that do not share equivalent semantics.
 | `Embedded.Hardware.GPIO` | Digital input/output, pull resistors, drive strength, and interrupt configuration |
 | `Embedded.Hardware.GPIOEvents` | GPIO interrupts delivered safely as BlitzMax events |
 | `Embedded.Hardware.ADC` | Pin-oriented one-shot conversion, resolution, and input-range discovery |
+| `Embedded.Sensors.Motion` | Three-axis acceleration and angular velocity with a portable upside-down helper |
+| `Embedded.Sensors.Temperature` | Celsius readings with source classification (device or ambient) |
 | `Embedded.Hardware.PWM` | Pin-oriented frequency, polarity, enable, and 16-bit-scaled duty control |
 | `Embedded.Hardware.I2C` | Master setup, deadline reads and writes, and repeated-Start write/read transactions |
 | `Embedded.Hardware.SPI` | 8-bit and 16-bit blocking simplex and full-duplex transfers, including omitted RX/TX signals for one-way devices |
