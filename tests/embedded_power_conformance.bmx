@@ -20,5 +20,10 @@ End If
 If Not PowerSupports(PowerCapabilityLowLeakagePins) Then
 	If SetUnusedPinsLowLeakage() <> EPowerResult.Unavailable Then RuntimeError "unsupported low-leakage pin operation did not report unavailable"
 End If
+If PowerSupports(PowerCapabilitySleepGPIORetention) Then
+	If SetSleepGPIORetention($ffffffff) <> EPowerResult.InvalidArgument Then RuntimeError "sleep GPIO retention accepted an invalid pin"
+Else
+	If SetSleepGPIORetention(0) <> EPowerResult.Unavailable Then RuntimeError "unsupported sleep GPIO retention did not report unavailable"
+End If
 
 Print "Embedded power conformance passed; capabilities=" + capabilities
