@@ -26,4 +26,10 @@ Else
 	If SetSleepGPIORetention(0) <> EPowerResult.Unavailable Then RuntimeError "unsupported sleep GPIO retention did not report unavailable"
 End If
 
+If PowerSupports(PowerCapabilitySleepGPIOWake) Then
+	If SetSleepGPIOWake($ffffffff, True) <> EPowerResult.InvalidArgument Then RuntimeError "sleep GPIO wake accepted an invalid pin"
+Else
+	If SetSleepGPIOWake(0, True) <> EPowerResult.Unavailable Then RuntimeError "unsupported sleep GPIO wake did not report unavailable"
+End If
+
 Print "Embedded power conformance passed; capabilities=" + capabilities

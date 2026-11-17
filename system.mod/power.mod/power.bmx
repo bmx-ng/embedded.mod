@@ -22,6 +22,7 @@ Const PowerCapabilityDormantGPIO:UInt = $08
 Const PowerCapabilityDormantTimer:UInt = $10
 Const PowerCapabilityLowLeakagePins:UInt = $20
 Const PowerCapabilitySleepGPIORetention:UInt = $40
+Const PowerCapabilitySleepGPIOWake:UInt = $80
 
 Enum EPowerResult:Int
 	Success = 0
@@ -61,6 +62,19 @@ Extern "C"
 	an attached load. Target-specific rebooting sleep modes may require a separate API.
 	End Rem
 	Function SetSleepGPIORetention:EPowerResult(pin:UInt, enabled:Int = True) = "bmx_embedded_power_set_sleep_gpio_retention"
+
+	Rem
+	bbdoc: Enables or disables a GPIO level as a wake source for subsequent returning low-power sleeps.
+	param: GPIO number to configure as a wake source.
+	param: True to wake while the pin is high; False to wake while it is low.
+	param: True to enable this wake source; False to remove it.
+	returns: Success, an error describing an invalid GPIO or state, or Unavailable when unsupported.
+	about: This is a persistent sleep policy consumed by #LowPowerSleep and
+	#LowPowerSleepUntilInterrupt. More than one GPIO may be enabled where the
+	target supports it. Because wake detection is level-triggered, the requested
+	level must not already be active when sleep begins.
+	End Rem
+	Function SetSleepGPIOWake:EPowerResult(pin:UInt, high:Int, enabled:Int = True) = "bmx_embedded_power_set_sleep_gpio_wake"
 End Extern
 
 Function PowerSupports:Int(capabilities:UInt)
