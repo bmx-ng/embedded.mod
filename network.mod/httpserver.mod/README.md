@@ -276,4 +276,9 @@ and ESP32-S31 for chunked output, connection reuse, HEAD, no-body responses and
 HTTP/1.0 close-delimited output.
 The same image writes a 4 KiB LittleFS fixture under `/www` and checks trusted
 HTTPS static responses, byte ranges, `If-None-Match`, explicit cache lifetime,
-and a 416 response. These checks pass on ESP32-S31.
+and a 416 response. These checks pass on Pico 2 W and ESP32-S31. For the Pico 2 W
+HTTPS fixture, use at least `-heap 256k` with `-storage 128k`: 128 KiB and
+192 KiB heaps showed intermittent allocation failures during repeated static
+requests. Twelve consecutive full wire suites passed at 256 KiB. A separate
+eight-suite heap check collected between suites and found stable live strings,
+arrays, objects, and reusable heap space.

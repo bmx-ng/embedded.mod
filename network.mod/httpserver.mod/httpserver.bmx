@@ -840,7 +840,15 @@ Type THTTPServer
 					Not (request.method = "HEAD" And route.method = "GET") Then Continue
 				request.parameters = params
 				If route.staticRoot <> "" Then
-					_StaticFile(request, response, route)
+					Try
+						_StaticFile(request, response, route)
+					Catch error:Object
+						_HandlerFault(conn, "static file exception")
+						Return
+					Catch error:String
+						_HandlerFault(conn, error)
+						Return
+					End Try
 					If response.status >= 400 And response.status <> 416 Then _Fail(conn, response.status); Return
 				Else
 						Try
