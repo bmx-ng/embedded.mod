@@ -109,6 +109,7 @@ If Not server.Route("GET", "/restart", New TRestartHandler) Then RuntimeError "r
 If Not server.Route("GET", "/throw", New TThrowHandler) Then RuntimeError "route failed"
 If Not server.Route("GET", "/upload-aborts", New TAbortCountHandler) Then RuntimeError "route failed"
 If Not server.RouteStream("POST", "/upload", New TUploadHandler) Then RuntimeError "stream route failed"
+If Not server.RouteStream("PUT", "/upload", New TUploadHandler) Then RuntimeError "PUT stream route failed"
 If Not server.Static("/assets/", AppArgs[2]) Then RuntimeError "static route failed"
 If Not server.Start() Then RuntimeError server.LastError()
 server.Stop()

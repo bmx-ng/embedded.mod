@@ -181,6 +181,23 @@ Interface IHTTPErrorHandler
 	Method HandleError(status:Int, response:THTTPResponse)
 End Interface
 
+Rem
+bbdoc: Optional nonblocking connection transport for HTTP, including TLS.
+End Rem
+Interface IHTTPConnection
+	Method TryRecv:Int(buffer:Byte Ptr, count:Size_T)
+	Method TrySend:Int(buffer:Byte Ptr, count:Size_T)
+	Method RemoteIP:String()
+	Method Close()
+End Interface
+
+Interface IHTTPListener
+	Method Start:Int(port:Int, backlog:Int)
+	Method Accept:IHTTPConnection()
+	Method Close()
+	Method LastError:String()
+End Interface
+
 Private
 
 Type THTTPRoute
@@ -193,6 +210,7 @@ End Type
 
 Type THTTPConnection
 	Field socket:TSocket
+	Field transport:IHTTPConnection
 	Field input:Byte[]
 	Field inputCount:Int
 	Field headerEnd:Int = -1
@@ -319,6 +337,8 @@ Type THTTPServer
 	Private
 	Field config:THTTPServerConfig
 	Field listener:TSocket
+	Field secureListener:IHTTPListener
+	Field running:Int
 	Field routes:THTTPRoute[]
 	Field routeCount:Int
 	Field connections:THTTPConnection[]
@@ -326,7 +346,7 @@ Type THTTPServer
 	Field _lastError:String
 
 	Public
-	Function Create:THTTPServer(settings:THTTPServerConfig = Null)
+	Function Create:THTTPServer(settings:THTTPServerConfig = Null, transport:IHTTPListener = Null)
 		If Not settings Then settings = New THTTPServerConfig
 		If settings.maxConnections < 1 Or settings.maxConnections > 4 Or ..
 			settings.port < 0 Or settings.port > 65535 Or ..
@@ -346,6 +366,7 @@ Type THTTPServer
 		Try
 			server = New THTTPServer
 			server.config = settings.Copy()
+			server.secureListener = transport
 			server.routes = New THTTPRoute[settings.maxRoutes]
 			server.connections = New THTTPConnection[settings.maxConnections]
 		Catch error:Object
@@ -357,7 +378,7 @@ Type THTTPServer
 	End Function
 
 	Method Route:Int(method:String, path:String, handler:IHTTPHandler)
-		If listener Or routeCount = routes.length Or Not handler Or ..
+		If running Or routeCount = routes.length Or Not handler Or ..
 			Not _HTTPToken(method) Or Not path.StartsWith("/") Then Return False
 		Local route:THTTPRoute = New THTTPRoute
 		route.method = method.ToUpper()
@@ -369,7 +390,7 @@ Type THTTPServer
 	End Method
 
 	Method RouteStream:Int(method:String, path:String, handler:IHTTPBodyHandler)
-		If listener Or routeCount = routes.length Or Not handler Or ..
+		If running Or routeCount = routes.length Or Not handler Or ..
 			(method <> "POST" And method <> "PUT") Or Not path.StartsWith("/") Then Return False
 		Local route:THTTPRoute = New THTTPRoute
 		route.method = method
@@ -381,7 +402,7 @@ Type THTTPServer
 	End Method
 
 	Method Static:Int(prefix:String, root:String)
-		If listener Or routeCount = routes.length Or Not prefix.StartsWith("/") Or ..
+		If running Or routeCount = routes.length Or Not prefix.StartsWith("/") Or ..
 			Not prefix.EndsWith("/") Or root.length = 0 Then Return False
 		Local route:THTTPRoute = New THTTPRoute
 		route.method = "GET"
@@ -409,7 +430,15 @@ Type THTTPServer
 	End Method
 
 	Method Start:Int()
-		If listener Then Return True
+		If running Then Return True
+		If secureListener Then
+			If Not secureListener.Start(config.port, config.maxConnections) Then
+				_lastError = secureListener.LastError()
+				Return False
+			End If
+			running = True
+			Return True
+		End If
 		listener = TSocket.CreateTCP()
 		If Not listener Then _lastError = "socket creation failed"; Return False
 		listener.SetSockOpt(SOL_SOCKET, SO_REUSEADDR, True)
@@ -419,6 +448,7 @@ Type THTTPServer
 			listener = Null
 			Return False
 		End If
+		running = True
 		Return True
 	End Method
 
@@ -428,10 +458,22 @@ Type THTTPServer
 		Next
 		If listener Then listener.Close()
 		listener = Null
+		If secureListener Then secureListener.Close()
+		running = False
 	End Method
 
 	Private
-		Method _Close(index:Int)
+	Method _TryRecv:Int(conn:THTTPConnection, buffer:Byte Ptr, count:Size_T)
+		If conn.transport Then Return conn.transport.TryRecv(buffer, count)
+		Return conn.socket.TryRecv(buffer, count)
+	End Method
+
+	Method _TrySend:Int(conn:THTTPConnection, buffer:Byte Ptr, count:Size_T)
+		If conn.transport Then Return conn.transport.TrySend(buffer, count)
+		Return conn.socket.TrySend(buffer, count)
+	End Method
+
+	Method _Close(index:Int)
 			Local conn:THTTPConnection = connections[index]
 			If Not conn Then Return
 			If conn.bodyHandler And Not conn.streamComplete Then
@@ -450,6 +492,7 @@ Type THTTPServer
 			Catch error:String
 			End Try
 		End If
+		If conn.transport Then conn.transport.Close()
 		If conn.socket Then conn.socket.Close()
 		connections[index] = Null
 	End Method
@@ -549,7 +592,8 @@ Type THTTPServer
 		Local request:THTTPRequest = conn.request
 		Local response:THTTPResponse = New THTTPResponse
 		conn.response = response
-		If request.method <> "GET" And request.method <> "HEAD" And request.method <> "POST" Then
+		If request.method <> "GET" And request.method <> "HEAD" And ..
+			request.method <> "POST" And request.method <> "PUT" Then
 			_Fail(conn, 501)
 			Return
 		End If
@@ -594,15 +638,25 @@ Type THTTPServer
 			response.status = 405
 			response.Text(_HTTPReason(405))
 			response.SetHeader("Allow", allow)
-				If errorHandler Then
-					Try
-						errorHandler.HandleError(405, response)
-					Catch error:Object
-						_lastError = "error handler failed for HTTP 405"
-					Catch error:String
-						_lastError = "error handler failed for HTTP 405: " + error
-					End Try
-				End If
+			If errorHandler Then
+				Try
+					errorHandler.HandleError(405, response)
+				Catch error:Object
+					_lastError = "error handler failed for HTTP 405"
+					response = New THTTPResponse
+					response.status = 405
+					response.Text(_HTTPReason(405))
+					response.SetHeader("Allow", allow)
+					conn.response = response
+				Catch error:String
+					_lastError = "error handler failed for HTTP 405: " + error
+					response = New THTTPResponse
+					response.status = 405
+					response.Text(_HTTPReason(405))
+					response.SetHeader("Allow", allow)
+					conn.response = response
+				End Try
+			End If
 			_Prepare(conn)
 		Else
 			_Fail(conn, 404)
@@ -635,7 +689,11 @@ Type THTTPServer
 		request.path = path
 		request.query = query
 		request.version = parts[2]
-		request.remoteIP = conn.socket.RemoteIp()
+		If conn.transport Then
+			request.remoteIP = conn.transport.RemoteIP()
+		Else
+			request.remoteIP = conn.socket.RemoteIp()
+		End If
 		request.headers = New THTTPField[config.maxHeaders]
 		Local headerCount:Int
 		Local host:Int
@@ -688,7 +746,8 @@ Type THTTPServer
 			Return
 		End If
 		If request.version = "HTTP/1.1" And host <> 1 Then _Fail(conn, 400); Return
-		If request.method = "POST" And Not lengthSeen Then _Fail(conn, 411); Return
+		If (request.method = "POST" Or request.method = "PUT") And ..
+			Not lengthSeen Then _Fail(conn, 411); Return
 		conn.request = request
 		For Local pass:Int = 0 To 1
 			For Local i:Int = 0 Until routeCount
@@ -763,7 +822,7 @@ Type THTTPServer
 
 	Public
 	Method Service:Int(maxSteps:Int = 4)
-		If Not listener Or maxSteps <= 0 Then Return 0
+		If Not running Or maxSteps <= 0 Then Return 0
 		Local done:Int
 		While done < maxSteps
 			Local slot:Int = -1
@@ -771,19 +830,29 @@ Type THTTPServer
 				If Not connections[i] Then slot = i; Exit
 			Next
 			If slot < 0 Then Exit
-			Local socket:TSocket = listener.Accept(0)
-			If Not socket Then Exit
+			Local socket:TSocket
+			Local transport:IHTTPConnection
+			If secureListener Then
+				transport = secureListener.Accept()
+				If Not transport Then Exit
+			Else
+				socket = listener.Accept(0)
+				If Not socket Then Exit
+			End If
 			Try
 				Local conn:THTTPConnection = New THTTPConnection
 				conn.socket = socket
+				conn.transport = transport
 				conn.input = New Byte[config.maxHeaderBytes + config.maxBodyBytes]
 				conn.started = MilliSecs()
 				conn.lastActivity = conn.started
 				connections[slot] = conn
 			Catch error:Object
-				socket.Close()
+				If transport Then transport.Close()
+				If socket Then socket.Close()
 			Catch error:String
-				socket.Close()
+				If transport Then transport.Close()
+				If socket Then socket.Close()
 			End Try
 			done :+ 1
 		Wend
@@ -822,7 +891,7 @@ Type THTTPServer
 	Private
 	Method _Read(conn:THTTPConnection)
 		If conn.inputCount = conn.input.length Then _Fail(conn, 431); Return
-		Local amount:Int = conn.socket.TryRecv(Varptr conn.input[conn.inputCount], ..
+		Local amount:Int = _TryRecv(conn, Varptr conn.input[conn.inputCount], ..
 			Size_T(conn.input.length - conn.inputCount))
 		If amount = HTTPWouldBlock Then Return
 		If amount <= 0 Then conn.state = 3; Return
@@ -867,7 +936,7 @@ Type THTTPServer
 
 	Method _Write(conn:THTTPConnection)
 		If conn.outputOffset < conn.output.length
-			Local count:Int = conn.socket.TrySend(Varptr conn.output[conn.outputOffset], ..
+			Local count:Int = _TrySend(conn, Varptr conn.output[conn.outputOffset], ..
 				Size_T(conn.output.length - conn.outputOffset))
 			If count = HTTPWouldBlock Then Return
 			If count <= 0 Then conn.state = 3; Return
@@ -887,7 +956,7 @@ Type THTTPServer
 				conn.fileOffset = 0
 				If conn.fileCount <= 0 Then conn.state = 3; Return
 			End If
-			Local sent:Int = conn.socket.TrySend(Varptr conn.fileBuffer[conn.fileOffset], ..
+			Local sent:Int = _TrySend(conn, Varptr conn.fileBuffer[conn.fileOffset], ..
 				Size_T(conn.fileCount - conn.fileOffset))
 			If sent = HTTPWouldBlock Then Return
 			If sent <= 0 Then conn.state = 3; Return
@@ -898,7 +967,7 @@ Type THTTPServer
 		End If
 		If conn.response.body And conn.response.body.length > 0
 			If conn.fileOffset = conn.response.body.length Then conn.state = 3; Return
-			Local sent:Int = conn.socket.TrySend(Varptr conn.response.body[conn.fileOffset], ..
+			Local sent:Int = _TrySend(conn, Varptr conn.response.body[conn.fileOffset], ..
 				Size_T(conn.response.body.length - conn.fileOffset))
 			If sent = HTTPWouldBlock Then Return
 			If sent <= 0 Then conn.state = 3; Return

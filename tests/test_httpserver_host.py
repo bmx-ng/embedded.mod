@@ -177,6 +177,13 @@ class HTTPServerWireTests(unittest.TestCase):
         self.assertEqual(size, len(body))
         self.assertGreater(chunks, 1)
         self.assertEqual(checksum, sum(body) % 65521)
+        self.assertIn(b"200 OK", self.exchange(
+            b"PUT /upload HTTP/1.1\r\nHost: local\r\n"
+            b"Content-Length: 3\r\n\r\nabc"
+        ))
+        self.assertIn(b"411 Length Required", self.exchange(
+            b"PUT /upload HTTP/1.1\r\nHost: local\r\n\r\n"
+        ))
         self.assertTrue(self.exchange(
             b"POST /upload HTTP/1.1\r\nHost: local\r\n"
             b"Content-Length: 0\r\n\r\n"

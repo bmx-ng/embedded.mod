@@ -7,7 +7,7 @@ transport uses `BRL.Socket`; handlers run only inside the application's call to
 
 ## First milestone
 
-- GET, HEAD and POST; exact and `:parameter` routes; bounded query and header
+- GET, HEAD, POST and PUT; exact and `:parameter` routes; bounded query and header
   access; text, HTML, JSON, bytes, redirect and length-known stream responses.
 - One request per TCP connection. Responses include `Content-Length` and
   `Connection: close`. HEAD sends the corresponding headers and no body.
@@ -63,6 +63,33 @@ there. All callbacks run inside `Service()` and should return promptly. The
 default total limit for streamed bodies is 1 MiB; set
 `maxStreamBodyBytes` for the application, up to 64 MiB. Ordinary `Route()`
 handlers retain the separate 1 KiB default buffered-body limit.
+
+## HTTPS on ESP32 and Pico W
+
+Import `Embedded.Network.HTTPSTLS` to add the board SDK's mbedTLS server
+library. Supply a PEM certificate and matching PEM private key as strings;
+keep the key in a local ignored configuration file or load it from protected
+device storage. Then pass the listener to the normal server constructor:
+
+```blitzmax
+Import Embedded.Network.HTTPSTLS
+
+Local config:THTTPServerConfig = New THTTPServerConfig
+config.port = 443
+Local tls:THTTPSTLSListener = THTTPSTLSListener.Create(certPEM, keyPEM)
+Local server:THTTPServer = THTTPServer.Create(config, tls)
+server.Route("GET", "/status", New TStatusHandler)
+If Not server.Start() Then RuntimeError server.LastError()
+```
+
+Use the same `Service()` loop as HTTP. Handshakes and encrypted reads and
+writes progress without blocking; the header timeout also bounds incomplete
+handshakes. `Stop()` releases active TLS connections before the shared TLS
+configuration. Plain HTTP applications need no TLS import or library. The
+Pico build links its SDK `pico_mbedtls` target with a TLS 1.2 configuration;
+the ESP32 build links ESP-IDF's mbedTLS 4 component. The server presents the
+configured certificate. Applications must arrange a trusted certificate and
+key; this module does not provision them.
 
 The supplied [device example](examples/device_api.bmx) has a status/JSON route,
 a token-protected GPIO route, LittleFS static files on both targets and
@@ -128,8 +155,7 @@ ESP32-S3 internal SRAM heap could not start. The ordinary example still uses
 the smaller resource defaults above and passed its device wire tests again
 after restoration on both boards.
 
-Keep-alive, chunked transfer, range/cache responses, upload streaming, SSE,
-WebSockets, multipart, authentication helpers, captive-portal workflows and OTA
-are later layers. HTTPS will use an optional transport so plain-HTTP route code
-does not change. No TLS or outbound certificate-verification settings are
-changed by this module.
+Keep-alive, chunked transfer, range/cache responses, SSE, WebSockets,
+multipart, authentication helpers, captive-portal workflows and OTA are later
+layers. The HTTPS adapter has target build coverage, but its handshake and
+transfer behavior still needs an on-device test on both boards.
