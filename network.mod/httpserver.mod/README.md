@@ -233,3 +233,9 @@ loaded a test PEM pair from LittleFS, rejected an invalid replacement, resumed
 with the previous pair, and started with a valid replacement. The ESP32-S31
 performed the same validation and restart sequence with a PEM pair read from
 NVS. The temporary test entries were removed after each run.
+
+The ESP32-S31 Function CoreBoard's dedicated LittleFS partition was explicitly
+formatted after its old contents failed to mount. A second on-device run
+verified file persistence across unmount/remount, rejected replacement while
+running and with an invalid key, restarted with the original pair, then served
+an HTTPS request with the replacement certificate loaded from LittleFS.
