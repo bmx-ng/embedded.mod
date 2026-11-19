@@ -9,6 +9,7 @@ Import BRL.SystemDefault
 Import Embedded.Network.HTTPServer
 
 Global restartRequested:Int
+Global uploadAborted:Int
 
 Type TStatusHandler Implements IHTTPHandler
 	Method Handle(request:THTTPRequest, response:THTTPResponse)
@@ -47,12 +48,56 @@ Type TRestartHandler Implements IHTTPHandler
 	End Method
 End Type
 
+Type TThrowHandler Implements IHTTPHandler
+	Method Handle(request:THTTPRequest, response:THTTPResponse)
+		Throw "deliberate handler failure"
+	End Method
+End Type
+
+Type TAbortCountHandler Implements IHTTPHandler
+	Method Handle(request:THTTPRequest, response:THTTPResponse)
+		response.Text(uploadAborted)
+	End Method
+End Type
+
+Type TUploadState
+	Field count:Int
+	Field chunks:Int
+	Field checksum:Int
+End Type
+
+Type TUploadHandler Implements IHTTPBodyHandler
+	Method Begin(request:THTTPRequest, response:THTTPResponse)
+		request.context = New TUploadState
+	End Method
+
+	Method Chunk(request:THTTPRequest, response:THTTPResponse, data:Byte[])
+		Local state:TUploadState = TUploadState(request.context)
+		state.count :+ data.length
+		state.chunks :+ 1
+		For Local value:Byte = EachIn data
+			state.checksum = (state.checksum + (value & 255)) Mod 65521
+		Next
+	End Method
+
+	Method Complete(request:THTTPRequest, response:THTTPResponse)
+		Local state:TUploadState = TUploadState(request.context)
+		response.Text(state.count + ":" + state.chunks + ":" + state.checksum)
+	End Method
+
+	Method Abort(request:THTTPRequest)
+		uploadAborted :+ 1
+		request.context = Null
+	End Method
+End Type
+
 If AppArgs.length < 3 Then RuntimeError "expected port and document root"
 Local config:THTTPServerConfig = New THTTPServerConfig
 config.port = AppArgs[1].ToInt()
 config.maxConnections = 2
 config.headerTimeoutMs = 300
 config.bodyTimeoutMs = 300
+config.maxStreamBodyBytes = 65536
 Local server:THTTPServer = THTTPServer.Create(config)
 If Not server Then RuntimeError "invalid server config"
 If Not server.Route("GET", "/status", New TStatusHandler) Then RuntimeError "route failed"
@@ -61,6 +106,9 @@ If Not server.Route("GET", "/gpio/:pin", New TParamHandler) Then RuntimeError "r
 If Not server.Route("GET", "/gpio/fixed", New TFixedHandler) Then RuntimeError "route failed"
 If Not server.Route("GET", "/query", New TQueryHandler) Then RuntimeError "route failed"
 If Not server.Route("GET", "/restart", New TRestartHandler) Then RuntimeError "route failed"
+If Not server.Route("GET", "/throw", New TThrowHandler) Then RuntimeError "route failed"
+If Not server.Route("GET", "/upload-aborts", New TAbortCountHandler) Then RuntimeError "route failed"
+If Not server.RouteStream("POST", "/upload", New TUploadHandler) Then RuntimeError "stream route failed"
 If Not server.Static("/assets/", AppArgs[2]) Then RuntimeError "static route failed"
 If Not server.Start() Then RuntimeError server.LastError()
 server.Stop()

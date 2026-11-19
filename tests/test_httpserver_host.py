@@ -159,6 +159,40 @@ class HTTPServerWireTests(unittest.TestCase):
             b"GET /status HTTP/1.1\r\nHost: local\r\n\r\n"
         ))
 
+    def test_handler_exception_recovers(self):
+        failure = self.exchange(b"GET /throw HTTP/1.1\r\nHost: local\r\n\r\n")
+        self.assertIn(b"500 Internal Server Error", failure)
+        self.assertIn(b"200 OK", self.exchange(
+            b"GET /status HTTP/1.1\r\nHost: local\r\n\r\n"
+        ))
+
+    def test_streamed_request_body_and_limit(self):
+        body = bytes(range(256)) * 128
+        header = (b"POST /upload HTTP/1.1\r\nHost: local\r\n"
+                  b"Content-Length: 32768\r\n\r\n")
+        result = self.exchange(header + body[:13], body[13:4096], body[4096:])
+        self.assertIn(b"200 OK", result)
+        payload = result.split(b"\r\n\r\n", 1)[1].decode()
+        size, chunks, checksum = map(int, payload.split(":"))
+        self.assertEqual(size, len(body))
+        self.assertGreater(chunks, 1)
+        self.assertEqual(checksum, sum(body) % 65521)
+        self.assertTrue(self.exchange(
+            b"POST /upload HTTP/1.1\r\nHost: local\r\n"
+            b"Content-Length: 0\r\n\r\n"
+        ).endswith(b"0:0:0"))
+        self.assertIn(b"413 Content Too Large", self.exchange(
+            b"POST /upload HTTP/1.1\r\nHost: local\r\n"
+            b"Content-Length: 65537\r\n\r\n"
+        ))
+        with socket.create_connection(("127.0.0.1", self.port), timeout=2) as sock:
+            sock.sendall(b"POST /upload HTTP/1.1\r\nHost: local\r\n"
+                         b"Content-Length: 32768\r\n\r\npartial")
+        time.sleep(0.05)
+        self.assertTrue(self.exchange(
+            b"GET /upload-aborts HTTP/1.1\r\nHost: local\r\n\r\n"
+        ).endswith(b"1"))
+
 
 if __name__ == "__main__":
     if len(sys.argv) != 2:

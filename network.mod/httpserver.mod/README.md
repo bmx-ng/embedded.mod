@@ -17,6 +17,12 @@ transport uses `BRL.Socket`; handlers run only inside the application's call to
 - Strict CRLF framing, HTTP/1.1 Host requirement, numeric Content-Length,
   rejection of duplicate lengths, and rejection of unsupported Transfer-Encoding
   and Expect headers. Pipelined requests are not dispatched.
+- `RouteStream()` receives large POST/PUT bodies in bounded chunks without
+  buffering the whole upload. A separate total-body limit remains in force.
+- Handler exceptions produce a 500 response when the connection is still
+  writable. `LastError()` records the failed route and exception detail; the
+  client receives only the generic status. An interrupted streaming request
+  invokes its `Abort()` callback for partial-file cleanup.
 - URL paths and query strings are ASCII in this milestone. Encoded path
   separators, backslashes, NUL, controls and `.`/`..` static-file segments are
   rejected. LittleFS and FAT mounts do not expose symbolic links. A backend
@@ -47,6 +53,17 @@ and streams and permits `Start()` again. Routes are registered before `Start()`;
 `ActiveConnections()` helps an application wait until responses complete before
 a planned restart.
 
+For an upload, implement `IHTTPBodyHandler` and register it with
+`RouteStream("POST", "/upload", handler)`. `Begin()` runs after the headers,
+`Chunk()` receives at most `ioBufferBytes` bytes per call, and `Complete()` runs
+after the declared body length has arrived. The request's `context` field can
+hold per-upload state. `Abort()` runs if the peer disconnects, the body times
+out, or a callback fails before completion. Close and delete any partial file
+there. All callbacks run inside `Service()` and should return promptly. The
+default total limit for streamed bodies is 1 MiB; set
+`maxStreamBodyBytes` for the application, up to 64 MiB. Ordinary `Route()`
+handlers retain the separate 1 KiB default buffered-body limit.
+
 The supplied [device example](examples/device_api.bmx) has a status/JSON route,
 a token-protected GPIO route, LittleFS static files on both targets and
 optional SD static files on ESP32, plus a bounded POST echo used by device
@@ -73,6 +90,7 @@ specific board's pinout. Static routes are registered when their storage mounts.
 | Request line | 256 bytes |
 | Header block / count | 1024 bytes / 16 |
 | Buffered request body | 1024 bytes |
+| Streamed request total | 1 MiB |
 | Response body helper | 1024 bytes |
 | Stream transfer buffer | 512 bytes |
 | Header / body / write timeout | 5 s / 10 s / 10 s |

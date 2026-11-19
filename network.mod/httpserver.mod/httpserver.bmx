@@ -29,6 +29,7 @@ Type THTTPServerConfig
 	Field maxHeaderBytes:Int = 1024
 	Field maxHeaders:Int = 16
 	Field maxBodyBytes:Int = 1024
+	Field maxStreamBodyBytes:Long = 1048576
 	Field maxResponseBodyBytes:Int = 1024
 	Field ioBufferBytes:Int = 512
 	Field headerTimeoutMs:UInt = 5000
@@ -44,6 +45,7 @@ Type THTTPServerConfig
 		result.maxHeaderBytes = maxHeaderBytes
 		result.maxHeaders = maxHeaders
 		result.maxBodyBytes = maxBodyBytes
+		result.maxStreamBodyBytes = maxStreamBodyBytes
 		result.maxResponseBodyBytes = maxResponseBodyBytes
 		result.ioBufferBytes = ioBufferBytes
 		result.headerTimeoutMs = headerTimeoutMs
@@ -67,6 +69,7 @@ Type THTTPRequest
 	Field body:Byte[]
 	Field headers:THTTPField[]
 	Field parameters:THTTPField[]
+	Field context:Object
 
 	Method Header:String(name:String)
 		For Local item:THTTPField = EachIn headers
@@ -162,6 +165,18 @@ Interface IHTTPHandler
 	Method Handle(request:THTTPRequest, response:THTTPResponse)
 End Interface
 
+Rem
+bbdoc: Incremental request-body handler for a POST or PUT route.
+about: Begin runs after headers. Chunk receives at most ioBufferBytes bytes,
+and Complete runs after exactly Content-Length bytes. Callbacks run from Service.
+End Rem
+Interface IHTTPBodyHandler
+	Method Begin(request:THTTPRequest, response:THTTPResponse)
+	Method Chunk(request:THTTPRequest, response:THTTPResponse, data:Byte[])
+	Method Complete(request:THTTPRequest, response:THTTPResponse)
+	Method Abort(request:THTTPRequest)
+End Interface
+
 Interface IHTTPErrorHandler
 	Method HandleError(status:Int, response:THTTPResponse)
 End Interface
@@ -172,6 +187,7 @@ Type THTTPRoute
 	Field method:String
 	Field path:String
 	Field handler:IHTTPHandler
+	Field bodyHandler:IHTTPBodyHandler
 	Field staticRoot:String
 End Type
 
@@ -180,7 +196,10 @@ Type THTTPConnection
 	Field input:Byte[]
 	Field inputCount:Int
 	Field headerEnd:Int = -1
-	Field expectedBody:Int
+	Field expectedBody:Long
+	Field receivedBody:Long
+	Field bodyHandler:IHTTPBodyHandler
+	Field streamComplete:Int
 	Field started:UInt
 	Field lastActivity:UInt
 	Field output:Byte[]
@@ -314,7 +333,10 @@ Type THTTPServer
 			settings.maxRoutes < 1 Or settings.maxRoutes > 64 Or ..
 			settings.maxHeaderBytes < 128 Or ..
 			settings.maxHeaderBytes > 4096 Or settings.maxBodyBytes < 0 Or ..
-			settings.maxBodyBytes > 8192 Or settings.maxResponseBodyBytes < 0 Or ..
+				settings.maxBodyBytes > 8192 Or ..
+				settings.maxStreamBodyBytes < 0 Or ..
+				settings.maxStreamBodyBytes > 67108864 Or ..
+				settings.maxResponseBodyBytes < 0 Or ..
 			settings.maxResponseBodyBytes > 8192 Or ..
 			settings.ioBufferBytes < 64 Or settings.ioBufferBytes > 2048 Or ..
 			settings.maxHeaders < 1 Or settings.maxHeaders > 32 Or ..
@@ -341,6 +363,18 @@ Type THTTPServer
 		route.method = method.ToUpper()
 		route.path = path
 		route.handler = handler
+		routes[routeCount] = route
+		routeCount :+ 1
+		Return True
+	End Method
+
+	Method RouteStream:Int(method:String, path:String, handler:IHTTPBodyHandler)
+		If listener Or routeCount = routes.length Or Not handler Or ..
+			(method <> "POST" And method <> "PUT") Or Not path.StartsWith("/") Then Return False
+		Local route:THTTPRoute = New THTTPRoute
+		route.method = method
+		route.path = path
+		route.bodyHandler = handler
 		routes[routeCount] = route
 		routeCount :+ 1
 		Return True
@@ -397,9 +431,18 @@ Type THTTPServer
 	End Method
 
 	Private
-	Method _Close(index:Int)
-		Local conn:THTTPConnection = connections[index]
-		If Not conn Then Return
+		Method _Close(index:Int)
+			Local conn:THTTPConnection = connections[index]
+			If Not conn Then Return
+			If conn.bodyHandler And Not conn.streamComplete Then
+				Try
+					conn.bodyHandler.Abort(conn.request)
+				Catch error:Object
+					_lastError = "HTTP stream abort handler failed"
+				Catch error:String
+					_lastError = "HTTP stream abort handler failed: " + error
+				End Try
+			End If
 		If conn.response And conn.response.stream Then
 			Try
 				conn.response.stream.Close()
@@ -411,13 +454,39 @@ Type THTTPServer
 		connections[index] = Null
 	End Method
 
-	Method _Fail(conn:THTTPConnection, status:Int)
-		conn.response = New THTTPResponse
-		conn.response.status = status
-		conn.response.Text(_HTTPReason(status))
-		If errorHandler Then errorHandler.HandleError(status, conn.response)
-		_Prepare(conn)
-	End Method
+		Method _Fail(conn:THTTPConnection, status:Int)
+			If conn.response And conn.response.stream Then
+				Try
+					conn.response.stream.Close()
+				Catch error:Object
+				Catch error:String
+				End Try
+			End If
+			conn.response = New THTTPResponse
+			conn.response.status = status
+			conn.response.Text(_HTTPReason(status))
+			If errorHandler Then
+				Try
+					errorHandler.HandleError(status, conn.response)
+				Catch error:Object
+					_lastError = "error handler failed for HTTP " + status
+					conn.response = New THTTPResponse
+					conn.response.status = status
+					conn.response.Text(_HTTPReason(status))
+				Catch error:String
+					_lastError = "error handler failed for HTTP " + status + ": " + error
+					conn.response = New THTTPResponse
+					conn.response.status = status
+					conn.response.Text(_HTTPReason(status))
+				End Try
+			End If
+			_Prepare(conn)
+		End Method
+
+		Method _HandlerFault(conn:THTTPConnection, detail:String)
+			_lastError = "HTTP handler failed on " + conn.request.method + " " + conn.request.path + ": " + detail
+			_Fail(conn, 500)
+		End Method
 
 	Method _Prepare(conn:THTTPConnection)
 		Local response:THTTPResponse = conn.response
@@ -507,7 +576,15 @@ Type THTTPServer
 					_StaticFile(request, response, route)
 					If response.status >= 400 Then _Fail(conn, response.status); Return
 				Else
-					route.handler.Handle(request, response)
+						Try
+							route.handler.Handle(request, response)
+						Catch error:Object
+							_HandlerFault(conn, "object exception")
+							Return
+						Catch error:String
+							_HandlerFault(conn, error)
+							Return
+						End Try
 				End If
 				_Prepare(conn)
 				Return
@@ -517,7 +594,15 @@ Type THTTPServer
 			response.status = 405
 			response.Text(_HTTPReason(405))
 			response.SetHeader("Allow", allow)
-			If errorHandler Then errorHandler.HandleError(405, response)
+				If errorHandler Then
+					Try
+						errorHandler.HandleError(405, response)
+					Catch error:Object
+						_lastError = "error handler failed for HTTP 405"
+					Catch error:String
+						_lastError = "error handler failed for HTTP 405: " + error
+					End Try
+				End If
 			_Prepare(conn)
 		Else
 			_Fail(conn, 404)
@@ -586,12 +671,13 @@ Type THTTPServer
 					If lengthSeen Or value.length = 0 Then _Fail(conn, 400); Return
 					lengthSeen = True
 					Local total:Long
+					Local maximum:Long = Max(Long(config.maxBodyBytes), config.maxStreamBodyBytes)
 					For Local j:Int = 0 Until value.length
 						If value[j] < 48 Or value[j] > 57 Then _Fail(conn, 400); Return
 						total = total * 10 + value[j] - 48
-						If total > config.maxBodyBytes Then _Fail(conn, 413); Return
+						If total > maximum Then _Fail(conn, 413); Return
 					Next
-					conn.expectedBody = Int(total)
+					conn.expectedBody = total
 				Case "transfer-encoding" transferEncoding = True
 				Case "expect" _Fail(conn, 417); Return
 			End Select
@@ -604,7 +690,75 @@ Type THTTPServer
 		If request.version = "HTTP/1.1" And host <> 1 Then _Fail(conn, 400); Return
 		If request.method = "POST" And Not lengthSeen Then _Fail(conn, 411); Return
 		conn.request = request
+		For Local pass:Int = 0 To 1
+			For Local i:Int = 0 Until routeCount
+				Local route:THTTPRoute = routes[i]
+				If Not route.bodyHandler Or route.method <> request.method Then Continue
+				If pass = 0 And route.path.Find(":") >= 0 Then Continue
+				If pass = 1 And route.path.Find(":") < 0 Then Continue
+				Local params:THTTPField[] = _Match(route.path, request.path, False)
+				If params = Null Then Continue
+				If conn.expectedBody > config.maxStreamBodyBytes Then _Fail(conn, 413); Return
+				request.parameters = params
+				conn.bodyHandler = route.bodyHandler
+				conn.response = New THTTPResponse
+				Try
+					conn.bodyHandler.Begin(request, conn.response)
+				Catch error:Object
+					_HandlerFault(conn, "object exception in stream Begin")
+					Return
+				Catch error:String
+					_HandlerFault(conn, error)
+					Return
+				End Try
+				If conn.expectedBody = 0 Then _CompleteStream(conn)
+				Return
+			Next
+		Next
+		If conn.expectedBody > config.maxBodyBytes Then _Fail(conn, 413); Return
 		If conn.expectedBody = 0 Then _Dispatch(conn)
+	End Method
+
+	Method _CompleteStream(conn:THTTPConnection)
+		Try
+			conn.bodyHandler.Complete(conn.request, conn.response)
+		Catch error:Object
+			_HandlerFault(conn, "object exception in stream Complete")
+			Return
+		Catch error:String
+			_HandlerFault(conn, error)
+			Return
+		End Try
+		conn.streamComplete = True
+		_Prepare(conn)
+	End Method
+
+	Method _ConsumeStream(conn:THTTPConnection)
+		Local available:Int = conn.inputCount - conn.headerEnd
+		Local offset:Int = conn.headerEnd
+		While available > 0 And conn.receivedBody < conn.expectedBody
+			Local count:Int = Int(Min(Long(config.ioBufferBytes), ..
+				Min(Long(available), conn.expectedBody - conn.receivedBody)))
+			Local chunk:Byte[] = New Byte[count]
+			For Local i:Int = 0 Until count
+				chunk[i] = conn.input[offset + i]
+			Next
+			Try
+				conn.bodyHandler.Chunk(conn.request, conn.response, chunk)
+			Catch error:Object
+				_HandlerFault(conn, "object exception in stream Chunk")
+				Return
+			Catch error:String
+				_HandlerFault(conn, error)
+				Return
+			End Try
+			conn.receivedBody :+ count
+			available :- count
+			offset :+ count
+		Wend
+		conn.inputCount = 0
+		conn.headerEnd = 0
+		If conn.receivedBody = conn.expectedBody Then _CompleteStream(conn)
 	End Method
 
 	Public
@@ -699,6 +853,7 @@ Type THTTPServer
 			_Parse(conn)
 		End If
 		If conn.state <> 0 Or Not conn.request Then Return
+		If conn.bodyHandler Then _ConsumeStream(conn); Return
 		If conn.inputCount - conn.headerEnd >= conn.expectedBody
 			If conn.expectedBody > 0
 				conn.request.body = New Byte[conn.expectedBody]
