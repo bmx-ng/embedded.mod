@@ -157,10 +157,9 @@ after restoration on both boards.
 
 Keep-alive, chunked transfer, range/cache responses, SSE, WebSockets,
 multipart, authentication helpers, captive-portal workflows and OTA are later
-layers. The HTTPS adapter builds for Pico 2 W and ESP32-S3, and a verified
+layers. The HTTPS adapter builds for Pico 2 W and ESP32-S3. A verified
 handshake, GET, fragmented POST, 404 response, and 30 repeated connections
-passed on an ESP32-S31. Pico 2 W handshake and transfer behavior still needs
-an on-device check. After flashing an HTTPS variant of the device example with
-a test certificate, run
+passed on both Pico 2 W and ESP32-S31. After flashing an HTTPS variant of the
+device example with a test certificate, run
 `python3 tests/test_httpserver_tls_device.py BOARD_IP test-cert.pem`. The test
 checks a trusted handshake, GET, a fragmented POST and a 404 response.
