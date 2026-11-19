@@ -69,6 +69,13 @@ Each client exits on its first unexpected response or connection error.
 The WebSocket client also accepts `--reconnect-delay-ms` for testing how a
 short pause between sessions affects a single-connection server.
 
+On the tested ESP32-S3, reserving a 256 KB managed heap in internal SRAM
+caused intermittent TLS handshake resets during repeated compressed WebSocket
+sessions. A 128 KB SRAM heap and a 512 KB PSRAM heap both completed seven-minute
+single-connection runs. For an ESP32-S3 with PSRAM, build the HTTPS fixture with
+`-heap-region psram -heap 512k` so internal SRAM remains available to TLS and
+the network stack. Recheck the memory budget on other boards.
+
 ## Responsive layout matrix
 
 `embedded_ui_layout_matrix.bmx` builds the same passive six-card composition
