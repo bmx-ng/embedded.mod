@@ -39,6 +39,36 @@ within one target toolchain. Target-specific ceilings can be adjusted with
 `UI_TEST_PICO_INTERACTIVE_MAX` and their `UI_TEST_ESP32_*` counterparts when a
 reviewed SDK or feature change deliberately moves the baseline.
 
+## HTTPS server soak tests
+
+`httpserver_mixed_device.bmx` is a hardware fixture for concurrent HTTPS,
+server-sent events, and compressed WebSocket traffic. Build an ignored local
+copy with Wi-Fi credentials and a temporary test certificate, then flash the
+board. Keep credentials and private keys out of the repository. The fixture
+reports managed heap integrity, allocation failures, and reusable bytes at
+`/metrics`.
+
+With the test image running, use its local IP address:
+
+```sh
+python3 -u tests/soak_httpserver_mixed_device.py DEVICE_IP --duration 600 --live-clients 3
+```
+
+The separate `httpserver_ws_device.bmx` fixture supports a longer WebSocket
+session test, including compressed text, binary messages, fragmentation,
+ping/pong, idle recovery, and repeated close/reconnect:
+
+```sh
+python3 -u tests/soak_httpserver_ws_device.py DEVICE_IP --duration 600
+```
+
+Both clients pin the certificate currently presented by the local test image
+and verify it on subsequent connections. Use `--live-clients 2` to close the
+SSE stream before opening the HTTP requests while the WebSocket remains open.
+Each client exits on its first unexpected response or connection error.
+The WebSocket client also accepts `--reconnect-delay-ms` for testing how a
+short pause between sessions affects a single-connection server.
+
 ## Responsive layout matrix
 
 `embedded_ui_layout_matrix.bmx` builds the same passive six-card composition
