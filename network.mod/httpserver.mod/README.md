@@ -13,6 +13,8 @@ transport uses `BRL.Socket`; handlers run only inside the application's call to
   source that can wait for data. HTTP/1.1 uses chunked transfer encoding;
   HTTP/1.0 closes the connection after the response. Both paths hold at most
   one configured transfer buffer and one framed chunk per connection.
+- `Events()` sends server-sent events from a bounded queue. It supports named
+  events, IDs, retry hints, comments, and idle heartbeats.
 - Responses include `Content-Length`; HEAD sends the corresponding headers and
   no body. Connections close by default. Set `keepAlive = True` to reuse an
   HTTP/1.1 connection for sequential requests, bounded by
@@ -97,6 +99,35 @@ total response-size limit on these streams; producers should enforce their own
 limits and send data within `writeTimeoutMs` (10 seconds by default). Once
 headers have been sent, a producer failure closes the connection. HEAD sends
 the same framing headers but no body; 204, 205 and 304 responses send no chunks.
+
+## Server-sent events
+
+Create one `THTTPEventStream` per client, then attach it in a GET route:
+
+```blitzmax
+Local events:THTTPEventStream = THTTPEventStream.Create(4096, 5000)
+If Not events Or Not response.Events(events) Then RuntimeError "SSE setup failed"
+If Not events.Send("connected", "status", "1") Then RuntimeError "SSE queue full"
+```
+
+Keep the stream reference to queue later messages with `Send(data, eventName,
+id)` during the application's managed loop. Newlines in `data` become separate
+SSE `data:` fields. `Comment(text)` sends a comment, and `Retry(milliseconds)`
+sets the browser's reconnect delay. These methods return `False` if the queue
+is full or the client has closed; the application decides whether to retry or
+drop that message. The queue defaults to 4 KiB and can be set from 64 bytes to
+64 KiB. `PendingBytes()` reports queued bytes, and `IsClosed()` reports a
+disconnected or completed stream. `Finish()` drains queued events and ends the
+response; the server then calls `Close()`.
+
+The response sets `Content-Type: text/event-stream; charset=utf-8` and
+`Cache-Control: no-cache`. HTTP/1.1 uses chunked framing. Idle streams send a
+`:\n\n` heartbeat every 5 seconds by default; set a shorter interval than
+`writeTimeoutMs` so a quiet stream stays open. A zero interval disables
+heartbeats. Each live client occupies one `maxConnections` slot. The route can
+read `request.Header("Last-Event-ID")` on reconnection; the application must
+retain and replay any events it wants the client to receive again. Queue and
+stream access belong in the same managed context as `Service()`.
 
 ## HTTPS on ESP32 and Pico W
 
@@ -237,7 +268,7 @@ ESP32-S3 internal SRAM heap could not start. The ordinary example still uses
 the smaller resource defaults above and passed its device wire tests again
 after restoration on both boards.
 
-SSE, WebSockets, multipart, authentication helpers,
+WebSockets, multipart, authentication helpers,
 captive-portal workflows and OTA are later layers. The HTTPS adapter builds
 for Pico 2 W and ESP32-S3. A
 verified handshake, GET, fragmented POST, 404 response, and 30 repeated connections
@@ -282,3 +313,11 @@ HTTPS fixture, use at least `-heap 256k` with `-storage 128k`: 128 KiB and
 requests. Twelve consecutive full wire suites passed at 256 KiB. A separate
 eight-suite heap check collected between suites and found stable live strings,
 arrays, objects, and reusable heap space.
+
+`tests/httpserver_sse_device.bmx` is a portable HTTPS SSE test image. Fill a
+local copy with Wi-Fi and a temporary test certificate, then run
+`python3 tests/test_httpserver_sse_device.py BOARD_IP test-cert.pem`. The test
+checks trusted TLS, named and multiline events, retry hints, idle heartbeats,
+completion, and `Last-Event-ID` on a second connection. All 19 host wire tests
+pass; the verified HTTPS SSE test also passes on Pico 2 W with a 256 KiB managed
+heap and ESP32-S31 with a 256 KiB managed heap.

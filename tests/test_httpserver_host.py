@@ -165,6 +165,62 @@ class HTTPServerWireTests(unittest.TestCase):
                 self.assertEqual(stream.read(int(headers[b"content-length"])), b'{"status":"ok"}')
                 self.assertEqual(stream.read(1), b"")
 
+    def test_server_sent_events_stream(self):
+        def read_chunk(stream):
+            size = int(stream.readline().strip(), 16)
+            if size == 0:
+                self.assertEqual(stream.read(2), b"\r\n")
+                return b""
+            data = stream.read(size)
+            self.assertEqual(stream.read(2), b"\r\n")
+            return data
+
+        with socket.create_connection(("127.0.0.1", self.port), timeout=2) as sock:
+            sock.settimeout(3)
+            with sock.makefile("rb") as stream:
+                sock.sendall(b"GET /events HTTP/1.1\r\nHost: local\r\n\r\n")
+                self.assertIn(b"200 OK", stream.readline())
+                headers = {}
+                while line := stream.readline():
+                    if line == b"\r\n":
+                        break
+                    name, value = line.split(b":", 1)
+                    headers[name.lower()] = value.strip()
+                self.assertEqual(headers[b"content-type"], b"text/event-stream; charset=utf-8")
+                self.assertEqual(headers[b"cache-control"], b"no-cache")
+                self.assertEqual(headers[b"transfer-encoding"], b"chunked")
+                self.assertEqual(read_chunk(stream),
+                                 b"event: update\nid: 42\ndata: first\ndata: second\n\n"
+                                 b"retry: 750\n\n")
+
+                queued = self.exchange(b"GET /events-send HTTP/1.1\r\nHost: local\r\n\r\n")
+                self.assertTrue(queued.endswith(b"queued"))
+                while (chunk := read_chunk(stream)) == b":\n\n":
+                    pass
+                self.assertEqual(chunk, b"data: later\n\n: note\n\n")
+                self.assertEqual(read_chunk(stream), b":\n\n")
+
+                finished = self.exchange(b"GET /events-finish HTTP/1.1\r\nHost: local\r\n\r\n")
+                self.assertTrue(finished.endswith(b"finished"))
+                self.assertEqual(read_chunk(stream), b"")
+
+        state = self.exchange(b"GET /events-state HTTP/1.1\r\nHost: local\r\n\r\n")
+        self.assertTrue(state.endswith(b"1:"))
+
+        with socket.create_connection(("127.0.0.1", self.port), timeout=2) as sock:
+            sock.settimeout(3)
+            with sock.makefile("rb") as stream:
+                sock.sendall(b"GET /events HTTP/1.1\r\nHost: local\r\n"
+                             b"Last-Event-ID: 42\r\n\r\n")
+                self.assertIn(b"200 OK", stream.readline())
+                while stream.readline() != b"\r\n":
+                    pass
+                self.assertIn(b"event: update", read_chunk(stream))
+                state = self.exchange(b"GET /events-state HTTP/1.1\r\nHost: local\r\n\r\n")
+                self.assertTrue(state.endswith(b"0:42"))
+                self.exchange(b"GET /events-finish HTTP/1.1\r\nHost: local\r\n\r\n")
+                self.assertEqual(read_chunk(stream), b"")
+
     def test_producer_failure_closes_connection_and_source(self):
         count = lambda: int(self.exchange(
             b"GET /producer-closed HTTP/1.1\r\nHost: local\r\n\r\n"

@@ -187,6 +187,15 @@ Type THTTPResponse
 		body = Null
 		contentType = mime
 	End Method
+
+	Rem
+	bbdoc: Sends a server-sent event stream with no cached response body.
+	End Rem
+	Method Events:Int(value:THTTPEventStream)
+		If Not value Or Not SetHeader("Cache-Control", "no-cache") Then Return False
+		Produce(value, "text/event-stream; charset=utf-8")
+		Return True
+	End Method
 End Type
 
 Interface IHTTPHandler
@@ -217,6 +226,158 @@ Interface IHTTPResponseProducer
 	Method TryRead:Int(buffer:Byte Ptr, capacity:Int)
 	Method Close()
 End Interface
+
+Rem
+bbdoc: Bounded, nonblocking server-sent event source for one HTTP client.
+about: Keep a reference to this stream to queue events from the managed
+application context. Send, Comment and Retry return False when the pending
+buffer is full or the connection has closed. Finish drains queued bytes and
+ends the response. The server calls Close on disconnect or completion.
+End Rem
+Type THTTPEventStream Implements IHTTPResponseProducer
+	Private
+	Field queue:Byte[]
+	Field readIndex:Int
+	Field writeIndex:Int
+	Field pending:Int
+	Field heartbeatMs:UInt
+	Field lastOutput:UInt
+	Field finished:Int
+	Field closed:Int
+
+	Method _Queue:Int(frame:String)
+		If closed Or finished Then Return False
+		If frame.length > queue.length Then Return False
+		Local bytes:Byte[] = _HTTPBytes(frame)
+		If bytes.length > queue.length - pending Then Return False
+		For Local i:Int = 0 Until bytes.length
+			queue[writeIndex] = bytes[i]
+			writeIndex :+ 1
+			If writeIndex = queue.length Then writeIndex = 0
+		Next
+		pending :+ bytes.length
+		Return True
+	End Method
+
+	Public
+	Function Create:THTTPEventStream(maxPendingBytes:Int = 4096, heartbeatIntervalMs:UInt = 5000)
+		If maxPendingBytes < 64 Or maxPendingBytes > 65536 Or ..
+			(heartbeatIntervalMs > 0 And heartbeatIntervalMs < 100) Then Return Null
+		Local result:THTTPEventStream
+		Try
+			result = New THTTPEventStream
+			result.queue = New Byte[maxPendingBytes]
+		Catch error:Object
+			Return Null
+		Catch error:String
+			Return Null
+		End Try
+		result.heartbeatMs = heartbeatIntervalMs
+		result.lastOutput = MilliSecs()
+		Return result
+	End Function
+
+	Rem
+	bbdoc: Queues one event. Line breaks in data become separate data fields.
+	about: eventName and id must be single lines. The id is sent to clients on
+	reconnect as Last-Event-ID, which the route can read from the request.
+	End Rem
+	Method Send:Int(data:String, eventName:String = "", id:String = "")
+		If closed Or finished Then Return False
+		If eventName.Find(Chr(0)) >= 0 Or eventName.Find(Chr(13)) >= 0 Or ..
+			eventName.Find(Chr(10)) >= 0 Or id.Find(Chr(0)) >= 0 Or ..
+			id.Find(Chr(13)) >= 0 Or id.Find(Chr(10)) >= 0 Then Return False
+		Local frameLength:Int = data.length + 8
+		If eventName Then frameLength :+ eventName.length + 8
+		If id Then frameLength :+ id.length + 5
+		For Local i:Int = 0 Until data.length
+			If data[i] = 10 Or data[i] = 13 Then
+				frameLength :+ 6
+				If data[i] = 13 And i + 1 < data.length And data[i + 1] = 10 Then
+					frameLength :- 1
+					i :+ 1
+				End If
+			End If
+			If frameLength > queue.length Then Return False
+		Next
+		If frameLength > queue.length Then Return False
+		Local frame:String = ""
+		If eventName Then frame :+ "event: " + eventName + "~n"
+		If id Then frame :+ "id: " + id + "~n"
+		Local start:Int
+		For Local i:Int = 0 Until data.length
+			If data[i] = 10 Or data[i] = 13 Then
+				frame :+ "data: " + data[start..i] + "~n"
+				If data[i] = 13 And i + 1 < data.length Then
+					If data[i + 1] = 10 Then i :+ 1
+				End If
+				start = i + 1
+			End If
+		Next
+		frame :+ "data: " + data[start..] + "~n"
+		Return _Queue(frame + "~n")
+	End Method
+
+	Rem
+	bbdoc: Queues a comment, which does not dispatch an event in the client.
+	End Rem
+	Method Comment:Int(value:String)
+		If value.Find(Chr(0)) >= 0 Or value.Find(Chr(13)) >= 0 Or ..
+			value.Find(Chr(10)) >= 0 Then Return False
+		Return _Queue(": " + value + "~n~n")
+	End Method
+
+	Rem
+	bbdoc: Advises the browser how long to wait before reconnecting.
+	End Rem
+	Method Retry:Int(milliseconds:Int)
+		If milliseconds < 0 Then Return False
+		Return _Queue("retry: " + milliseconds + "~n~n")
+	End Method
+
+	Method Finish()
+		finished = True
+	End Method
+
+	Method IsClosed:Int()
+		Return closed
+	End Method
+
+	Method PendingBytes:Int()
+		Return pending
+	End Method
+
+	Method TryRead:Int(buffer:Byte Ptr, capacity:Int)
+		If closed Or Not buffer Or capacity <= 0 Then Return -1
+		If pending > 0 Then
+			Local count:Int = Min(capacity, pending)
+			For Local i:Int = 0 Until count
+				buffer[i] = queue[readIndex]
+				readIndex :+ 1
+				If readIndex = queue.length Then readIndex = 0
+			Next
+			pending :- count
+			lastOutput = MilliSecs()
+			Return count
+		End If
+		If finished Then Return 0
+		If capacity >= 3 And heartbeatMs And MilliSecs() - lastOutput >= heartbeatMs Then
+			buffer[0] = 58
+			buffer[1] = 10
+			buffer[2] = 10
+			lastOutput = MilliSecs()
+			Return 3
+		End If
+		Return HTTPWouldBlock
+	End Method
+
+	Method Close()
+		closed = True
+		finished = True
+		pending = 0
+		queue = Null
+	End Method
+End Type
 
 Interface IHTTPErrorHandler
 	Method HandleError(status:Int, response:THTTPResponse)

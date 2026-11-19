@@ -12,6 +12,8 @@ Import Embedded.Network.HTTPServer
 Global restartRequested:Int
 Global uploadAborted:Int
 Global producerClosed:Int
+Global eventStream:THTTPEventStream
+Global lastEventID:String
 
 Type TGeneratedProducer Implements IHTTPResponseProducer
 	Field remaining:Int
@@ -72,6 +74,50 @@ End Type
 Type TProducerClosedHandler Implements IHTTPHandler
 	Method Handle(request:THTTPRequest, response:THTTPResponse)
 		response.Text(producerClosed)
+	End Method
+End Type
+
+Type TEventsHandler Implements IHTTPHandler
+	Method Handle(request:THTTPRequest, response:THTTPResponse)
+		lastEventID = request.Header("Last-Event-ID")
+		eventStream = THTTPEventStream.Create(128, 200)
+		If Not response.Events(eventStream) Then RuntimeError "SSE response setup failed"
+		If Not eventStream.Send("first~nsecond", "update", "42") Then RuntimeError "SSE initial event failed"
+		If Not eventStream.Retry(750) Then RuntimeError "SSE retry failed"
+	End Method
+End Type
+
+Type TEventsSendHandler Implements IHTTPHandler
+	Method Handle(request:THTTPRequest, response:THTTPResponse)
+		If Not eventStream Or eventStream.IsClosed() Then
+			response.status = 409
+			response.Text("closed")
+			Return
+		End If
+		Local oversized:String = ""
+		For Local i:Int = 0 Until 200
+			oversized :+ "x"
+		Next
+		If eventStream.Send(oversized) Then RuntimeError "SSE queue accepted oversized event"
+		If eventStream.Send("bad", "", "line~nbreak") Then RuntimeError "SSE accepted multiline ID"
+		If Not eventStream.Send("later") Then RuntimeError "SSE event queue failed"
+		If Not eventStream.Comment("note") Then RuntimeError "SSE comment queue failed"
+		response.Text("queued")
+	End Method
+End Type
+
+Type TEventsFinishHandler Implements IHTTPHandler
+	Method Handle(request:THTTPRequest, response:THTTPResponse)
+		If eventStream Then eventStream.Finish()
+		response.Text("finished")
+	End Method
+End Type
+
+Type TEventsStateHandler Implements IHTTPHandler
+	Method Handle(request:THTTPRequest, response:THTTPResponse)
+		Local closed:Int = True
+		If eventStream Then closed = eventStream.IsClosed()
+		response.Text(closed + ":" + lastEventID)
 	End Method
 End Type
 
@@ -159,7 +205,7 @@ If AppArgs.length < 3 Then RuntimeError "expected port and document root"
 Local config:THTTPServerConfig = New THTTPServerConfig
 config.port = AppArgs[1].ToInt()
 config.maxConnections = 2
-config.maxRoutes = 20
+config.maxRoutes = 24
 config.keepAlive = True
 config.keepAliveTimeoutMs = 500
 config.maxRequestsPerConnection = 4
@@ -187,6 +233,10 @@ If Not server.Route("GET", "/unknown-file", unknownFile) Then RuntimeError "rout
 If Not server.Route("GET", "/no-body-generated", New TNoBodyProducerHandler) Then RuntimeError "route failed"
 If Not server.Route("GET", "/producer-closed", New TProducerClosedHandler) Then RuntimeError "route failed"
 If Not server.Route("GET", "/producer-error", New TFailingProducerHandler) Then RuntimeError "route failed"
+If Not server.Route("GET", "/events", New TEventsHandler) Then RuntimeError "route failed"
+If Not server.Route("GET", "/events-send", New TEventsSendHandler) Then RuntimeError "route failed"
+If Not server.Route("GET", "/events-finish", New TEventsFinishHandler) Then RuntimeError "route failed"
+If Not server.Route("GET", "/events-state", New TEventsStateHandler) Then RuntimeError "route failed"
 If Not server.RouteStream("POST", "/upload", New TUploadHandler) Then RuntimeError "stream route failed"
 If Not server.RouteStream("PUT", "/upload", New TUploadHandler) Then RuntimeError "PUT stream route failed"
 If Not server.Static("/assets/", AppArgs[2]) Then RuntimeError "static route failed"
