@@ -8,7 +8,11 @@ transport uses `BRL.Socket`; handlers run only inside the application's call to
 ## Current capabilities
 
 - GET, HEAD, POST and PUT; exact and `:parameter` routes; bounded query and header
-  access; text, HTML, JSON, bytes, redirect and length-known stream responses.
+  access; text, HTML, JSON, bytes, redirect and streamed responses.
+- `StreamUnknown()` sends a stream until EOF. `Produce()` accepts a nonblocking
+  source that can wait for data. HTTP/1.1 uses chunked transfer encoding;
+  HTTP/1.0 closes the connection after the response. Both paths hold at most
+  one configured transfer buffer and one framed chunk per connection.
 - Responses include `Content-Length`; HEAD sends the corresponding headers and
   no body. Connections close by default. Set `keepAlive = True` to reuse an
   HTTP/1.1 connection for sequential requests, bounded by
@@ -69,6 +73,18 @@ should return promptly. The
 default total limit for streamed bodies is 1 MiB; set
 `maxStreamBodyBytes` for the application, up to 64 MiB. Ordinary `Route()`
 handlers retain the separate 1 KiB default buffered-body limit.
+
+For a response whose size is unknown, call
+`response.StreamUnknown(stream, mime)` in a route handler. A live source can
+instead implement `IHTTPResponseProducer` and call
+`response.Produce(producer, mime)`. Its `TryRead(buffer, capacity)` returns a
+positive byte count, `HTTPWouldBlock` when data is not ready, zero when done,
+or a negative error value. `Close()` runs when the response completes or the
+connection ends. Callbacks must return promptly. The server does not impose a
+total response-size limit on these streams; producers should enforce their own
+limits and send data within `writeTimeoutMs` (10 seconds by default). Once
+headers have been sent, a producer failure closes the connection. HEAD sends
+the same framing headers but no body; 204, 205 and 304 responses send no chunks.
 
 ## HTTPS on ESP32 and Pico W
 
@@ -209,9 +225,9 @@ ESP32-S3 internal SRAM heap could not start. The ordinary example still uses
 the smaller resource defaults above and passed its device wire tests again
 after restoration on both boards.
 
-Chunked responses for unknown-length streams, range/cache responses, SSE,
-WebSockets, multipart, authentication helpers, captive-portal workflows and
-OTA are later layers. The HTTPS adapter builds for Pico 2 W and ESP32-S3. A
+Range/cache responses, SSE, WebSockets, multipart, authentication helpers,
+captive-portal workflows and OTA are later layers. The HTTPS adapter builds
+for Pico 2 W and ESP32-S3. A
 verified handshake, GET, fragmented POST, 404 response, and 30 repeated connections
 passed on both Pico 2 W and ESP32-S31. After flashing an HTTPS variant of the
 device example with a test certificate, run
@@ -239,3 +255,10 @@ formatted after its old contents failed to mount. A second on-device run
 verified file persistence across unmount/remount, rejected replacement while
 running and with an invalid key, restarted with the original pair, then served
 an HTTPS request with the replacement certificate loaded from LittleFS.
+
+`tests/httpserver_chunked_device.bmx` is a portable HTTPS test image; fill a
+local copy with Wi-Fi and a temporary test certificate. Run
+`python3 tests/test_httpserver_chunked_device.py BOARD_IP test-cert.pem` after
+flashing. The host wire tests and verified HTTPS device tests pass on Pico 2 W
+and ESP32-S31 for chunked output, connection reuse, HEAD, no-body responses and
+HTTP/1.0 close-delimited output.

@@ -6,10 +6,74 @@ SuperStrict
 Framework BRL.StandardIO
 Import BRL.System
 Import BRL.SystemDefault
+Import BRL.FileSystem
 Import Embedded.Network.HTTPServer
 
 Global restartRequested:Int
 Global uploadAborted:Int
+Global producerClosed:Int
+
+Type TGeneratedProducer Implements IHTTPResponseProducer
+	Field remaining:Int
+	Field paused:Int
+	Field fail:Int
+
+	Method TryRead:Int(buffer:Byte Ptr, capacity:Int)
+		If Not paused Then paused = True; Return HTTPWouldBlock
+		If fail Then Return -1
+		Local count:Int = Min(capacity, remaining)
+		For Local i:Int = 0 Until count
+			buffer[i] = 120
+		Next
+		remaining :- count
+		Return count
+	End Method
+
+	Method Close()
+		producerClosed :+ 1
+	End Method
+End Type
+
+Type TFailingProducerHandler Implements IHTTPHandler
+	Method Handle(request:THTTPRequest, response:THTTPResponse)
+		Local producer:TGeneratedProducer = New TGeneratedProducer
+		producer.fail = True
+		response.Produce(producer)
+	End Method
+End Type
+
+Type TGeneratedHandler Implements IHTTPHandler
+	Field count:Int
+
+	Method Handle(request:THTTPRequest, response:THTTPResponse)
+		Local producer:TGeneratedProducer = New TGeneratedProducer
+		producer.remaining = count
+		response.Produce(producer, "text/plain")
+	End Method
+End Type
+
+Type TUnknownFileHandler Implements IHTTPHandler
+	Field path:String
+
+	Method Handle(request:THTTPRequest, response:THTTPResponse)
+		response.StreamUnknown(ReadStream(path), "text/plain")
+	End Method
+End Type
+
+Type TNoBodyProducerHandler Implements IHTTPHandler
+	Method Handle(request:THTTPRequest, response:THTTPResponse)
+		response.status = 204
+		Local producer:TGeneratedProducer = New TGeneratedProducer
+		producer.remaining = 100
+		response.Produce(producer)
+	End Method
+End Type
+
+Type TProducerClosedHandler Implements IHTTPHandler
+	Method Handle(request:THTTPRequest, response:THTTPResponse)
+		response.Text(producerClosed)
+	End Method
+End Type
 
 Type TStatusHandler Implements IHTTPHandler
 	Method Handle(request:THTTPRequest, response:THTTPResponse)
@@ -95,6 +159,7 @@ If AppArgs.length < 3 Then RuntimeError "expected port and document root"
 Local config:THTTPServerConfig = New THTTPServerConfig
 config.port = AppArgs[1].ToInt()
 config.maxConnections = 2
+config.maxRoutes = 20
 config.keepAlive = True
 config.keepAliveTimeoutMs = 500
 config.maxRequestsPerConnection = 4
@@ -111,6 +176,17 @@ If Not server.Route("GET", "/query", New TQueryHandler) Then RuntimeError "route
 If Not server.Route("GET", "/restart", New TRestartHandler) Then RuntimeError "route failed"
 If Not server.Route("GET", "/throw", New TThrowHandler) Then RuntimeError "route failed"
 If Not server.Route("GET", "/upload-aborts", New TAbortCountHandler) Then RuntimeError "route failed"
+Local generated:TGeneratedHandler = New TGeneratedHandler
+generated.count = 4097
+If Not server.Route("GET", "/generated", generated) Then RuntimeError "route failed"
+Local empty:TGeneratedHandler = New TGeneratedHandler
+If Not server.Route("GET", "/empty-generated", empty) Then RuntimeError "route failed"
+Local unknownFile:TUnknownFileHandler = New TUnknownFileHandler
+unknownFile.path = AppArgs[2] + "/large.txt"
+If Not server.Route("GET", "/unknown-file", unknownFile) Then RuntimeError "route failed"
+If Not server.Route("GET", "/no-body-generated", New TNoBodyProducerHandler) Then RuntimeError "route failed"
+If Not server.Route("GET", "/producer-closed", New TProducerClosedHandler) Then RuntimeError "route failed"
+If Not server.Route("GET", "/producer-error", New TFailingProducerHandler) Then RuntimeError "route failed"
 If Not server.RouteStream("POST", "/upload", New TUploadHandler) Then RuntimeError "stream route failed"
 If Not server.RouteStream("PUT", "/upload", New TUploadHandler) Then RuntimeError "PUT stream route failed"
 If Not server.Static("/assets/", AppArgs[2]) Then RuntimeError "static route failed"

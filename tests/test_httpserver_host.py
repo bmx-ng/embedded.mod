@@ -74,6 +74,108 @@ class HTTPServerWireTests(unittest.TestCase):
         self.assertIn(b"404 Not Found", missing)
         self.assertTrue(missing.endswith(b"\r\n\r\n"))
 
+    def test_unknown_length_response_framing(self):
+        def closed_count():
+            result = self.exchange(b"GET /producer-closed HTTP/1.1\r\nHost: local\r\n\r\n")
+            return int(result.split(b"\r\n\r\n", 1)[1])
+
+        before = closed_count()
+
+        def decode_chunks(data):
+            parts = []
+            while True:
+                line, data = data.split(b"\r\n", 1)
+                size = int(line, 16)
+                if size == 0:
+                    self.assertEqual(data, b"\r\n")
+                    return b"".join(parts)
+                self.assertEqual(data[size:size + 2], b"\r\n")
+                parts.append(data[:size])
+                data = data[size + 2:]
+
+        generated = self.exchange(b"GET /generated HTTP/1.1\r\nHost: local\r\n\r\n")
+        headers, body = generated.split(b"\r\n\r\n", 1)
+        self.assertIn(b"Transfer-Encoding: chunked", headers)
+        self.assertNotIn(b"Content-Length:", headers)
+        self.assertEqual(decode_chunks(body), b"x" * 4097)
+
+        file_response = self.exchange(b"GET /unknown-file HTTP/1.1\r\nHost: local\r\n\r\n")
+        headers, body = file_response.split(b"\r\n\r\n", 1)
+        self.assertIn(b"Transfer-Encoding: chunked", headers)
+        self.assertEqual(decode_chunks(body), b"abcdef0123456789" * 256)
+
+        empty = self.exchange(b"GET /empty-generated HTTP/1.1\r\nHost: local\r\n\r\n")
+        self.assertEqual(empty.split(b"\r\n\r\n", 1)[1], b"0\r\n\r\n")
+
+        old_http = self.exchange(b"GET /generated HTTP/1.0\r\n\r\n")
+        headers, body = old_http.split(b"\r\n\r\n", 1)
+        self.assertIn(b"HTTP/1.0 200", headers)
+        self.assertIn(b"Connection: close", headers)
+        self.assertNotIn(b"Transfer-Encoding:", headers)
+        self.assertNotIn(b"Content-Length:", headers)
+        self.assertEqual(body, b"x" * 4097)
+
+        head = self.exchange(b"HEAD /generated HTTP/1.1\r\nHost: local\r\n\r\n")
+        headers, body = head.split(b"\r\n\r\n", 1)
+        self.assertIn(b"Transfer-Encoding: chunked", headers)
+        self.assertEqual(body, b"")
+
+        no_body = self.exchange(b"GET /no-body-generated HTTP/1.1\r\nHost: local\r\n\r\n")
+        headers, body = no_body.split(b"\r\n\r\n", 1)
+        self.assertIn(b"204 No Content", headers)
+        self.assertIn(b"Content-Length: 0", headers)
+        self.assertNotIn(b"Transfer-Encoding:", headers)
+        self.assertEqual(body, b"")
+        self.assertEqual(closed_count() - before, 5)
+
+    def test_chunked_response_keep_alive(self):
+        with socket.create_connection(("127.0.0.1", self.port), timeout=2) as sock:
+            sock.settimeout(3)
+            with sock.makefile("rb") as stream:
+                sock.sendall(b"GET /generated HTTP/1.1\r\nHost: local\r\n\r\n")
+                self.assertIn(b"200 OK", stream.readline())
+                headers = {}
+                while line := stream.readline():
+                    if line == b"\r\n":
+                        break
+                    name, value = line.split(b":", 1)
+                    headers[name.lower()] = value.strip()
+                self.assertEqual(headers[b"transfer-encoding"], b"chunked")
+                self.assertEqual(headers[b"connection"], b"keep-alive")
+                result = bytearray()
+                while True:
+                    size = int(stream.readline().strip(), 16)
+                    if size == 0:
+                        self.assertEqual(stream.readline(), b"\r\n")
+                        break
+                    result.extend(stream.read(size))
+                    self.assertEqual(stream.read(2), b"\r\n")
+                self.assertEqual(result, b"x" * 4097)
+                sock.sendall(b"GET /status HTTP/1.1\r\nHost: local\r\nConnection: close\r\n\r\n")
+                self.assertIn(b"200 OK", stream.readline())
+                headers = {}
+                while line := stream.readline():
+                    if line == b"\r\n":
+                        break
+                    name, value = line.split(b":", 1)
+                    headers[name.lower()] = value.strip()
+                self.assertEqual(stream.read(int(headers[b"content-length"])), b'{"status":"ok"}')
+                self.assertEqual(stream.read(1), b"")
+
+    def test_producer_failure_closes_connection_and_source(self):
+        count = lambda: int(self.exchange(
+            b"GET /producer-closed HTTP/1.1\r\nHost: local\r\n\r\n"
+        ).split(b"\r\n\r\n", 1)[1])
+        before = count()
+        result = self.exchange(b"GET /producer-error HTTP/1.1\r\nHost: local\r\n\r\n")
+        headers, body = result.split(b"\r\n\r\n", 1)
+        self.assertIn(b"Transfer-Encoding: chunked", headers)
+        self.assertEqual(body, b"")
+        self.assertEqual(count() - before, 1)
+        self.assertIn(b"200 OK", self.exchange(
+            b"GET /status HTTP/1.1\r\nHost: local\r\n\r\n"
+        ))
+
     def test_fragmented_post_and_parameter(self):
         response = self.exchange(
             b"POST /echo HTTP/1.1\r\nHo", b"st: local\r\nContent-Length: 5\r\n\r\nhe", b"llo"

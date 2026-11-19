@@ -115,6 +115,7 @@ Type THTTPResponse
 	Field body:Byte[]
 	Field stream:TStream
 	Field streamLength:Long = -1
+	Field producer:IHTTPResponseProducer
 	Field headers:THTTPField[] = New THTTPField[8]
 	Field headerCount:Int
 
@@ -163,6 +164,26 @@ Type THTTPResponse
 	Method StreamFile(value:TStream, size:Long, mime:String = "application/octet-stream")
 		stream = value
 		streamLength = size
+		producer = Null
+		body = Null
+		contentType = mime
+	End Method
+
+	Rem
+	bbdoc: Sends an unknown-length stream until Read returns zero.
+	End Rem
+	Method StreamUnknown(value:TStream, mime:String = "application/octet-stream")
+		StreamFile(value, -1, mime)
+	End Method
+
+	Rem
+	bbdoc: Sends bytes from a nonblocking producer until it reports completion.
+	End Rem
+	Method Produce(value:IHTTPResponseProducer, mime:String = "application/octet-stream")
+		producer = value
+		stream = Null
+		streamLength = -1
+		body = Null
 		contentType = mime
 	End Method
 End Type
@@ -182,6 +203,18 @@ Interface IHTTPBodyHandler
 	Method Chunk(request:THTTPRequest, response:THTTPResponse, data:Byte[])
 	Method Complete(request:THTTPRequest, response:THTTPResponse)
 	Method Abort(request:THTTPRequest)
+End Interface
+
+Rem
+bbdoc: Nonblocking source for an unknown-length response.
+about: TryRead returns 1..capacity bytes, HTTPWouldBlock when no bytes are
+ready yet, zero at EOF, or a negative value on failure. Close is called once
+when the response finishes or its connection closes. Both methods run from
+Service, so they must return promptly.
+End Rem
+Interface IHTTPResponseProducer
+	Method TryRead:Int(buffer:Byte Ptr, capacity:Int)
+	Method Close()
 End Interface
 
 Interface IHTTPErrorHandler
@@ -232,6 +265,9 @@ Type THTTPConnection
 	Field response:THTTPResponse
 	Field request:THTTPRequest
 	Field streamRemaining:Long
+	Field responseChunked:Int
+	Field responseCloseDelimited:Int
+	Field chunkFinal:Int
 	Field fileBuffer:Byte[]
 	Field fileCount:Int
 	Field fileOffset:Int
@@ -271,6 +307,16 @@ Function _HTTPHex:Int(c:Int)
 	If c >= 65 And c <= 70 Then Return c - 55
 	If c >= 97 And c <= 102 Then Return c - 87
 	Return -1
+End Function
+
+Function _HTTPChunkSize:String(size:Int)
+	Local digits:String = "0123456789abcdef"
+	Local result:String = ""
+	Repeat
+		result = Chr(digits[size & 15]) + result
+		size = size Shr 4
+	Until size = 0
+	Return result
 End Function
 
 Function _HTTPDecode:String(value:String, plusAsSpace:Int = False, rejectSeparators:Int = True)
@@ -510,6 +556,14 @@ Type THTTPServer
 			Catch error:String
 			End Try
 		End If
+		If conn.response And conn.response.producer Then
+			Try
+				conn.response.producer.Close()
+			Catch error:Object
+			Catch error:String
+			End Try
+			conn.response.producer = Null
+		End If
 		If conn.transport Then conn.transport.Close()
 		If conn.socket Then conn.socket.Close()
 		connections[index] = Null
@@ -523,6 +577,14 @@ Type THTTPServer
 				Catch error:Object
 				Catch error:String
 				End Try
+			End If
+			If conn.response And conn.response.producer Then
+				Try
+					conn.response.producer.Close()
+				Catch error:Object
+				Catch error:String
+				End Try
+				conn.response.producer = Null
 			End If
 			conn.response = New THTTPResponse
 			conn.response.status = status
@@ -559,9 +621,13 @@ Type THTTPServer
 			response.contentType = "application/octet-stream"
 		End If
 		Local length:Long
-		If response.stream
+		Local unknown:Int
+		If response.producer
+			unknown = True
+		Else If response.stream
 			length = response.streamLength
-			If length < 0 Then response.stream.Close(); response.stream = Null; response.status = 500
+			If length = -1 Then unknown = True
+			If length < -1 Then response.stream.Close(); response.stream = Null; response.status = 500
 		Else If response.body
 			length = response.body.length
 			If length > config.maxResponseBodyBytes Then
@@ -570,14 +636,25 @@ Type THTTPServer
 				length = 0
 			End If
 		End If
-		If response.status = 204 Or response.status = 205 Or response.status = 304 Then length = 0
+		If response.status = 204 Or response.status = 205 Or response.status = 304 Then
+			length = 0
+			unknown = False
+		End If
 		Local version:String = "HTTP/1.1"
 		If conn.request Then version = conn.request.version
+		conn.responseChunked = unknown And version = "HTTP/1.1"
+		conn.responseCloseDelimited = unknown And version = "HTTP/1.0"
+		conn.chunkFinal = False
+		If conn.responseCloseDelimited Then conn.closeAfterResponse = True
 		Local connectionValue:String = "close"
 		If Not conn.closeAfterResponse Then connectionValue = "keep-alive"
 		Local wire:String = version + " " + response.status + " " + _HTTPReason(response.status) + "~r~n" + ..
-			"Content-Length: " + length + "~r~nConnection: " + connectionValue + "~r~nContent-Type: " + ..
-			response.contentType + "~r~n"
+			"Connection: " + connectionValue + "~r~nContent-Type: " + response.contentType + "~r~n"
+		If conn.responseChunked Then
+			wire :+ "Transfer-Encoding: chunked~r~n"
+		Else If Not conn.responseCloseDelimited Then
+			wire :+ "Content-Length: " + length + "~r~n"
+		End If
 		For Local i:Int = 0 Until response.headerCount
 			Local field:THTTPField = response.headers[i]
 			If field.name.ToLower() <> "content-length" And ..
@@ -1105,6 +1182,17 @@ Type THTTPServer
 			conn.response.stream.Close()
 			conn.response.stream = Null
 		End If
+		If conn.response And conn.response.producer Then
+			Local producer:IHTTPResponseProducer = conn.response.producer
+			conn.response.producer = Null
+			Try
+				producer.Close()
+			Catch error:Object
+				_lastError = "HTTP response producer close failed"
+			Catch error:String
+				_lastError = "HTTP response producer close failed: " + error
+			End Try
+		End If
 		conn.requestsServed :+ 1
 		If conn.closeAfterResponse Then conn.state = 3; Return
 		conn.inputCount = 0
@@ -1118,6 +1206,9 @@ Type THTTPServer
 		conn.response = Null
 		conn.request = Null
 		conn.streamRemaining = 0
+		conn.responseChunked = False
+		conn.responseCloseDelimited = False
+		conn.chunkFinal = False
 		conn.fileCount = 0
 		conn.fileOffset = 0
 		conn.chunked = False
@@ -1143,6 +1234,66 @@ Type THTTPServer
 		If conn.request And conn.request.method = "HEAD" Then _FinishResponse(conn); Return
 		If conn.response.status = 204 Or conn.response.status = 205 Or ..
 			conn.response.status = 304 Then _FinishResponse(conn); Return
+		If conn.responseChunked Or conn.responseCloseDelimited
+			If conn.chunkFinal Then _FinishResponse(conn); Return
+			If Not conn.fileBuffer Then conn.fileBuffer = New Byte[config.ioBufferBytes]
+			If conn.responseCloseDelimited And conn.fileOffset < conn.fileCount
+				Local sent:Int = _TrySend(conn, Varptr conn.fileBuffer[conn.fileOffset], ..
+					Size_T(conn.fileCount - conn.fileOffset))
+				If sent = HTTPWouldBlock Then Return
+				If sent <= 0 Then conn.state = 3; Return
+				conn.fileOffset :+ sent
+				conn.lastActivity = MilliSecs()
+				Return
+			End If
+			Local amount:Int
+			Try
+				If conn.response.producer Then
+					amount = conn.response.producer.TryRead(Varptr conn.fileBuffer[0], conn.fileBuffer.length)
+				Else
+					amount = Int(conn.response.stream.Read(Varptr conn.fileBuffer[0], conn.fileBuffer.length))
+				End If
+			Catch error:Object
+				_lastError = "HTTP response source threw an object exception"
+				conn.state = 3
+				Return
+			Catch error:String
+				_lastError = "HTTP response source failed: " + error
+				conn.state = 3
+				Return
+			End Try
+			If amount = HTTPWouldBlock Then Return
+			If amount < 0 Or amount > conn.fileBuffer.length Then
+				_lastError = "HTTP response source returned an invalid count"
+				conn.state = 3
+				Return
+			End If
+			If amount = 0 Then
+				If conn.responseCloseDelimited Then _FinishResponse(conn); Return
+				conn.output = _HTTPBytes("0~r~n~r~n")
+				conn.outputOffset = 0
+				conn.chunkFinal = True
+				Return
+			End If
+			If conn.responseCloseDelimited
+				conn.fileCount = amount
+				conn.fileOffset = 0
+				Return
+			End If
+			Local prefix:Byte[] = _HTTPBytes(_HTTPChunkSize(amount) + "~r~n")
+			Local frame:Byte[] = New Byte[prefix.length + amount + 2]
+			For Local i:Int = 0 Until prefix.length
+				frame[i] = prefix[i]
+			Next
+			For Local i:Int = 0 Until amount
+				frame[prefix.length + i] = conn.fileBuffer[i]
+			Next
+			frame[frame.length - 2] = 13
+			frame[frame.length - 1] = 10
+			conn.output = frame
+			conn.outputOffset = 0
+			Return
+		End If
 		If conn.response.stream
 			If conn.streamRemaining <= 0 Then _FinishResponse(conn); Return
 			If Not conn.fileBuffer Then conn.fileBuffer = New Byte[config.ioBufferBytes]
