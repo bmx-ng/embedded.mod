@@ -5,9 +5,16 @@ SuperStrict
 
 Framework BRL.StandardIO
 Import BRL.EventQueue
+Import BRL.FileSystem
+Import BRL.TextStream
 Import Embedded.Network.WiFi
 Import Embedded.Network.HTTPServer
 Import Embedded.Network.HTTPSTLS
+?esp32
+Import ESP32.Storage.LittleFS
+?pico
+Import Pico.Storage.LittleFS
+?
 
 ' Replace these placeholders in a local copy before building.
 Const NetworkName:String = "<ssid>"
@@ -54,6 +61,19 @@ End Type
 
 If NetworkName = "<ssid>" Or CertificatePEM = "<certificate-pem>" Then ..
 	RuntimeError "Configure a local copy with Wi-Fi and temporary test credentials"
+?esp32
+If Not LittleFSIsMounted() Then RuntimeError "LittleFS is not mounted"
+?pico
+If Not MountLittleFS() Then RuntimeError "LittleFS mount failed"
+?
+Local asset:String = ""
+For Local i:Int = 0 Until 256
+	asset :+ "abcdef0123456789"
+Next
+If FileType("littlefs::/www") <> FILETYPE_DIR Then
+	If Not CreateDir("littlefs::/www") Then RuntimeError "LittleFS fixture directory failed"
+End If
+If Not SaveText(asset, "littlefs::/www/range-fixture.txt") Then RuntimeError "LittleFS fixture write failed"
 If WiFiInitialize(WiFiCountryUK) <> 0 Then RuntimeError "Wi-Fi initialization failed"
 If WiFiConnectWait(NetworkName, NetworkPassword) <> 0 Then RuntimeError "Wi-Fi connection failed"
 
@@ -68,6 +88,7 @@ If Not server Then RuntimeError "HTTP server creation failed"
 If Not server.Route("GET", "/generated", New TGeneratedHandler) Then RuntimeError "generated route failed"
 If Not server.Route("GET", "/status", New TStatusHandler) Then RuntimeError "status route failed"
 If Not server.Route("GET", "/no-body", New TNoBodyHandler) Then RuntimeError "no-body route failed"
+If Not server.Static("/assets/", "littlefs::/www/", 60) Then RuntimeError "static route failed"
 If Not server.Start() Then RuntimeError server.LastError()
 Print "HTTPS CHUNKED READY " + WiFiIPv4Address()
 While True

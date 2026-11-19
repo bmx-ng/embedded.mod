@@ -15,8 +15,11 @@ class HTTPServerWireTests(unittest.TestCase):
     def setUpClass(cls):
         cls.temp = tempfile.TemporaryDirectory()
         root = pathlib.Path(cls.temp.name)
+        cls.root = root
         (root / "index.html").write_text("<h1>root</h1>", encoding="utf-8")
         (root / "large.txt").write_bytes(b"abcdef0123456789" * 256)
+        (root / "huge.bin").write_bytes(b"h" * 70000)
+        (root / "changing.txt").write_bytes(b"before")
         with socket.socket() as probe:
             probe.bind(("127.0.0.1", 0))
             cls.port = probe.getsockname()[1]
@@ -227,6 +230,77 @@ class HTTPServerWireTests(unittest.TestCase):
         self.assertIn(b"400 Bad Request", self.exchange(
             b"GET /assets/%2fsecret HTTP/1.1\r\nHost: local\r\n\r\n"
         ))
+
+    def test_static_byte_ranges_and_cache(self):
+        base = b"GET /cached/large.txt HTTP/1.1\r\nHost: local\r\n"
+        original = b"abcdef0123456789" * 256
+        full = self.exchange(base + b"\r\n")
+        headers, body = full.split(b"\r\n\r\n", 1)
+        self.assertEqual(body, original)
+        self.assertIn(b"Accept-Ranges: bytes", headers)
+        self.assertIn(b"Cache-Control: public, max-age=60", headers)
+        tag = next(line.split(b": ", 1)[1] for line in headers.split(b"\r\n")
+                   if line.startswith(b"ETag: "))
+        self.assertTrue(tag.startswith(b'W/"'))
+
+        partial = self.exchange(base + b"Range: bytes=3-7\r\n\r\n")
+        headers, body = partial.split(b"\r\n\r\n", 1)
+        self.assertIn(b"206 Partial Content", headers)
+        self.assertIn(b"Content-Range: bytes 3-7/4096", headers)
+        self.assertIn(b"Content-Length: 5", headers)
+        self.assertEqual(body, b"def01")
+
+        for header, expected in ((b"Range: bytes=4090-\r\n", original[4090:]),
+                                 (b"Range: bytes=-5\r\n", original[-5:])):
+            response = self.exchange(base + header + b"\r\n")
+            self.assertIn(b"206 Partial Content", response)
+            self.assertEqual(response.split(b"\r\n\r\n", 1)[1], expected)
+
+        unsatisfied = self.exchange(base + b"Range: bytes=5000-\r\n\r\n")
+        headers, body = unsatisfied.split(b"\r\n\r\n", 1)
+        self.assertIn(b"416 Range Not Satisfiable", headers)
+        self.assertIn(b"Content-Range: bytes */4096", headers)
+        self.assertEqual(body, b"")
+
+        for value in (b"bytes=1-2,4-5", b"units=3-7", b"bytes=oops"):
+            response = self.exchange(base + b"Range: " + value + b"\r\n\r\n")
+            self.assertIn(b"200 OK", response)
+            self.assertEqual(response.split(b"\r\n\r\n", 1)[1], original)
+
+        head = self.exchange(b"HEAD /cached/large.txt HTTP/1.1\r\nHost: local\r\n"
+                             b"Range: bytes=3-7\r\n\r\n")
+        headers, body = head.split(b"\r\n\r\n", 1)
+        self.assertIn(b"206 Partial Content", headers)
+        self.assertIn(b"Content-Length: 5", headers)
+        self.assertEqual(body, b"")
+
+        not_modified = self.exchange(base + b"If-None-Match: " + tag + b"\r\n\r\n")
+        headers, body = not_modified.split(b"\r\n\r\n", 1)
+        self.assertIn(b"304 Not Modified", headers)
+        self.assertEqual(body, b"")
+        self.assertIn(b"200 OK", self.exchange(base + b"Range: bytes=3-7\r\n"
+                                                 b"If-Range: other\r\n\r\n"))
+
+        changing = b"GET /assets/changing.txt HTTP/1.1\r\nHost: local\r\n"
+        first = self.exchange(changing + b"\r\n")
+        old_tag = next(line.split(b": ", 1)[1] for line in first.split(b"\r\n\r\n", 1)[0].split(b"\r\n")
+                       if line.startswith(b"ETag: "))
+        (self.root / "changing.txt").write_bytes(b"after!")
+        changed = self.exchange(changing + b"If-None-Match: " + old_tag + b"\r\n\r\n")
+        headers, body = changed.split(b"\r\n\r\n", 1)
+        self.assertIn(b"200 OK", headers)
+        self.assertEqual(body, b"after!")
+        new_tag = next(line.split(b": ", 1)[1] for line in headers.split(b"\r\n")
+                       if line.startswith(b"ETag: "))
+        self.assertNotEqual(new_tag, old_tag)
+
+        huge = b"GET /assets/huge.bin HTTP/1.1\r\nHost: local\r\n"
+        result = self.exchange(huge + b"\r\n")
+        headers, body = result.split(b"\r\n\r\n", 1)
+        self.assertNotIn(b"ETag:", headers)
+        self.assertEqual(body, b"h" * 70000)
+        result = self.exchange(huge + b"If-None-Match: *\r\n\r\n")
+        self.assertIn(b"304 Not Modified", result)
 
     def test_one_request_per_connection(self):
         result = self.exchange(

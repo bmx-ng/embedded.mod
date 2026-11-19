@@ -78,7 +78,48 @@ def main():
         assert b"content-length" not in headers
         assert stream.read() == b"x" * 8193
 
-    print("Verified trusted TLS, chunked response, reuse, HEAD, 204, and HTTP/1.0 fallback")
+    def static_request(method, extra=b""):
+        with connect() as connection, connection.makefile("rb") as stream:
+            connection.sendall(method + b" /assets/range-fixture.txt HTTP/1.1\r\n"
+                               b"Host: device\r\nConnection: close\r\n" + extra + b"\r\n")
+            status, headers = read_head(stream)
+            body = stream.read(int(headers[b"content-length"])) if method != b"HEAD" else b""
+            return status, headers, body
+
+    original = b"abcdef0123456789" * 256
+    status, headers, body = static_request(b"GET")
+    assert b"200 OK" in status
+    assert body == original
+    assert headers[b"accept-ranges"] == b"bytes"
+    assert headers[b"cache-control"] == b"public, max-age=60"
+    tag = headers[b"etag"]
+
+    status, headers, body = static_request(b"GET", b"If-None-Match: " + tag + b"\r\n")
+    assert b"304 Not Modified" in status
+    assert body == b""
+
+    status, headers, body = static_request(b"GET", b"Range: bytes=3-7\r\n")
+    assert b"206 Partial Content" in status
+    assert headers[b"content-range"] == b"bytes 3-7/4096"
+    assert body == b"def01"
+
+    status, headers, body = static_request(b"HEAD", b"Range: bytes=-5\r\n")
+    assert b"206 Partial Content" in status
+    assert headers[b"content-length"] == b"5"
+    assert body == b""
+
+    status, headers, body = static_request(b"GET", b"Range: bytes=5000-\r\n")
+    assert b"416 Range Not Satisfiable" in status
+    assert headers[b"content-range"] == b"bytes */4096"
+    assert body == b""
+
+    with connect() as connection, connection.makefile("rb") as stream:
+        connection.sendall(b"GET /assets/second.key HTTP/1.1\r\n"
+                           b"Host: device\r\nConnection: close\r\n\r\n")
+        status, headers = read_head(stream)
+        assert b"404 Not Found" in status
+
+    print("Verified trusted TLS, chunked output, reuse, HEAD, HTTP/1.0, static ranges and cache")
 
 
 if __name__ == "__main__":

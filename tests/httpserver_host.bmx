@@ -190,6 +190,7 @@ If Not server.Route("GET", "/producer-error", New TFailingProducerHandler) Then 
 If Not server.RouteStream("POST", "/upload", New TUploadHandler) Then RuntimeError "stream route failed"
 If Not server.RouteStream("PUT", "/upload", New TUploadHandler) Then RuntimeError "PUT stream route failed"
 If Not server.Static("/assets/", AppArgs[2]) Then RuntimeError "static route failed"
+If Not server.Static("/cached/", AppArgs[2], 60) Then RuntimeError "cached static route failed"
 If Not server.Start() Then RuntimeError server.LastError()
 server.Stop()
 If Not server.Start() Then RuntimeError "restart failed: " + server.LastError()

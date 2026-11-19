@@ -19,7 +19,8 @@ transport uses `BRL.Socket`; handlers run only inside the application's call to
   `maxRequestsPerConnection` and `keepAliveTimeoutMs`. HTTP/1.0 still closes.
 - Static files use `BRL.FileSystem` metadata and `ReadStream`, so mounted
   `littlefs::` and `sd::` paths use the same transfer loop. Files are read in
-  configured chunks. Directory URLs resolve to `index.html`.
+  configured chunks. Directory URLs resolve to `index.html`. Static routes
+  support one byte range, `If-None-Match`, and optional cache lifetimes.
 - Strict CRLF framing, HTTP/1.1 Host requirement, numeric Content-Length,
   rejection of duplicate lengths and conflicting Content-Length/Transfer-Encoding,
   and rejection of unsupported encodings and Expect headers. Chunked request
@@ -61,6 +62,17 @@ blocking and use streams for large files. `Stop()` closes all active sockets
 and streams and permits `Start()` again. Routes are registered before `Start()`;
 `ActiveConnections()` helps an application wait until responses complete before
 a planned restart.
+
+For versioned static assets, `server.Static("/assets/", "littlefs::/www/", 3600)`
+adds `Cache-Control: public, max-age=3600`. The default omits a cache lifetime.
+Static files up to 64 KiB get a content-derived weak `ETag`; the server checks
+`If-None-Match` and returns 304 when it matches. Calculating this tag reads
+the file once before serving it, so larger files omit the tag to keep a
+request's synchronous work bounded. A single `Range: bytes=...` request returns
+206 or 416 with `Content-Range`; unsupported or malformed range forms receive
+the full response. `If-Range` receives the full response because this server
+does not issue a strong validator. HEAD returns the corresponding headers
+without a body.
 
 For an upload, implement `IHTTPBodyHandler` and register it with
 `RouteStream("POST", "/upload", handler)`. `Begin()` runs after the headers,
@@ -225,7 +237,7 @@ ESP32-S3 internal SRAM heap could not start. The ordinary example still uses
 the smaller resource defaults above and passed its device wire tests again
 after restoration on both boards.
 
-Range/cache responses, SSE, WebSockets, multipart, authentication helpers,
+SSE, WebSockets, multipart, authentication helpers,
 captive-portal workflows and OTA are later layers. The HTTPS adapter builds
 for Pico 2 W and ESP32-S3. A
 verified handshake, GET, fragmented POST, 404 response, and 30 repeated connections
@@ -262,3 +274,6 @@ local copy with Wi-Fi and a temporary test certificate. Run
 flashing. The host wire tests and verified HTTPS device tests pass on Pico 2 W
 and ESP32-S31 for chunked output, connection reuse, HEAD, no-body responses and
 HTTP/1.0 close-delimited output.
+The same image writes a 4 KiB LittleFS fixture under `/www` and checks trusted
+HTTPS static responses, byte ranges, `If-None-Match`, explicit cache lifetime,
+and a 416 response. These checks pass on ESP32-S31.

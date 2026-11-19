@@ -20,6 +20,7 @@ Import BRL.FileSystem
 Import BRL.System
 
 Const HTTPWouldBlock:Int = -2
+Const HTTPStaticETagMaxBytes:Long = 65536
 
 Type THTTPServerConfig
 	Field port:Int = 8080
@@ -246,6 +247,7 @@ Type THTTPRoute
 	Field handler:IHTTPHandler
 	Field bodyHandler:IHTTPBodyHandler
 	Field staticRoot:String
+	Field cacheMaxAgeSeconds:Int
 End Type
 
 Type THTTPConnection
@@ -349,6 +351,7 @@ Function _HTTPReason:String(status:Int)
 		Case 201 Return "Created"
 		Case 204 Return "No Content"
 		Case 205 Return "Reset Content"
+		Case 206 Return "Partial Content"
 		Case 301 Return "Moved Permanently"
 		Case 302 Return "Found"
 		Case 304 Return "Not Modified"
@@ -362,6 +365,7 @@ Function _HTTPReason:String(status:Int)
 		Case 408 Return "Request Timeout"
 		Case 411 Return "Length Required"
 		Case 413 Return "Content Too Large"
+		Case 416 Return "Range Not Satisfiable"
 		Case 414 Return "URI Too Long"
 		Case 417 Return "Expectation Failed"
 		Case 431 Return "Request Header Fields Too Large"
@@ -389,6 +393,96 @@ Function _HTTPMime:String(path:String)
 		Case "wasm" Return "application/wasm"
 	End Select
 	Return "application/octet-stream"
+End Function
+
+Function _HTTPUnsignedLong:Int(value:String, number:Long Var)
+	If value.length = 0 Then Return False
+	number = 0
+	For Local i:Int = 0 Until value.length
+		Local digit:Int = value[i] - 48
+		If digit < 0 Or digit > 9 Then Return False
+		If number > ($7fffffffffffffff:Long - digit) / 10 Then Return False
+		number = number * 10 + digit
+	Next
+	Return True
+End Function
+
+' Returns 0 for an unsupported/malformed range, 1 for a single range, or 2
+' for a syntactically valid but unsatisfiable single range.
+Function _HTTPByteRange:Int(value:String, size:Long, start:Long Var, length:Long Var)
+	If Not value.ToLower().StartsWith("bytes=") Then Return 0
+	Local spec:String = value[6..].Trim()
+	If spec.Find(",") >= 0 Then Return 0
+	Local dash:Int = spec.Find("-")
+	If dash < 0 Or spec.Find("-", dash + 1) >= 0 Then Return 0
+	Local first:String = spec[..dash]
+	Local last:String = spec[dash + 1..]
+	If first.length = 0
+		Local suffix:Long
+		If Not _HTTPUnsignedLong(last, suffix) Then Return 0
+		If suffix = 0 Or size = 0 Then Return 2
+		start = Max(0:Long, size - suffix)
+		length = size - start
+		Return 1
+	End If
+	If Not _HTTPUnsignedLong(first, start) Then Return 0
+	If last.length
+		Local finish:Long
+		If Not _HTTPUnsignedLong(last, finish) Then Return 0
+		If finish < start Then Return 2
+		If start >= size Then Return 2
+		length = Min(finish, size - 1) - start + 1
+	Else
+		If start >= size Then Return 2
+		length = size - start
+	End If
+	Return 1
+End Function
+
+Function _HTTPFileTag:String(path:String, size:Long)
+	If size < 0 Or size > HTTPStaticETagMaxBytes Then Return ""
+	Local source:TStream = ReadStream(path)
+	If Not source Then Return ""
+	Local hash:ULong = $cbf29ce484222325:ULong
+	Local buffer:Byte[] = New Byte[512]
+	Local remaining:Long = size
+	Local valid:Int = True
+	Try
+		While remaining > 0
+			Local count:Int = Int(source.Read(Varptr buffer[0], Min(remaining, Long(buffer.length))))
+			If count <= 0 Or count > remaining Then valid = False; Exit
+			For Local i:Int = 0 Until count
+				hash :~ ULong(buffer[i] & 255)
+				hash = hash * 1099511628211:ULong
+			Next
+			remaining :- count
+		Wend
+		Local extra:Byte
+		If valid And source.Read(Varptr extra, 1) <> 0 Then valid = False
+	Catch failure:Object
+		valid = False
+	Catch failure:String
+		valid = False
+	End Try
+	Try
+		source.Close()
+	Catch failure:Object
+		valid = False
+	Catch failure:String
+		valid = False
+	End Try
+	If Not valid Then Return ""
+	Return "W/~q" + size + "-" + String.FromULong(hash) + "~q"
+End Function
+
+Function _HTTPTagMatches:Int(value:String, tag:String)
+	If Not value Then Return False
+	For Local candidate:String = EachIn value.Split(",")
+		Local trimmed:String = candidate.Trim()
+		If trimmed = "*" Then Return True
+		If tag And (trimmed = tag Or trimmed = tag[2..]) Then Return True
+	Next
+	Return False
 End Function
 
 Public
@@ -465,13 +559,15 @@ Type THTTPServer
 		Return True
 	End Method
 
-	Method Static:Int(prefix:String, root:String)
+	Method Static:Int(prefix:String, root:String, cacheMaxAgeSeconds:Int = 0)
 		If running Or routeCount = routes.length Or Not prefix.StartsWith("/") Or ..
-			Not prefix.EndsWith("/") Or root.length = 0 Then Return False
+			Not prefix.EndsWith("/") Or root.length = 0 Or ..
+			cacheMaxAgeSeconds < 0 Or cacheMaxAgeSeconds > 31536000 Then Return False
 		Local route:THTTPRoute = New THTTPRoute
 		route.method = "GET"
 		route.path = prefix
 		route.staticRoot = root
+		route.cacheMaxAgeSeconds = cacheMaxAgeSeconds
 		routes[routeCount] = route
 		routeCount :+ 1
 		Return True
@@ -681,9 +777,38 @@ Type THTTPServer
 		path :+ suffix
 		Local info:SFileStat
 		If Not FileStat(path, info) Or Not info.IsFile() Then response.status = 404; Return
+		response.SetHeader("Accept-Ranges", "bytes")
+		If route.cacheMaxAgeSeconds > 0 Then
+			response.SetHeader("Cache-Control", "public, max-age=" + route.cacheMaxAgeSeconds)
+		End If
+		Local tag:String = _HTTPFileTag(path, info.size)
+		If tag Then response.SetHeader("ETag", tag)
+		If _HTTPTagMatches(request.Header("If-None-Match"), tag) Then
+			response.status = 304
+			Return
+		End If
+		Local start:Long
+		Local length:Long = info.size
+		If Not request.Header("If-Range") Then
+			Select _HTTPByteRange(request.Header("Range"), info.size, start, length)
+				Case 1
+					response.status = 206
+					response.SetHeader("Content-Range", "bytes " + start + "-" + (start + length - 1) + "/" + info.size)
+				Case 2
+					response.status = 416
+					response.SetHeader("Content-Range", "bytes */" + info.size)
+					response.body = New Byte[0]
+					Return
+			End Select
+		End If
 		Local stream:TStream = ReadStream(path)
 		If Not stream Then response.status = 404; Return
-		response.StreamFile(stream, info.size, _HTTPMime(path))
+		If start > 0 And stream.Seek(start) <> start Then
+			stream.Close()
+			response.status = 500
+			Return
+		End If
+		response.StreamFile(stream, length, _HTTPMime(path))
 	End Method
 
 	Method _Dispatch(conn:THTTPConnection)
@@ -716,7 +841,7 @@ Type THTTPServer
 				request.parameters = params
 				If route.staticRoot <> "" Then
 					_StaticFile(request, response, route)
-					If response.status >= 400 Then _Fail(conn, response.status); Return
+					If response.status >= 400 And response.status <> 416 Then _Fail(conn, response.status); Return
 				Else
 						Try
 							route.handler.Handle(request, response)
