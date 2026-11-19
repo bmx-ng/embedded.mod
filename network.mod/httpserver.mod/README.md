@@ -97,6 +97,53 @@ the ESP32 build links ESP-IDF's mbedTLS 4 component. The server presents the
 configured certificate. Applications must arrange a trusted certificate and
 key; this module does not provision them.
 
+For credentials held in LittleFS, mount storage first and create the listener
+from two PEM files. The same paths work on both boards:
+
+```blitzmax
+Local tls:THTTPSTLSListener = THTTPSTLSListener.CreateFromFiles( ..
+    "littlefs::/tls/server.crt", "littlefs::/tls/server.key")
+Local server:THTTPServer = THTTPServer.Create(config, tls)
+If Not server.Start() Then RuntimeError server.LastError()
+```
+
+Each PEM file may contain at most 16 KiB. The listener checks file size and
+reads both files fully, then mbedTLS validates the certificate and matching
+key before binding the socket. To replace them, stop the server, call
+`tls.ReplaceFromFiles(newCertPath, newKeyPath)`, and start it again. The
+replacement is validated before the old credentials are discarded. If it
+fails, `tls.LastError()` explains the failure and `server.Start()` can resume
+with the previous credentials. `tls.ReplaceCredentials(certPEM, keyPEM)` does
+the same for PEM text loaded from another source, such as ESP32 NVS. Both
+replacement calls require the server to be stopped; `Stop()` closes active
+connections. Existing file credentials remain in memory across a Stop/Start;
+call `ReplaceFromFiles` explicitly to read changed files.
+
+LittleFS is persistent storage, not protected key storage by itself. A product
+using file-based private keys must arrange appropriate flash protection and
+access control. On ESP32, an application can instead read PEM strings from
+NVS and pass them to `ReplaceCredentials`:
+
+```blitzmax
+Import ESP32.Storage.NVS
+
+Local store:TNVSNamespace = OpenNVS("https", True)
+If Not store Then RuntimeError "HTTPS credential namespace unavailable"
+Local certPEM:String
+Local keyPEM:String
+If Not store.TryGetString("cert", certPEM) Or ..
+    Not store.TryGetString("key", keyPEM) Then RuntimeError "HTTPS credentials unavailable"
+store.Close()
+If Not tls.ReplaceCredentials(certPEM, keyPEM) Then RuntimeError tls.LastError()
+```
+
+Do this before starting the server, or after stopping it for replacement.
+NVS encryption and key provisioning are application setup; ordinary NVS does
+not itself guarantee encrypted private-key storage. On Pico W, this module
+has no hardware protected key store. Certificate issuance, renewal, and
+selection of an active credential pair after reboot remain application
+responsibilities.
+
 The supplied [device example](examples/device_api.bmx) has a status/JSON route,
 a token-protected GPIO route, LittleFS static files on both targets and
 optional SD static files on ESP32, plus a bounded POST echo used by device
@@ -180,3 +227,9 @@ both HTTP and verified HTTPS, including 20 repeated HTTP rounds and 10 HTTPS
 rounds. They also passed on a Pico 2 W over verified HTTPS, including 10
 repeated rounds. The original HTTPS handshake, GET, fragmented POST, and 404
 checks passed again on both boards with the connection-reuse image.
+
+Credential loading and replacement were also exercised on device: the Pico 2 W
+loaded a test PEM pair from LittleFS, rejected an invalid replacement, resumed
+with the previous pair, and started with a valid replacement. The ESP32-S31
+performed the same validation and restart sequence with a PEM pair read from
+NVS. The temporary test entries were removed after each run.
