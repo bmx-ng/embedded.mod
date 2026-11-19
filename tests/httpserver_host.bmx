@@ -95,6 +95,9 @@ If AppArgs.length < 3 Then RuntimeError "expected port and document root"
 Local config:THTTPServerConfig = New THTTPServerConfig
 config.port = AppArgs[1].ToInt()
 config.maxConnections = 2
+config.keepAlive = True
+config.keepAliveTimeoutMs = 500
+config.maxRequestsPerConnection = 4
 config.headerTimeoutMs = 300
 config.bodyTimeoutMs = 300
 config.maxStreamBodyBytes = 65536

@@ -5,18 +5,23 @@ server. The same route and response code builds for ESP32 and Pico W. Its
 transport uses `BRL.Socket`; handlers run only inside the application's call to
 `Service()`.
 
-## First milestone
+## Current capabilities
 
 - GET, HEAD, POST and PUT; exact and `:parameter` routes; bounded query and header
   access; text, HTML, JSON, bytes, redirect and length-known stream responses.
-- One request per TCP connection. Responses include `Content-Length` and
-  `Connection: close`. HEAD sends the corresponding headers and no body.
+- Responses include `Content-Length`; HEAD sends the corresponding headers and
+  no body. Connections close by default. Set `keepAlive = True` to reuse an
+  HTTP/1.1 connection for sequential requests, bounded by
+  `maxRequestsPerConnection` and `keepAliveTimeoutMs`. HTTP/1.0 still closes.
 - Static files use `BRL.FileSystem` metadata and `ReadStream`, so mounted
   `littlefs::` and `sd::` paths use the same transfer loop. Files are read in
   configured chunks. Directory URLs resolve to `index.html`.
 - Strict CRLF framing, HTTP/1.1 Host requirement, numeric Content-Length,
-  rejection of duplicate lengths, and rejection of unsupported Transfer-Encoding
-  and Expect headers. Pipelined requests are not dispatched.
+  rejection of duplicate lengths and conflicting Content-Length/Transfer-Encoding,
+  and rejection of unsupported encodings and Expect headers. Chunked request
+  bodies are accepted with bounded size lines and trailers; trailer fields are
+  validated and discarded. Requests already buffered after a completed request
+  cause that connection to close; pipelining is not a supported API.
 - `RouteStream()` receives large POST/PUT bodies in bounded chunks without
   buffering the whole upload. A separate total-body limit remains in force.
 - Handler exceptions produce a 500 response when the connection is still
@@ -56,10 +61,11 @@ a planned restart.
 For an upload, implement `IHTTPBodyHandler` and register it with
 `RouteStream("POST", "/upload", handler)`. `Begin()` runs after the headers,
 `Chunk()` receives at most `ioBufferBytes` bytes per call, and `Complete()` runs
-after the declared body length has arrived. The request's `context` field can
-hold per-upload state. `Abort()` runs if the peer disconnects, the body times
-out, or a callback fails before completion. Close and delete any partial file
-there. All callbacks run inside `Service()` and should return promptly. The
+after the declared body length or final chunk has arrived. The request's
+`context` field can hold per-upload state. `Abort()` runs if the peer
+disconnects, the body times out, or a callback fails before completion. Close
+and delete any partial file there. All callbacks run inside `Service()` and
+should return promptly. The
 default total limit for streamed bodies is 1 MiB; set
 `maxStreamBodyBytes` for the application, up to 64 MiB. Ordinary `Route()`
 handlers retain the separate 1 KiB default buffered-body limit.
@@ -121,6 +127,7 @@ specific board's pinout. Static routes are registered when their storage mounts.
 | Response body helper | 1024 bytes |
 | Stream transfer buffer | 512 bytes |
 | Header / body / write timeout | 5 s / 10 s / 10 s |
+| Keep-alive | Off; 5 s idle, at most 16 requests when enabled |
 
 Pico's native socket layer also allocates a 4 KiB receive ring per accepted
 TCP socket and has eight socket slots in total. Increase connection limits only
@@ -155,11 +162,17 @@ ESP32-S3 internal SRAM heap could not start. The ordinary example still uses
 the smaller resource defaults above and passed its device wire tests again
 after restoration on both boards.
 
-Keep-alive, chunked transfer, range/cache responses, SSE, WebSockets,
-multipart, authentication helpers, captive-portal workflows and OTA are later
-layers. The HTTPS adapter builds for Pico 2 W and ESP32-S3. A verified
-handshake, GET, fragmented POST, 404 response, and 30 repeated connections
+Chunked responses for unknown-length streams, range/cache responses, SSE,
+WebSockets, multipart, authentication helpers, captive-portal workflows and
+OTA are later layers. The HTTPS adapter builds for Pico 2 W and ESP32-S3. A
+verified handshake, GET, fragmented POST, 404 response, and 30 repeated connections
 passed on both Pico 2 W and ESP32-S31. After flashing an HTTPS variant of the
 device example with a test certificate, run
 `python3 tests/test_httpserver_tls_device.py BOARD_IP test-cert.pem`. The test
 checks a trusted handshake, GET, a fragmented POST and a 404 response.
+
+For the optional connection reuse and chunked-body image, run
+`python3 tests/test_httpserver_next_device.py BOARD_IP`. It checks sequential
+requests on one connection, a fragmented chunked echo, a 32 KiB streamed
+chunked upload, and conflicting framing rejection. These checks passed on an
+ESP32-S31.

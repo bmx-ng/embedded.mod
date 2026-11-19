@@ -49,7 +49,11 @@ class HTTPServerWireTests(unittest.TestCase):
     def exchange(self, *fragments):
         with socket.create_connection(("127.0.0.1", self.port), timeout=2) as sock:
             sock.settimeout(3)
+            close_header_added = False
             for fragment in fragments:
+                if not close_header_added and b"\r\n\r\n" in fragment:
+                    fragment = fragment.replace(b"\r\n\r\n", b"\r\nConnection: close\r\n\r\n", 1)
+                    close_header_added = True
                 sock.sendall(fragment)
                 time.sleep(0.005)
             result = bytearray()
@@ -95,11 +99,15 @@ class HTTPServerWireTests(unittest.TestCase):
         self.assertIn(b"413 Content Too Large", self.exchange(
             b"POST /echo HTTP/1.1\r\nHost: local\r\nContent-Length: 1025\r\n\r\n"
         ))
+        self.assertIn(b"413 Content Too Large", self.exchange(
+            b"POST /echo HTTP/1.1\r\nHost: local\r\nContent-Length: "
+            + b"9" * 100 + b"\r\n\r\n"
+        ))
         self.assertIn(b"400 Bad Request", self.exchange(
             b"POST /echo HTTP/1.1\r\nHost: local\r\nContent-Length: 2\r\nContent-Length: 2\r\n\r\nxx"
         ))
         self.assertIn(b"501 Not Implemented", self.exchange(
-            b"POST /echo HTTP/1.1\r\nHost: local\r\nTransfer-Encoding: chunked\r\n\r\n"
+            b"POST /echo HTTP/1.1\r\nHost: local\r\nTransfer-Encoding: gzip\r\n\r\n"
         ))
         self.assertIn(b"400 Bad Request", self.exchange(
             b"GET /status HTTP/1.1\r\n\r\n"
@@ -124,6 +132,97 @@ class HTTPServerWireTests(unittest.TestCase):
             b"GET /status HTTP/1.1\r\nHost: local\r\n\r\n"
         )
         self.assertEqual(result.count(b"HTTP/1.1 200"), 1)
+
+    def test_keep_alive_sequential_requests(self):
+        def read_response(stream, body=True):
+            status = stream.readline()
+            headers = {}
+            while line := stream.readline():
+                if line == b"\r\n":
+                    break
+                name, value = line.split(b":", 1)
+                headers[name.lower()] = value.strip()
+            payload = stream.read(int(headers[b"content-length"])) if body else b""
+            return status, headers, payload
+
+        with socket.create_connection(("127.0.0.1", self.port), timeout=2) as sock:
+            sock.settimeout(2)
+            with sock.makefile("rb") as stream:
+                sock.sendall(b"GET /status HTTP/1.1\r\nHost: local\r\n\r\n")
+                status, headers, payload = read_response(stream)
+                self.assertIn(b"200 OK", status)
+                self.assertEqual(headers[b"connection"], b"keep-alive")
+                self.assertEqual(payload, b'{"status":"ok"}')
+
+                sock.sendall(b"HEAD /status HTTP/1.1\r\nHost: local\r\n\r\n")
+                status, headers, payload = read_response(stream, body=False)
+                self.assertIn(b"200 OK", status)
+                self.assertEqual(headers[b"content-length"], b"15")
+                self.assertEqual(payload, b"")
+
+                sock.sendall(b"GET /assets/large.txt HTTP/1.1\r\nHost: local\r\n\r\n")
+                status, headers, payload = read_response(stream)
+                self.assertIn(b"200 OK", status)
+                self.assertEqual(payload, b"abcdef0123456789" * 256)
+
+                sock.sendall(b"POST /echo HTTP/1.1\r\nHost: local\r\nContent-Length: 3\r\n\r\nhey")
+                status, headers, payload = read_response(stream)
+                self.assertIn(b"200 OK", status)
+                self.assertEqual(headers[b"connection"], b"close")
+                self.assertEqual(payload, b"hey")
+                self.assertEqual(stream.read(1), b"")
+
+    def test_keep_alive_idle_and_pipelining(self):
+        with socket.create_connection(("127.0.0.1", self.port), timeout=2) as sock:
+            sock.settimeout(2)
+            sock.sendall(b"GET /status HTTP/1.1\r\nHost: local\r\n\r\n")
+            first = bytearray()
+            while b'{"status":"ok"}' not in first:
+                first.extend(sock.recv(4096))
+            self.assertIn(b"Connection: keep-alive", first)
+            time.sleep(0.65)
+            self.assertEqual(sock.recv(1), b"")
+
+        with socket.create_connection(("127.0.0.1", self.port), timeout=2) as sock:
+            sock.settimeout(2)
+            sock.sendall(
+                b"GET /status HTTP/1.1\r\nHost: local\r\n\r\n"
+                b"GET /status HTTP/1.1\r\nHost: local\r\n\r\n"
+            )
+            response = bytearray()
+            while part := sock.recv(4096):
+                response.extend(part)
+            self.assertEqual(response.count(b"HTTP/1.1 200"), 1)
+            self.assertIn(b"Connection: close", response)
+
+    def test_chunked_buffered_and_streamed_bodies(self):
+        result = self.exchange(
+            b"POST /echo HTTP/1.1\r\nHost: local\r\nTransfer-Encoding: chunked\r\n\r\n",
+            b"5;note=x\r\nhe", b"llo\r", b"\n1\r\n!\r\n0\r\nX-Check: yes\r\n\r\n",
+        )
+        self.assertTrue(result.endswith(b"hello!"))
+        body = bytes(range(256)) * 128
+        frames = [b"POST /upload HTTP/1.1\r\nHost: local\r\nTransfer-Encoding: chunked\r\n\r\n"]
+        for start in range(0, len(body), 512):
+            part = body[start:start + 512]
+            frames.append(f"{len(part):x}\r\n".encode() + part + b"\r\n")
+        frames.append(b"0\r\n\r\n")
+        response = self.exchange(*frames)
+        self.assertIn(b"200 OK", response)
+        size, chunks, checksum = map(int, response.split(b"\r\n\r\n", 1)[1].decode().split(":"))
+        self.assertEqual(size, len(body))
+        self.assertGreater(chunks, 1)
+        self.assertEqual(checksum, sum(body) % 65521)
+
+    def test_chunked_framing_errors(self):
+        prefix = b"POST /echo HTTP/1.1\r\nHost: local\r\nTransfer-Encoding: chunked\r\n\r\n"
+        self.assertIn(b"400 Bad Request", self.exchange(prefix + b"1\r\nx!\r\n0\r\n\r\n"))
+        self.assertIn(b"400 Bad Request", self.exchange(prefix + b"z\r\n"))
+        self.assertIn(b"413 Content Too Large", self.exchange(prefix + b"401\r\n"))
+        self.assertIn(b"400 Bad Request", self.exchange(
+            b"POST /echo HTTP/1.1\r\nHost: local\r\nContent-Length: 1\r\n"
+            b"Transfer-Encoding: chunked\r\n\r\n0\r\n\r\n"))
+        self.assertIn(b"400 Bad Request", self.exchange(prefix + b"0\r\nContent-Length: 0\r\n\r\n"))
 
     def test_slow_clients_and_concurrency(self):
         with socket.create_connection(("127.0.0.1", self.port), timeout=2) as slow:

@@ -5,8 +5,8 @@ SuperStrict
 
 Rem
 bbdoc: Bounded, explicitly serviced HTTP server for embedded targets.
-about: Call Service regularly on the managed application context. One request
-is handled per connection; every response closes the connection.
+about: Call Service regularly on the managed application context. Connection
+reuse is optional and bounded by the server configuration.
 End Rem
 Module Embedded.Network.HTTPServer
 ?not win32
@@ -35,6 +35,9 @@ Type THTTPServerConfig
 	Field headerTimeoutMs:UInt = 5000
 	Field bodyTimeoutMs:UInt = 10000
 	Field writeTimeoutMs:UInt = 10000
+	Field keepAlive:Int
+	Field keepAliveTimeoutMs:UInt = 5000
+	Field maxRequestsPerConnection:Int = 16
 
 	Method Copy:THTTPServerConfig()
 		Local result:THTTPServerConfig = New THTTPServerConfig
@@ -51,6 +54,9 @@ Type THTTPServerConfig
 		result.headerTimeoutMs = headerTimeoutMs
 		result.bodyTimeoutMs = bodyTimeoutMs
 		result.writeTimeoutMs = writeTimeoutMs
+		result.keepAlive = keepAlive
+		result.keepAliveTimeoutMs = keepAliveTimeoutMs
+		result.maxRequestsPerConnection = maxRequestsPerConnection
 		Return result
 	End Method
 End Type
@@ -168,7 +174,8 @@ End Interface
 Rem
 bbdoc: Incremental request-body handler for a POST or PUT route.
 about: Begin runs after headers. Chunk receives at most ioBufferBytes bytes,
-and Complete runs after exactly Content-Length bytes. Callbacks run from Service.
+and Complete runs after the declared Content-Length or the final chunk.
+Callbacks run from Service.
 End Rem
 Interface IHTTPBodyHandler
 	Method Begin(request:THTTPRequest, response:THTTPResponse)
@@ -229,6 +236,13 @@ Type THTTPConnection
 	Field fileCount:Int
 	Field fileOffset:Int
 	Field state:Int ' 0 reading, 1 sending headers/body, 2 sending stream
+	Field closeAfterResponse:Int = True
+	Field requestsServed:Int
+	Field chunked:Int
+	Field chunkState:Int ' 0 size, 1 data, 2 data CRLF, 3 trailers
+	Field chunkRemaining:Long
+	Field trailerBytes:Int
+	Field trailerCount:Int
 End Type
 
 Function _HTTPBytes:Byte[](value:String)
@@ -361,7 +375,11 @@ Type THTTPServer
 			settings.ioBufferBytes < 64 Or settings.ioBufferBytes > 2048 Or ..
 			settings.maxHeaders < 1 Or settings.maxHeaders > 32 Or ..
 			settings.maxRequestLine < 16 Or ..
-			settings.maxRequestLine > settings.maxHeaderBytes Then Return Null
+			settings.maxRequestLine > settings.maxHeaderBytes Or ..
+			settings.maxRequestsPerConnection < 1 Or ..
+			settings.maxRequestsPerConnection > 1000 Or ..
+			settings.keepAliveTimeoutMs < 100 Or ..
+			settings.keepAliveTimeoutMs > 60000 Then Return Null
 		Local server:THTTPServer
 		Try
 			server = New THTTPServer
@@ -498,6 +516,7 @@ Type THTTPServer
 	End Method
 
 		Method _Fail(conn:THTTPConnection, status:Int)
+			conn.closeAfterResponse = True
 			If conn.response And conn.response.stream Then
 				Try
 					conn.response.stream.Close()
@@ -554,8 +573,10 @@ Type THTTPServer
 		If response.status = 204 Or response.status = 205 Or response.status = 304 Then length = 0
 		Local version:String = "HTTP/1.1"
 		If conn.request Then version = conn.request.version
+		Local connectionValue:String = "close"
+		If Not conn.closeAfterResponse Then connectionValue = "keep-alive"
 		Local wire:String = version + " " + response.status + " " + _HTTPReason(response.status) + "~r~n" + ..
-			"Content-Length: " + length + "~r~nConnection: close~r~nContent-Type: " + ..
+			"Content-Length: " + length + "~r~nConnection: " + connectionValue + "~r~nContent-Type: " + ..
 			response.contentType + "~r~n"
 		For Local i:Int = 0 Until response.headerCount
 			Local field:THTTPField = response.headers[i]
@@ -699,6 +720,7 @@ Type THTTPServer
 		Local host:Int
 		Local lengthSeen:Int
 		Local transferEncoding:Int
+		Local connectionClose:Int
 		Local pos:Int = lineEnd + 2
 		While pos < conn.headerEnd - 2
 			Local finish:Int = -1
@@ -732,23 +754,33 @@ Type THTTPServer
 					Local maximum:Long = Max(Long(config.maxBodyBytes), config.maxStreamBodyBytes)
 					For Local j:Int = 0 Until value.length
 						If value[j] < 48 Or value[j] > 57 Then _Fail(conn, 400); Return
+						If total > maximum / 10 Then _Fail(conn, 413); Return
 						total = total * 10 + value[j] - 48
 						If total > maximum Then _Fail(conn, 413); Return
 					Next
 					conn.expectedBody = total
-				Case "transfer-encoding" transferEncoding = True
+				Case "transfer-encoding"
+					If transferEncoding Or value.ToLower() <> "chunked" Then _Fail(conn, 501); Return
+					transferEncoding = True
+				Case "connection"
+					For Local token:String = EachIn value.ToLower().Split(",")
+						If token.Trim() = "close" Then connectionClose = True
+					Next
 				Case "expect" _Fail(conn, 417); Return
 			End Select
 			pos = finish + 2
 		Wend
 		If transferEncoding Then
-			If lengthSeen Then _Fail(conn, 400) Else _Fail(conn, 501)
-			Return
+			If lengthSeen Then _Fail(conn, 400); Return
+			If request.version <> "HTTP/1.1" Then _Fail(conn, 400); Return
 		End If
 		If request.version = "HTTP/1.1" And host <> 1 Then _Fail(conn, 400); Return
 		If (request.method = "POST" Or request.method = "PUT") And ..
-			Not lengthSeen Then _Fail(conn, 411); Return
+			Not lengthSeen And Not transferEncoding Then _Fail(conn, 411); Return
 		conn.request = request
+		conn.chunked = transferEncoding
+		conn.closeAfterResponse = Not (config.keepAlive And request.version = "HTTP/1.1" And ..
+			Not connectionClose And conn.requestsServed + 1 < config.maxRequestsPerConnection)
 		For Local pass:Int = 0 To 1
 			For Local i:Int = 0 Until routeCount
 				Local route:THTTPRoute = routes[i]
@@ -757,7 +789,7 @@ Type THTTPServer
 				If pass = 1 And route.path.Find(":") < 0 Then Continue
 				Local params:THTTPField[] = _Match(route.path, request.path, False)
 				If params = Null Then Continue
-				If conn.expectedBody > config.maxStreamBodyBytes Then _Fail(conn, 413); Return
+				If Not transferEncoding And conn.expectedBody > config.maxStreamBodyBytes Then _Fail(conn, 413); Return
 				request.parameters = params
 				conn.bodyHandler = route.bodyHandler
 				conn.response = New THTTPResponse
@@ -770,12 +802,20 @@ Type THTTPServer
 					_HandlerFault(conn, error)
 					Return
 				End Try
-				If conn.expectedBody = 0 Then _CompleteStream(conn)
+				If conn.expectedBody = 0 And Not transferEncoding
+					If conn.inputCount > conn.headerEnd Then conn.closeAfterResponse = True
+					_CompleteStream(conn)
+				End If
 				Return
 			Next
 		Next
-		If conn.expectedBody > config.maxBodyBytes Then _Fail(conn, 413); Return
-		If conn.expectedBody = 0 Then _Dispatch(conn)
+		If Not transferEncoding And conn.expectedBody > config.maxBodyBytes Then _Fail(conn, 413); Return
+		If transferEncoding
+			request.body = New Byte[config.maxBodyBytes]
+		Else If conn.expectedBody = 0
+			If conn.inputCount > conn.headerEnd Then conn.closeAfterResponse = True
+			_Dispatch(conn)
+		End If
 	End Method
 
 	Method _CompleteStream(conn:THTTPConnection)
@@ -815,9 +855,126 @@ Type THTTPServer
 			available :- count
 			offset :+ count
 		Wend
+		If available > 0 Then conn.closeAfterResponse = True
 		conn.inputCount = 0
 		conn.headerEnd = 0
 		If conn.receivedBody = conn.expectedBody Then _CompleteStream(conn)
+	End Method
+
+	Method _ConsumeChunked(conn:THTTPConnection)
+		Local pos:Int = conn.headerEnd
+		While pos < conn.inputCount And conn.state = 0
+			Select conn.chunkState
+				Case 0 ' chunk size line
+					Local finish:Int = -1
+					For Local i:Int = pos + 1 Until conn.inputCount
+						If conn.input[i - 1] = 13 And conn.input[i] = 10 Then finish = i - 1; Exit
+					Next
+					If finish < 0
+						If conn.inputCount - pos > 128 Then _Fail(conn, 400)
+						Exit
+					End If
+					If finish = pos Or finish - pos > 128 Then _Fail(conn, 400); Return
+					Local size:Long
+					Local digits:Int
+					Local maximum:Long = config.maxBodyBytes
+					If conn.bodyHandler Then maximum = config.maxStreamBodyBytes
+					For Local i:Int = pos Until finish
+						If conn.input[i] = 59 Then Exit ' ignore bounded chunk extensions
+						Local digit:Int = _HTTPHex(conn.input[i])
+						If digit < 0 Then _Fail(conn, 400); Return
+						If size > (maximum - conn.receivedBody) / 16 Then _Fail(conn, 413); Return
+						size = size * 16 + digit
+						If size > maximum - conn.receivedBody Then _Fail(conn, 413); Return
+						digits :+ 1
+					Next
+					If digits = 0 Then _Fail(conn, 400); Return
+					For Local i:Int = pos Until finish
+						If conn.input[i] < 32 Or conn.input[i] > 126 Then _Fail(conn, 400); Return
+					Next
+					conn.chunkRemaining = size
+					pos = finish + 2
+					If size = 0 Then conn.chunkState = 3 Else conn.chunkState = 1
+				Case 1 ' chunk data
+					Local count:Int = Int(Min(Long(config.ioBufferBytes), ..
+						Min(Long(conn.inputCount - pos), conn.chunkRemaining)))
+					If count = 0 Then Exit
+					If conn.bodyHandler
+						Local chunk:Byte[] = New Byte[count]
+						For Local i:Int = 0 Until count
+							chunk[i] = conn.input[pos + i]
+						Next
+						Try
+							conn.bodyHandler.Chunk(conn.request, conn.response, chunk)
+						Catch error:Object
+							_HandlerFault(conn, "object exception in stream Chunk")
+							Return
+						Catch error:String
+							_HandlerFault(conn, error)
+							Return
+						End Try
+					Else
+						For Local i:Int = 0 Until count
+							conn.request.body[Int(conn.receivedBody) + i] = conn.input[pos + i]
+						Next
+					End If
+					conn.receivedBody :+ count
+					conn.chunkRemaining :- count
+					pos :+ count
+					If conn.chunkRemaining = 0 Then conn.chunkState = 2
+				Case 2 ' CRLF after chunk data
+					If conn.inputCount - pos < 2 Then Exit
+					If conn.input[pos] <> 13 Or conn.input[pos + 1] <> 10 Then _Fail(conn, 400); Return
+					pos :+ 2
+					conn.chunkState = 0
+				Case 3 ' trailers, bounded and discarded
+					Local finish:Int = -1
+					For Local i:Int = pos + 1 Until conn.inputCount
+						If conn.input[i - 1] = 13 And conn.input[i] = 10 Then finish = i - 1; Exit
+					Next
+					If finish < 0
+						If conn.trailerBytes + conn.inputCount - pos > config.maxHeaderBytes Then _Fail(conn, 431)
+						Exit
+					End If
+					conn.trailerBytes :+ finish - pos + 2
+					If conn.trailerBytes > config.maxHeaderBytes Then _Fail(conn, 431); Return
+					If finish = pos
+						If conn.inputCount > finish + 2 Then conn.closeAfterResponse = True
+						If conn.bodyHandler
+							_CompleteStream(conn)
+						Else
+							Local body:Byte[] = New Byte[Int(conn.receivedBody)]
+							For Local i:Int = 0 Until body.length
+								body[i] = conn.request.body[i]
+							Next
+							conn.request.body = body
+							_Dispatch(conn)
+						End If
+						Return
+					End If
+					conn.trailerCount :+ 1
+					If conn.trailerCount > config.maxHeaders Then _Fail(conn, 431); Return
+					Local raw:String = String.FromUTF8Bytes(Varptr conn.input[pos], finish - pos)
+					Local colon:Int = raw.Find(":")
+					If colon <= 0 Or Not _HTTPToken(raw[..colon]) Then _Fail(conn, 400); Return
+					Select raw[..colon].ToLower()
+						Case "host", "content-length", "transfer-encoding", "connection", "trailer"
+							_Fail(conn, 400)
+							Return
+					End Select
+					For Local i:Int = pos Until finish
+						If (conn.input[i] < 32 And conn.input[i] <> 9) Or conn.input[i] > 126 Then _Fail(conn, 400); Return
+					Next
+					pos = finish + 2
+			End Select
+		Wend
+		If conn.state <> 0 Then Return
+		Local remaining:Int = conn.inputCount - pos
+		For Local i:Int = 0 Until remaining
+			conn.input[i] = conn.input[pos + i]
+		Next
+		conn.inputCount = remaining
+		conn.headerEnd = 0
 	End Method
 
 	Public
@@ -863,7 +1020,13 @@ Type THTTPServer
 			Try
 				Local now:UInt = MilliSecs()
 				If conn.state = 0
-					If conn.headerEnd < 0 And now - conn.started >= config.headerTimeoutMs Then
+					If conn.headerEnd < 0 And conn.requestsServed > 0 And conn.inputCount = 0
+						If now - conn.started >= config.keepAliveTimeoutMs Then
+							conn.state = 3
+						Else
+							_Read(conn)
+						End If
+					Else If conn.headerEnd < 0 And now - conn.started >= config.headerTimeoutMs Then
 						_Fail(conn, 408)
 					Else If conn.headerEnd >= 0 And now - conn.lastActivity >= config.bodyTimeoutMs Then
 						_Fail(conn, 408)
@@ -895,6 +1058,7 @@ Type THTTPServer
 			Size_T(conn.input.length - conn.inputCount))
 		If amount = HTTPWouldBlock Then Return
 		If amount <= 0 Then conn.state = 3; Return
+		If conn.requestsServed > 0 And conn.inputCount = 0 Then conn.started = MilliSecs()
 		conn.inputCount :+ amount
 		conn.lastActivity = MilliSecs()
 		If conn.headerEnd < 0
@@ -922,8 +1086,10 @@ Type THTTPServer
 			_Parse(conn)
 		End If
 		If conn.state <> 0 Or Not conn.request Then Return
+		If conn.chunked Then _ConsumeChunked(conn); Return
 		If conn.bodyHandler Then _ConsumeStream(conn); Return
 		If conn.inputCount - conn.headerEnd >= conn.expectedBody
+			If conn.inputCount - conn.headerEnd > conn.expectedBody Then conn.closeAfterResponse = True
 			If conn.expectedBody > 0
 				conn.request.body = New Byte[conn.expectedBody]
 				For Local i:Int = 0 Until conn.expectedBody
@@ -932,6 +1098,36 @@ Type THTTPServer
 			End If
 			_Dispatch(conn)
 		End If
+	End Method
+
+	Method _FinishResponse(conn:THTTPConnection)
+		If conn.response And conn.response.stream Then
+			conn.response.stream.Close()
+			conn.response.stream = Null
+		End If
+		conn.requestsServed :+ 1
+		If conn.closeAfterResponse Then conn.state = 3; Return
+		conn.inputCount = 0
+		conn.headerEnd = -1
+		conn.expectedBody = 0
+		conn.receivedBody = 0
+		conn.bodyHandler = Null
+		conn.streamComplete = False
+		conn.output = Null
+		conn.outputOffset = 0
+		conn.response = Null
+		conn.request = Null
+		conn.streamRemaining = 0
+		conn.fileCount = 0
+		conn.fileOffset = 0
+		conn.chunked = False
+		conn.chunkState = 0
+		conn.chunkRemaining = 0
+		conn.trailerBytes = 0
+		conn.trailerCount = 0
+		conn.started = MilliSecs()
+		conn.lastActivity = conn.started
+		conn.state = 0
 	End Method
 
 	Method _Write(conn:THTTPConnection)
@@ -944,11 +1140,11 @@ Type THTTPServer
 			conn.lastActivity = MilliSecs()
 			Return
 		End If
-		If conn.request And conn.request.method = "HEAD" Then conn.state = 3; Return
+		If conn.request And conn.request.method = "HEAD" Then _FinishResponse(conn); Return
 		If conn.response.status = 204 Or conn.response.status = 205 Or ..
-			conn.response.status = 304 Then conn.state = 3; Return
+			conn.response.status = 304 Then _FinishResponse(conn); Return
 		If conn.response.stream
-			If conn.streamRemaining <= 0 Then conn.state = 3; Return
+			If conn.streamRemaining <= 0 Then _FinishResponse(conn); Return
 			If Not conn.fileBuffer Then conn.fileBuffer = New Byte[config.ioBufferBytes]
 			If conn.fileOffset = conn.fileCount
 				Local amount:Long = Min(Long(conn.fileBuffer.length), conn.streamRemaining)
@@ -966,7 +1162,7 @@ Type THTTPServer
 			Return
 		End If
 		If conn.response.body And conn.response.body.length > 0
-			If conn.fileOffset = conn.response.body.length Then conn.state = 3; Return
+			If conn.fileOffset = conn.response.body.length Then _FinishResponse(conn); Return
 			Local sent:Int = _TrySend(conn, Varptr conn.response.body[conn.fileOffset], ..
 				Size_T(conn.response.body.length - conn.fileOffset))
 			If sent = HTTPWouldBlock Then Return
@@ -974,7 +1170,7 @@ Type THTTPServer
 			conn.fileOffset :+ sent
 			conn.lastActivity = MilliSecs()
 		Else
-			conn.state = 3
+			_FinishResponse(conn)
 		End If
 	End Method
 End Type
