@@ -172,7 +172,9 @@ device example with a test certificate, run
 checks a trusted handshake, GET, a fragmented POST and a 404 response.
 
 For the optional connection reuse and chunked-body image, run
-`python3 tests/test_httpserver_next_device.py BOARD_IP`. It checks sequential
-requests on one connection, a fragmented chunked echo, a 32 KiB streamed
-chunked upload, and conflicting framing rejection. These checks passed on an
-ESP32-S31.
+`python3 tests/test_httpserver_next_device.py BOARD_IP`, or add
+`--tls-cert test-cert.pem` for an HTTPS image. It checks sequential requests on
+one connection, a fragmented chunked echo, a 32 KiB streamed chunked upload,
+and conflicting framing rejection. These checks passed on an ESP32-S31 over
+both HTTP and verified HTTPS, including 20 repeated HTTP rounds and 10 HTTPS
+rounds.

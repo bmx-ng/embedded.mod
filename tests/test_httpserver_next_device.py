@@ -3,6 +3,7 @@
 
 import argparse
 import socket
+import ssl
 
 
 def response(stream, body=True):
@@ -18,8 +19,15 @@ def response(stream, body=True):
     return status, headers, payload
 
 
-def check(ip, port):
-    with socket.create_connection((ip, port), timeout=5) as sock:
+def connect(ip, port, context):
+    raw = socket.create_connection((ip, port), timeout=5)
+    if context:
+        return context.wrap_socket(raw, server_hostname="blitzmax-test.local")
+    return raw
+
+
+def check(ip, port, context=None):
+    with connect(ip, port, context) as sock:
         sock.settimeout(5)
         with sock.makefile("rb") as stream:
             sock.sendall(b"GET /status HTTP/1.1\r\nHost: device\r\n\r\n")
@@ -52,7 +60,7 @@ def check(ip, port):
             assert headers[b"connection"] == b"close"
             assert stream.read(1) == b""
 
-    with socket.create_connection((ip, port), timeout=5) as sock:
+    with connect(ip, port, context) as sock:
         sock.settimeout(5)
         with sock.makefile("rb") as stream:
             sock.sendall(
@@ -66,7 +74,10 @@ def check(ip, port):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("ip", help="board IPv4 address")
-    parser.add_argument("--port", type=int, default=8080)
+    parser.add_argument("--port", type=int)
+    parser.add_argument("--tls-cert", help="trusted test certificate PEM")
     args = parser.parse_args()
-    check(args.ip, args.port)
+    context = ssl.create_default_context(cafile=args.tls_cert) if args.tls_cert else None
+    port = args.port if args.port else (8443 if context else 8080)
+    check(args.ip, port, context)
     print("Verified keep-alive, chunked echo, 32 KiB streamed upload, and framing rejection")
