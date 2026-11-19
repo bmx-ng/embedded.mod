@@ -34,8 +34,15 @@ Extern "C"
 End Extern
 
 Public
+Rem
+bbdoc: Maximum size in bytes of each PEM certificate or private-key file.
+End Rem
 Const HTTPSTLSMaxPEMBytes:Int = 16384
 
+Rem
+bbdoc: TLS connection returned internally by THTTPSTLSListener.
+about: Applications normally work with THTTPServer and do not create this type.
+End Rem
 Type THTTPSTLSConnection Implements IHTTPConnection
 	Private
 	Field socket:TSocket
@@ -72,6 +79,11 @@ Type THTTPSTLSConnection Implements IHTTPConnection
 	End Method
 End Type
 
+Rem
+bbdoc: Optional HTTPS listener passed to THTTPServer.Create.
+about: Create from PEM text or mounted files. Start validates credentials;
+Stop the HTTP server before replacing a certificate and key pair.
+End Rem
 Type THTTPSTLSListener Implements IHTTPListener
 	Private
 	Field certificate:String
@@ -83,6 +95,10 @@ Type THTTPSTLSListener Implements IHTTPListener
 	Field keyPath:String
 
 	Public
+	Rem
+	bbdoc: Creates a listener from a PEM certificate and matching private key.
+	about: Returns Null when either input is empty. Start validates the pair.
+	End Rem
 	Function Create:THTTPSTLSListener(certificatePEM:String, privateKeyPEM:String)
 		If Not certificatePEM Or Not privateKeyPEM Then Return Null
 		Local transport:THTTPSTLSListener = New THTTPSTLSListener
@@ -93,9 +109,9 @@ Type THTTPSTLSListener Implements IHTTPListener
 
 	Rem
 	bbdoc: Creates a listener that reads PEM files from mounted storage at Start.
-	about: Paths may use littlefs:: on Pico W or ESP32. Call #ReplaceFromFiles
-	between Stop and Start to read updated files. Each file is limited to
-	#HTTPSTLSMaxPEMBytes bytes.
+	about: Returns Null for empty paths. Paths may use littlefs:: on Pico W or
+	ESP32. Each file is limited to #HTTPSTLSMaxPEMBytes bytes. Call
+	#ReplaceFromFiles between Stop and Start to read changed files.
 	End Rem
 	Function CreateFromFiles:THTTPSTLSListener(certificateFile:String, privateKeyFile:String)
 		If Not certificateFile Or Not privateKeyFile Then Return Null
@@ -283,6 +299,9 @@ Type THTTPSTLSListener Implements IHTTPListener
 		context = Null
 	End Method
 
+	Rem
+	bbdoc: Returns the latest listener or credential validation failure.
+	End Rem
 	Method LastError:String()
 		Return errorText
 	End Method

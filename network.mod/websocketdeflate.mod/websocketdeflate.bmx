@@ -30,7 +30,15 @@ Extern
 	Function _ws_inflate:Int(source:Byte Ptr, sourceLength:Int, output:Byte Ptr, outputCapacity:Int)
 End Extern
 
+Rem
+bbdoc: Optional permessage-deflate factory for a WebSocket upgrade route.
+about: Pass Create() to THTTPWebSocketUpgrade.SetCompressionFactory. A client
+must offer client_max_window_bits for this bounded 9-bit negotiation.
+End Rem
 Type THTTPWebSocketDeflateFactory Implements IHTTPWebSocketCompressionFactory
+	Rem
+	bbdoc: Creates a factory to negotiate compression per connection.
+	End Rem
 	Function Create:THTTPWebSocketDeflateFactory()
 		Return New THTTPWebSocketDeflateFactory
 	End Function
@@ -81,6 +89,10 @@ Function _WSDeflateWindow:Int(value:String)
 	Return bits
 End Function
 
+Rem
+bbdoc: Per-connection codec created by THTTPWebSocketDeflateFactory.
+about: This is normally managed by the WebSocket upgrade handler.
+End Rem
 Type THTTPWebSocketDeflate Implements IHTTPWebSocketCompression
 	Field lastDecodeError:Int = WebSocketInvalidData
 

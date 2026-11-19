@@ -211,8 +211,9 @@ a token-protected GPIO route, LittleFS static files on both targets and
 optional SD static files on ESP32, plus a bounded POST echo used by device
 tests. Fill in `examples/device_api.local.bmx` with the Wi-Fi name, password,
 a random control token and a board-safe GPIO pin. This file is ignored by Git;
-build it instead of the tracked example. A 128 KiB managed heap was used for
-the sustained Pico 2 W and ESP32-S3 device runs. Pico LittleFS also needs a
+build it instead of the tracked example. Basic device request runs used a
+128 KiB managed heap on Pico 2 W and ESP32-S3; the larger limits and long-lived
+connections described below need more memory. Pico LittleFS also needs a
 reserved storage area. ESP32 LittleFS needs
 the board's `storage` partition; SD requires a board with configured SDMMC.
 The generic `esp32s3_n16r8_littlefs128` profile reserves 128 KiB for LittleFS
@@ -248,6 +249,8 @@ the affected connection is closed.
 
 ## Tests and remaining work
 
+### HTTP requests and resource pressure
+
 `tests/run_httpserver_host.sh` builds a host server and runs wire tests for
 fragmented requests, method and framing errors, limits, slow clients,
 concurrency, disconnects, streamed files, traversal and repeated start/stop.
@@ -271,9 +274,9 @@ ESP32-S3 internal SRAM heap could not start. The ordinary example still uses
 the smaller resource defaults above and passed its device wire tests again
 after restoration on both boards.
 
-Multipart, authentication helpers,
-captive-portal workflows and OTA are later layers. The HTTPS adapter builds
-for Pico 2 W and ESP32-S3. A
+### HTTPS and credential storage
+
+The HTTPS adapter builds for Pico 2 W and ESP32-S3. A
 verified handshake, GET, fragmented POST, 404 response, and 30 repeated connections
 passed on both Pico 2 W and ESP32-S31. After flashing an HTTPS variant of the
 device example with a test certificate, run
@@ -302,6 +305,8 @@ verified file persistence across unmount/remount, rejected replacement while
 running and with an invalid key, restarted with the original pair, then served
 an HTTPS request with the replacement certificate loaded from LittleFS.
 
+### Chunked responses, static files and SSE
+
 `tests/httpserver_chunked_device.bmx` is a portable HTTPS test image; fill a
 local copy with Wi-Fi and a temporary test certificate. Run
 `python3 tests/test_httpserver_chunked_device.py BOARD_IP test-cert.pem` after
@@ -325,6 +330,14 @@ completion, and `Last-Event-ID` on a second connection. All 20 host wire tests
 pass; the verified HTTPS SSE test also passes on Pico 2 W with a 256 KiB managed
 heap and ESP32-S31 with a 256 KiB managed heap.
 
+### WebSockets and longer runs
+
 WebSockets are supplied by the separate [WebSocket module](../websocket.mod/README.md)
 and are linked only when imported. The generic upgrade hook in this module
 does not allocate WebSocket buffers for ordinary HTTP or SSE connections.
+The [soak-test guide](../../tests/README.md#https-server-soak-tests) covers
+longer HTTPS, SSE and WebSocket runs and their board-specific memory settings.
+
+Multipart parsing, authentication helpers, captive-portal workflows and OTA
+remain application or higher-level module work. They are not required for the
+HTTP, HTTPS, SSE or WebSocket APIs described here.

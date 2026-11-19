@@ -1,20 +1,26 @@
 # Embedded.Network.WebSocket
 
-Import `Embedded.Network.WebSocket` only for applications with WebSocket
-endpoints. The HTTP server contains a small generic upgrade hook; the
-WebSocket handshake hash, framing code, and per-client buffers
-belong to this separate module. It works with the same plain HTTP and HTTPS
-listeners on ESP32 and Pico W.
+`Embedded.Network.WebSocket` adds bounded WebSocket endpoints to
+[`Embedded.Network.HTTPServer`](../httpserver.mod/README.md). Import it only
+in applications that use WebSockets. The HTTP server's generic upgrade hook
+does not link WebSocket framing code or allocate WebSocket buffers by itself.
+Routes work with plain HTTP (`ws://`) or the optional HTTPS listener
+(`wss://`) on ESP32 and Pico W.
 
-Register a GET upgrade route with a handler:
+## Add a route
+
+Implement `IHTTPWebSocketHandler`, create an upgrade handler, and register a
+GET upgrade route **before** starting the server:
 
 ```blitzmax
+Framework BRL.StandardIO
+Import BRL.EventQueue
 Import Embedded.Network.HTTPServer
 Import Embedded.Network.WebSocket
 
 Type TMessages Implements IHTTPWebSocketHandler
     Method Accept:Int(request:THTTPRequest)
-        ' Check Origin and application credentials before upgrading.
+        ' Replace this check with your application's origin and authentication rules.
         Return request.Header("Origin") = "https://example.test"
     End Method
 
@@ -36,57 +42,105 @@ Type TMessages Implements IHTTPWebSocketHandler
     End Method
 End Type
 
-server.RouteUpgrade("/messages", ..
-    THTTPWebSocketUpgrade.Create(New TMessages, 4096, 4096))
+Local server:THTTPServer = THTTPServer.Create()
+If Not server Then RuntimeError "HTTP server creation failed"
+Local upgrade:THTTPWebSocketUpgrade = THTTPWebSocketUpgrade.Create(New TMessages)
+If Not upgrade Then RuntimeError "WebSocket setup failed"
+If Not server.RouteUpgrade("/messages", upgrade) Then RuntimeError "Route setup failed"
+If Not server.Start() Then RuntimeError server.LastError()
+
+While True
+    PollEvent()
+    server.Service(4)
+    Delay 1
+Wend
 ```
 
-Subprotocols and compression are configured per route:
+The example uses the HTTP server's default port 8080. Configure Wi-Fi before
+`Start()` on a device. For WSS, import `Embedded.Network.HTTPSTLS` and pass
+a `THTTPSTLSListener` to `THTTPServer.Create(config, tls)`; the handler and
+service loop stay the same. See the
+[HTTPS setup](../httpserver.mod/README.md#https-on-esp32-and-pico-w) and the
+complete [device test image](../../tests/httpserver_ws_device.bmx).
+
+## Callbacks and connection lifetime
+
+| Callback | When it runs |
+| --- | --- |
+| `Accept(request)` | Before the upgrade; return `False` to send HTTP 403. Check the origin and application credentials here. |
+| `Open(socket, request)` | Once after the upgrade succeeds. |
+| `Message(socket, data, isText)` | Once for each complete text or binary message. Text is validated UTF-8; `isText` identifies its type. |
+| `Closed(socket, code)` | Once when the connection ends, including disconnects and failures. |
+
+Callbacks run inside `THTTPServer.Service()` on the managed application
+context. Keep them short, call `Service()` frequently, and access a socket
+only from that context. `SendText()` and `SendBinary()` queue complete
+messages; each returns `False` if the message exceeds the route limit, the
+bounded output queue is full, or the connection is closing. Decide in the
+application whether to retry or drop a message. `PendingBytes()` reports
+queued output; `Disconnect(code, reason)` starts a close handshake and
+`IsClosed()` reports its completion.
+
+Each open WebSocket occupies one HTTP server `maxConnections` slot until it
+closes. Size that setting for simultaneous HTTP, SSE and WebSocket clients.
+`THTTPWebSocketUpgrade.Create(handler, maxMessageBytes, maxPendingBytes)`
+defaults to a 2 KiB complete message limit and a 4 KiB outgoing queue.
+Accepted ranges are 64–65536 bytes and 256–65536 bytes respectively.
+Leave room in the output queue for frame headers and control replies.
+The server calls `Closed` and releases the slot when the connection ends.
+
+The module reassembles fragmented messages within the route limit, replies to
+pings, sends idle pings, handles close frames, and rejects invalid framing,
+unsupported opcodes, unnegotiated RSV bits, and invalid UTF-8 text.
+
+## Optional subprotocols
+
+Set the supported tokens before registering the route:
 
 ```blitzmax
-Import Embedded.Network.WebSocketDeflate ' Only when this route needs compression.
-
-Local upgrade:THTTPWebSocketUpgrade = THTTPWebSocketUpgrade.Create(New TMessages, 4096, 4096)
 If Not upgrade.SetSubprotocols(["messages.v2", "messages.v1"]) Then ..
     RuntimeError "Invalid WebSocket subprotocol"
-upgrade.SetCompressionFactory(THTTPWebSocketDeflateFactory.Create())
-server.RouteUpgrade("/messages", upgrade)
 ```
 
-The server selects the first client-offered subprotocol it supports and exposes
-it through `socket.Subprotocol()`. With no match, the upgrade succeeds without
-a subprotocol. Invalid protocol tokens reject the handshake. Unknown extensions
-are ignored. `WebSocketDeflate` is a separate module, so applications that do
-not import it omit the compression code. A route only negotiates compression
-when `SetCompressionFactory` is called and the client offers
-`permessage-deflate` with `client_max_window_bits`. The response sets both
-directions to a 9-bit window with no context takeover. Offers that cannot
-support these limits are declined; the connection then uses uncompressed
-WebSocket messages. On negotiated connections, short messages may still be
-sent uncompressed when deflate would make them larger. Decompression is bounded
-by the route's `maxMessageBytes` limit.
+The first client-offered protocol present in this list is available through
+`socket.Subprotocol()`. Without a match, the upgrade succeeds with no
+subprotocol. An invalid token in the client's offer rejects the handshake.
+Pass `Null` to `SetSubprotocols` to clear the list.
 
-Callbacks run from `THTTPServer.Service()` on the managed application context.
-`SendText` and `SendBinary` return `False` when the bounded output queue is full
-or closing. The two `Create` limits set the maximum complete message
-and outgoing queued bytes; they default to 2 KiB and 4 KiB respectively.
-Allow space for frame headers and control replies when choosing a queue size.
-One open WebSocket occupies
-one `maxConnections` slot. `Disconnect(code, reason)` starts a close handshake;
-`IsClosed()` and `PendingBytes()` expose the current state. The server releases
-the session when its socket closes and calls `Closed` once.
+## Optional compression
 
-The module accepts masked client frames, reassembles fragmented text or binary
-messages within the configured limit, validates text as UTF-8, replies to
-pings, handles close frames, and sends idle pings. It rejects unsupported
-opcodes and unnegotiated RSV bits. Applications should authenticate and check
-`Origin` in `Accept`;
-the WebSocket handshake alone does not authorize a client.
+Add `Import Embedded.Network.WebSocketDeflate` with the other imports, then
+attach its factory before `RouteUpgrade()`:
 
-`tests/httpserver_ws_device.bmx` is a portable HTTPS test image. Fill a local
-copy with Wi-Fi and temporary test credentials, then run
-`python3 tests/test_httpserver_ws_device.py BOARD_IP test-cert.pem`. The host
-wire tests cover the handshake, frames, protocol errors, and rejected upgrades.
-All 21 host wire tests pass. Five repeated trusted WSS sessions pass on Pico
-2 W and ESP32-S31 with 256 KiB managed heaps, including subprotocol selection,
-compressed round trips, fragmented text, ping/pong, binary echo, and close.
-A separate HTTP-only build confirms that this module is excluded unless imported.
+```blitzmax
+upgrade.SetCompressionFactory(THTTPWebSocketDeflateFactory.Create())
+```
+
+Register the route after this call. Compression code is linked only when
+imported, and negotiation happens only for routes with a factory. The client
+must offer `permessage-deflate` with `client_max_window_bits`. Both
+directions then use a 9-bit window with no context takeover. Unsupported
+offers are declined and the connection continues without compression.
+Short messages may remain uncompressed when deflate would make them larger.
+Decompressed messages remain subject to `maxMessageBytes`.
+
+## Security and testing
+
+A successful WebSocket handshake does not authenticate a client. Apply the
+application's authentication and `Origin` rules in `Accept()`. Use WSS for
+traffic that needs TLS, and arrange trusted certificate storage as described
+in the HTTP server's HTTPS guide.
+
+`tests/run_httpserver_host.sh` runs the host wire tests, including WebSocket
+handshakes, frames, protocol errors and rejected upgrades. For device
+testing, configure a local copy of `tests/httpserver_ws_device.bmx` with
+Wi-Fi and temporary test credentials. After flashing it, run:
+
+```sh
+python3 tests/test_httpserver_ws_device.py BOARD_IP test-cert.pem
+```
+
+For longer WebSocket and mixed HTTPS/SSE/WebSocket runs, see
+[`tests/README.md`](../../tests/README.md#https-server-soak-tests). That
+guide records the tested heap settings and the ESP32-S3 internal-SRAM TLS
+headroom finding.

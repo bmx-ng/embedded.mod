@@ -30,14 +30,31 @@ credentials. Open, Message and Closed run from THTTPServer.Service(). Message
 receives one complete bounded text or binary message.
 End Rem
 Interface IHTTPWebSocketHandler
+	Rem
+	bbdoc: Approves an upgrade after checking credentials and Origin.
+	about: Return False to send HTTP 403 before the WebSocket opens.
+	End Rem
 	Method Accept:Int(request:THTTPRequest)
+	Rem
+	bbdoc: Runs once after the WebSocket connection opens.
+	End Rem
 	Method Open(socket:THTTPWebSocket, request:THTTPRequest)
+	Rem
+	bbdoc: Receives one complete text or binary message within the route limit.
+	about: isText is True for UTF-8 text and False for binary data.
+	End Rem
 	Method Message(socket:THTTPWebSocket, data:Byte[], isText:Int)
+	Rem
+	bbdoc: Runs once when the WebSocket connection closes.
+	End Rem
 	Method Closed(socket:THTTPWebSocket, code:Int)
 End Interface
 
-' A separate module may supply a negotiated, per-connection codec. Null means
-' that the offer was declined. Decode must enforce maxOutput after expansion.
+Rem
+bbdoc: Optional per-connection WebSocket compression codec.
+about: Implement in a separate module. Decode must enforce maxOutput after
+expansion. The WebSocketDeflate module supplies a ready-made implementation.
+End Rem
 Interface IHTTPWebSocketCompression
 	Method ResponseHeader:String()
 	Method Encode:Byte[](data:Byte[])
@@ -45,12 +62,19 @@ Interface IHTTPWebSocketCompression
 	Method DecodeFailureCode:Int()
 End Interface
 
+Rem
+bbdoc: Negotiates an optional compression codec for each connection.
+about: Negotiate receives the client's extension offers and returns Null to
+decline them. Each accepted connection must receive its own codec instance.
+End Rem
 Interface IHTTPWebSocketCompressionFactory
 	Method Negotiate:IHTTPWebSocketCompression(offer:String)
 End Interface
 
 Rem
 bbdoc: Handler passed to THTTPServer.RouteUpgrade for a WebSocket endpoint.
+about: Configure subprotocols and optional compression before registering the
+route. Each open client occupies one HTTP server connection slot.
 End Rem
 Type THTTPWebSocketUpgrade Implements IHTTPUpgradeHandler
 	Private
@@ -61,6 +85,12 @@ Type THTTPWebSocketUpgrade Implements IHTTPUpgradeHandler
 	Field compressionFactory:IHTTPWebSocketCompressionFactory
 
 	Public
+	Rem
+	bbdoc: Creates a bounded WebSocket upgrade handler for one route.
+	about: maxMessageBytes defaults to 2048 and accepts 64..65536 bytes;
+	maxPendingBytes defaults to 4096 and accepts 256..65536 bytes. Returns
+	Null for an invalid handler or limit.
+	End Rem
 	Function Create:THTTPWebSocketUpgrade(handler:IHTTPWebSocketHandler, ..
 		maxMessageBytes:Int = 2048, maxPendingBytes:Int = 4096)
 		If Not handler Or maxMessageBytes < 64 Or maxMessageBytes > 65536 Or ..
@@ -72,6 +102,11 @@ Type THTTPWebSocketUpgrade Implements IHTTPUpgradeHandler
 		Return result
 	End Function
 
+	Rem
+	bbdoc: Sets supported subprotocol tokens, returning False if any is invalid.
+	about: The first client-offered supported token is selected. Pass Null to
+	remove the list. An unmatched offer can still upgrade without a protocol.
+	End Rem
 	Method SetSubprotocols:Int(supported:String[])
 		If Not supported Then
 			subprotocols = Null
@@ -84,6 +119,11 @@ Type THTTPWebSocketUpgrade Implements IHTTPUpgradeHandler
 		Return True
 	End Method
 
+	Rem
+	bbdoc: Enables optional compression negotiation for this route.
+	about: Pass Null to disable it. Import WebSocketDeflate for the supplied
+	permessage-deflate factory.
+	End Rem
 	Method SetCompressionFactory(factory:IHTTPWebSocketCompressionFactory)
 		compressionFactory = factory
 	End Method
@@ -249,6 +289,11 @@ Type THTTPWebSocket Implements IHTTPUpgradedSession
 	End Method
 
 	Public
+	Rem
+	bbdoc: Queues a complete UTF-8 text message.
+	about: Returns False if the message exceeds the route limit, the output
+	queue lacks room, or the connection is closing.
+	End Rem
 	Method SendText:Int(value:String)
 		If closed Or closing Then Return False
 		If value.length > maxMessage Then Return False
@@ -257,11 +302,17 @@ Type THTTPWebSocket Implements IHTTPUpgradedSession
 		Return _QueueMessage(1, data)
 	End Method
 
+	Rem
+	bbdoc: Queues a complete binary message, returning False if it cannot fit.
+	End Rem
 	Method SendBinary:Int(data:Byte[])
 		If closed Or closing Or Not data Or data.length > maxMessage Then Return False
 		Return _QueueMessage(2, data)
 	End Method
 
+	Rem
+	bbdoc: Returns the negotiated subprotocol, or an empty string if none.
+	End Rem
 	Method Subprotocol:String()
 		Return subprotocol
 	End Method
@@ -277,6 +328,10 @@ Type THTTPWebSocket Implements IHTTPUpgradedSession
 
 	Public
 
+	Rem
+	bbdoc: Begins a close handshake with an optional code and reason.
+	about: The connection closes after the peer replies or the close timeout.
+	End Rem
 	Method Disconnect(code:Int = WebSocketNormalClosure, reason:String = "")
 		If closed Or closing Then Return
 		If Not _WSValidCloseCode(code) Then code = WebSocketProtocolError
@@ -295,10 +350,16 @@ Type THTTPWebSocket Implements IHTTPUpgradedSession
 		_QueueControl(8, payload)
 	End Method
 
+	Rem
+	bbdoc: Reports whether the connection has finished closing.
+	End Rem
 	Method IsClosed:Int()
 		Return closed
 	End Method
 
+	Rem
+	bbdoc: Returns the number of queued output bytes.
+	End Rem
 	Method PendingBytes:Int()
 		Return txCount
 	End Method
