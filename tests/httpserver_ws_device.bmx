@@ -9,6 +9,7 @@ Import Embedded.Network.WiFi
 Import Embedded.Network.HTTPServer
 Import Embedded.Network.HTTPSTLS
 Import Embedded.Network.WebSocket
+Import Embedded.Network.WebSocketDeflate
 
 ' Replace these placeholders in a local ignored copy before building.
 Const NetworkName:String = "<ssid>"
@@ -51,7 +52,10 @@ config.port = 8443
 config.maxConnections = 1
 Local server:THTTPServer = THTTPServer.Create(config, tls)
 If Not server Then RuntimeError "HTTP server creation failed"
-If Not server.RouteUpgrade("/ws", THTTPWebSocketUpgrade.Create(New TEchoWebSocket, 256, 1024)) Then ..
+Local upgrade:THTTPWebSocketUpgrade = THTTPWebSocketUpgrade.Create(New TEchoWebSocket, 256, 1024)
+If Not upgrade.SetSubprotocols(["device.v1"]) Then RuntimeError "WebSocket subprotocol setup failed"
+upgrade.SetCompressionFactory(THTTPWebSocketDeflateFactory.Create())
+If Not server.RouteUpgrade("/ws", upgrade) Then ..
 	RuntimeError "WebSocket route failed"
 If Not server.Start() Then RuntimeError server.LastError()
 Print "WSS READY " + WiFiIPv4Address()

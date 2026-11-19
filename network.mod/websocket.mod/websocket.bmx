@@ -21,6 +21,7 @@ Const WebSocketGoingAway:Int = 1001
 Const WebSocketProtocolError:Int = 1002
 Const WebSocketInvalidData:Int = 1007
 Const WebSocketMessageTooBig:Int = 1009
+Const WebSocketInternalError:Int = 1011
 
 Rem
 bbdoc: Callbacks for one WebSocket route.
@@ -35,6 +36,19 @@ Interface IHTTPWebSocketHandler
 	Method Closed(socket:THTTPWebSocket, code:Int)
 End Interface
 
+' A separate module may supply a negotiated, per-connection codec. Null means
+' that the offer was declined. Decode must enforce maxOutput after expansion.
+Interface IHTTPWebSocketCompression
+	Method ResponseHeader:String()
+	Method Encode:Byte[](data:Byte[])
+	Method Decode:Byte[](data:Byte[], maxOutput:Int)
+	Method DecodeFailureCode:Int()
+End Interface
+
+Interface IHTTPWebSocketCompressionFactory
+	Method Negotiate:IHTTPWebSocketCompression(offer:String)
+End Interface
+
 Rem
 bbdoc: Handler passed to THTTPServer.RouteUpgrade for a WebSocket endpoint.
 End Rem
@@ -43,6 +57,8 @@ Type THTTPWebSocketUpgrade Implements IHTTPUpgradeHandler
 	Field handler:IHTTPWebSocketHandler
 	Field maxMessage:Int
 	Field maxPending:Int
+	Field subprotocols:String[]
+	Field compressionFactory:IHTTPWebSocketCompressionFactory
 
 	Public
 	Function Create:THTTPWebSocketUpgrade(handler:IHTTPWebSocketHandler, ..
@@ -55,6 +71,22 @@ Type THTTPWebSocketUpgrade Implements IHTTPUpgradeHandler
 		result.maxPending = maxPendingBytes
 		Return result
 	End Function
+
+	Method SetSubprotocols:Int(supported:String[])
+		If Not supported Then
+			subprotocols = Null
+			Return True
+		End If
+		For Local candidate:String = EachIn supported
+			If Not _WSValidToken(candidate) Then Return False
+		Next
+		subprotocols = supported[..]
+		Return True
+	End Method
+
+	Method SetCompressionFactory(factory:IHTTPWebSocketCompressionFactory)
+		compressionFactory = factory
+	End Method
 
 	Method HandleUpgrade(request:THTTPRequest, response:THTTPResponse)
 		If request.method <> "GET" Or request.version <> "HTTP/1.1" Or ..
@@ -85,13 +117,27 @@ Type THTTPWebSocketUpgrade Implements IHTTPUpgradeHandler
 			response.Text("Forbidden")
 			Return
 		End If
-		Local source:THTTPWebSocket = THTTPWebSocket._Create(handler, request, maxMessage, maxPending)
+		Local protocol:String = _WSSelectSubprotocol(request, subprotocols)
+		If protocol = Chr(0) Then
+			response.status = 400
+			response.Text("Bad Request")
+			Return
+		End If
+		Local codec:IHTTPWebSocketCompression
+		If compressionFactory Then codec = compressionFactory.Negotiate(_WSHeaderValues(request, "sec-websocket-extensions"))
+		Local source:THTTPWebSocket = THTTPWebSocket._Create(handler, request, maxMessage, maxPending, protocol, codec)
 		If Not source Then
 			response.status = 500
 			response.Text("Internal Server Error")
 			Return
 		End If
 		Local accept:String = _WSAccept(key)
+		If protocol And Not response.SetHeader("Sec-WebSocket-Protocol", protocol) Then
+			response.status = 500; response.Text("Internal Server Error"); Return
+		End If
+		If codec And Not response.SetHeader("Sec-WebSocket-Extensions", codec.ResponseHeader()) Then
+			response.status = 500; response.Text("Internal Server Error"); Return
+		End If
 		If Not response.SetHeader("Upgrade", "websocket") Or ..
 			Not response.SetHeader("Sec-WebSocket-Accept", accept) Or ..
 			Not response.Upgrade(source) Then
@@ -121,6 +167,9 @@ Type THTTPWebSocket Implements IHTTPUpgradedSession
 	Field txWrite:Int
 	Field txCount:Int
 	Field maxMessage:Int
+	Field subprotocol:String
+	Field codec:IHTTPWebSocketCompression
+	Field fragmentCompressed:Int
 	Field opened:Int
 	Field closed:Int
 	Field closing:Int
@@ -133,13 +182,15 @@ Type THTTPWebSocket Implements IHTTPUpgradedSession
 
 	Public
 	Function _Create:THTTPWebSocket(handler:IHTTPWebSocketHandler, request:THTTPRequest, ..
-		maxMessage:Int, maxPending:Int)
+		maxMessage:Int, maxPending:Int, subprotocol:String, codec:IHTTPWebSocketCompression)
 		Local result:THTTPWebSocket
 		Try
 			result = New THTTPWebSocket
 			result.handler = handler
 			result.request = request
 			result.maxMessage = maxMessage
+			result.subprotocol = subprotocol
+			result.codec = codec
 			result.rx = New Byte[maxMessage + 14]
 			result.message = New Byte[maxMessage]
 			result.tx = New Byte[maxPending]
@@ -152,7 +203,7 @@ Type THTTPWebSocket Implements IHTTPUpgradedSession
 		Return result
 	End Function
 
-	Method _Queue:Int(opcode:Int, data:Byte[])
+	Method _Queue:Int(opcode:Int, data:Byte[], compressed:Int = False)
 		If closed Or (closing And opcode <> 8 And opcode <> 10) Then Return False
 		Local length:Int = data.length
 		Local header:Int = 2
@@ -162,7 +213,7 @@ Type THTTPWebSocket Implements IHTTPUpgradedSession
 		If opcode = 1 Or opcode = 2 Then available :- 128
 		If length + header > available Then Return False
 		Local frame:Byte[] = New Byte[length + header]
-		frame[0] = Byte($80 | opcode)
+		frame[0] = Byte($80 | opcode | (compressed Shl 6))
 		If header = 2
 			frame[1] = Byte(length)
 		Else If header = 4
@@ -203,13 +254,28 @@ Type THTTPWebSocket Implements IHTTPUpgradedSession
 		If value.length > maxMessage Then Return False
 		Local data:Byte[] = _WSBytes(value)
 		If data.length > maxMessage Then Return False
-		Return _Queue(1, data)
+		Return _QueueMessage(1, data)
 	End Method
 
 	Method SendBinary:Int(data:Byte[])
 		If closed Or closing Or Not data Or data.length > maxMessage Then Return False
-		Return _Queue(2, data)
+		Return _QueueMessage(2, data)
 	End Method
+
+	Method Subprotocol:String()
+		Return subprotocol
+	End Method
+
+	Private
+	Method _QueueMessage:Int(opcode:Int, data:Byte[])
+		If codec And data.length >= 32 Then
+			Local encoded:Byte[] = codec.Encode(data)
+			If encoded And encoded.length < data.length Then Return _Queue(opcode, encoded, True)
+		End If
+		Return _Queue(opcode, data)
+	End Method
+
+	Public
 
 	Method Disconnect(code:Int = WebSocketNormalClosure, reason:String = "")
 		If closed Or closing Then Return
@@ -282,10 +348,15 @@ Type THTTPWebSocket Implements IHTTPUpgradedSession
 		rx = Null
 		message = Null
 		tx = Null
+		codec = Null
 	End Method
 
 	Private
-	Method _Deliver(opcode:Int, payload:Byte[])
+	Method _Deliver(opcode:Int, payload:Byte[], compressed:Int)
+		If compressed Then
+			payload = codec.Decode(payload, maxMessage)
+			If Not payload Then _Fail(codec.DecodeFailureCode()); Return
+		End If
 		If opcode = 1 And Not _WSValidUTF8(payload, 0, payload.length) Then
 			_Fail(WebSocketInvalidData)
 			Return
@@ -293,7 +364,7 @@ Type THTTPWebSocket Implements IHTTPUpgradedSession
 		handler.Message(Self, payload, opcode = 1)
 	End Method
 
-	Method _Frame(opcode:Int, fin:Int, payload:Byte[])
+	Method _Frame(opcode:Int, fin:Int, payload:Byte[], compressed:Int)
 		Select opcode
 			Case 8
 				If payload.length = 1 Then _Fail(WebSocketProtocolError); Return
@@ -329,16 +400,19 @@ Type THTTPWebSocket Implements IHTTPUpgradedSession
 						complete[i] = message[i]
 					Next
 					Local kind:Int = fragmentOpcode
+					Local wasCompressed:Int = fragmentCompressed
 					fragmentOpcode = 0
+					fragmentCompressed = False
 					messageCount = 0
-					_Deliver(kind, complete)
+					_Deliver(kind, complete, wasCompressed)
 				End If
 			Case 1, 2
 				If fragmentOpcode Then _Fail(WebSocketProtocolError); Return
 				If fin Then
-					_Deliver(opcode, payload)
+					_Deliver(opcode, payload, compressed)
 				Else
 					fragmentOpcode = opcode
+					fragmentCompressed = compressed
 					messageCount = payload.length
 					For Local i:Int = 0 Until payload.length
 						message[i] = payload[i]
@@ -355,7 +429,9 @@ Type THTTPWebSocket Implements IHTTPUpgradedSession
 			Local second:Int = rx[1] & 255
 			Local fin:Int = (first & $80) <> 0
 			Local opcode:Int = first & 15
-			If (first & $70) <> 0 Or (second & $80) = 0 Or ..
+			Local compressed:Int = (first & $40) <> 0
+			If (first & $30) <> 0 Or (compressed And (Not codec Or opcode <> 1 And opcode <> 2)) Or ..
+				(second & $80) = 0 Or ..
 				(opcode <> 0 And opcode <> 1 And opcode <> 2 And ..
 					opcode <> 8 And opcode <> 9 And opcode <> 10) Then
 				_Fail(WebSocketProtocolError)
@@ -394,7 +470,7 @@ Type THTTPWebSocket Implements IHTTPUpgradedSession
 				rx[i - total] = rx[i]
 			Next
 			rxCount :- total
-			_Frame(opcode, fin, payload)
+			_Frame(opcode, fin, payload, compressed)
 			If closing Then Return
 		End While
 	End Method
@@ -528,6 +604,48 @@ Function _WSHeaderCount:Int(request:THTTPRequest, name:String)
 		If field And field.name = name Then result :+ 1
 	Next
 	Return result
+End Function
+
+Function _WSHeaderValues:String(request:THTTPRequest, name:String)
+	Local values:String = ""
+	For Local field:THTTPField = EachIn request.headers
+		If field And field.name = name Then
+			If values Then values :+ ","
+			values :+ field.value
+		End If
+	Next
+	Return values
+End Function
+
+Function _WSValidToken:Int(value:String)
+	If Not value Then Return False
+	For Local i:Int = 0 Until value.length
+		Local c:Int = value[i]
+		If c >= 48 And c <= 57 Or c >= 65 And c <= 90 Or ..
+			c >= 97 And c <= 122 Then Continue
+		If c = 33 Or c = 35 Or c = 36 Or c = 37 Or c = 38 Or ..
+			c = 39 Or c = 42 Or c = 43 Or c = 45 Or c = 46 Or ..
+			c = 94 Or c = 95 Or c = 96 Or c = 124 Or c = 126 Then Continue
+		Return False
+	Next
+	Return True
+End Function
+
+' Invalid header is distinct from no mutually supported protocol.
+Function _WSSelectSubprotocol:String(request:THTTPRequest, supported:String[])
+	Local offers:String = _WSHeaderValues(request, "sec-websocket-protocol")
+	If Not offers Then Return ""
+	Local selected:String = ""
+	For Local offered:String = EachIn offers.Split(",")
+		Local name:String = offered.Trim()
+		If Not _WSValidToken(name) Then Return Chr(0)
+		If supported Then
+			For Local candidate:String = EachIn supported
+				If Not selected And candidate = name Then selected = name
+			Next
+		End If
+	Next
+	Return selected
 End Function
 
 Function _WSValidKey:Int(key:String)

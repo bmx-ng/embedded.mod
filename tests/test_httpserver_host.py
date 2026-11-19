@@ -11,6 +11,7 @@ import sys
 import tempfile
 import time
 import unittest
+import zlib
 
 
 class HTTPServerWireTests(unittest.TestCase):
@@ -306,6 +307,93 @@ class HTTPServerWireTests(unittest.TestCase):
 
         state = self.exchange(b"GET /ws-state HTTP/1.1\r\nHost: local\r\n\r\n")
         self.assertGreaterEqual(int(state.split(b"\r\n\r\n", 1)[1]), 4)
+
+    def test_websocket_subprotocol_and_deflate(self):
+        def frame(opcode, data=b"", fin=True, compressed=False):
+            first = opcode | (0x80 if fin else 0) | (0x40 if compressed else 0)
+            size = len(data)
+            header = bytes((first, 0x80 | size)) if size < 126 else bytes((first, 0xfe)) + size.to_bytes(2, "big")
+            mask = b"\x12\x34\x56\x78"
+            return header + mask + bytes(value ^ mask[i % 4] for i, value in enumerate(data))
+
+        def read_frame(stream):
+            first = stream.read(1)
+            self.assertTrue(first)
+            second = stream.read(1)[0]
+            size = second & 127
+            if size == 126:
+                size = int.from_bytes(stream.read(2), "big")
+            elif size == 127:
+                size = int.from_bytes(stream.read(8), "big")
+            return first[0], stream.read(size)
+
+        def compressed(data):
+            encoder = zlib.compressobj(wbits=-15)
+            output = encoder.compress(data) + encoder.flush(zlib.Z_SYNC_FLUSH)
+            self.assertEqual(output[-4:], b"\x00\x00\xff\xff")
+            return output[:-4]
+
+        def handshake(protocols=b"chat.v1, chat.v2", extension=b"permessage-deflate; client_max_window_bits"):
+            return (b"GET /ws-deflate HTTP/1.1\r\nHost: local\r\nConnection: Upgrade\r\n"
+                    b"Upgrade: websocket\r\nSec-WebSocket-Version: 13\r\n"
+                    b"Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
+                    b"Origin: https://local.test\r\nSec-WebSocket-Protocol: " + protocols +
+                    b"\r\nSec-WebSocket-Extensions: " + extension + b"\r\n\r\n")
+
+        with socket.create_connection(("127.0.0.1", self.port), timeout=2) as sock:
+            sock.settimeout(3)
+            with sock.makefile("rb") as stream:
+                sock.sendall(handshake())
+                headers = bytearray()
+                while not headers.endswith(b"\r\n\r\n"):
+                    headers.extend(stream.read(1))
+                self.assertIn(b"101 Switching Protocols", headers)
+                self.assertIn(b"Sec-WebSocket-Protocol: chat.v1\r\n", headers)
+                self.assertIn(b"Sec-WebSocket-Extensions: permessage-deflate; server_no_context_takeover; client_no_context_takeover; server_max_window_bits=9; client_max_window_bits=9\r\n", headers)
+                self.assertEqual(read_frame(stream), (0x81, b"ready"))
+                payload = compressed(b"a" * 80)
+                sock.sendall(frame(1, payload[:3], fin=False, compressed=True))
+                sock.sendall(frame(9, b"p"))
+                self.assertEqual(read_frame(stream), (0x8a, b"p"))
+                sock.sendall(frame(0, payload[3:]))
+                first, data = read_frame(stream)
+                self.assertEqual(first, 0xc1)
+                self.assertEqual(zlib.decompress(data + b"\x00\x00\xff\xff\x01\x00\x00\xff\xff", -15), b"echo:" + b"a" * 80)
+                sock.sendall(frame(8, (1000).to_bytes(2, "big")))
+                self.assertEqual(read_frame(stream), (0x88, (1000).to_bytes(2, "big")))
+
+        # Unsupported offers are declined; malformed protocol tokens fail the upgrade.
+        self.assertIn(b"400 Bad Request", self.exchange(handshake(protocols=b"chat.v1, bad token")))
+        with socket.create_connection(("127.0.0.1", self.port), timeout=2) as sock:
+            sock.settimeout(3)
+            with sock.makefile("rb") as stream:
+                sock.sendall(handshake(protocols=b"other", extension=b"permessage-deflate; server_max_window_bits=10"))
+                headers = bytearray()
+                while not headers.endswith(b"\r\n\r\n"):
+                    headers.extend(stream.read(1))
+                self.assertIn(b"101 Switching Protocols", headers)
+                self.assertNotIn(b"Sec-WebSocket-Protocol:", headers)
+                self.assertNotIn(b"Sec-WebSocket-Extensions:", headers)
+                self.assertEqual(read_frame(stream), (0x81, b"ready"))
+                sock.sendall(frame(1, b"plain"))
+                self.assertEqual(read_frame(stream), (0x81, b"echo:plain"))
+                sock.sendall(frame(8, (1000).to_bytes(2, "big")))
+                self.assertEqual(read_frame(stream)[0], 0x88)
+
+        for invalid, code in ((frame(1, compressed(b"b" * 129), compressed=True), 1009),
+                              (frame(1, b"\xff", compressed=True), 1007),
+                              (frame(9, b"x", compressed=True), 1002)):
+            with socket.create_connection(("127.0.0.1", self.port), timeout=2) as sock:
+                sock.settimeout(3)
+                with sock.makefile("rb") as stream:
+                    sock.sendall(handshake())
+                    while stream.readline() != b"\r\n":
+                        pass
+                    self.assertEqual(read_frame(stream), (0x81, b"ready"))
+                    sock.sendall(invalid)
+                    first, data = read_frame(stream)
+                    self.assertEqual(first, 0x88)
+                    self.assertEqual(data[:2], code.to_bytes(2, "big"))
 
     def test_producer_failure_closes_connection_and_source(self):
         count = lambda: int(self.exchange(

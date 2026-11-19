@@ -9,6 +9,7 @@ Import BRL.SystemDefault
 Import BRL.FileSystem
 Import Embedded.Network.HTTPServer
 Import Embedded.Network.WebSocket
+Import Embedded.Network.WebSocketDeflate
 
 Global restartRequested:Int
 Global uploadAborted:Int
@@ -270,6 +271,10 @@ If Not server.Route("GET", "/events-send", New TEventsSendHandler) Then RuntimeE
 If Not server.Route("GET", "/events-finish", New TEventsFinishHandler) Then RuntimeError "route failed"
 If Not server.Route("GET", "/events-state", New TEventsStateHandler) Then RuntimeError "route failed"
 If Not server.RouteUpgrade("/ws", THTTPWebSocketUpgrade.Create(New TWebSocketHandler, 128, 512)) Then RuntimeError "WebSocket route failed"
+Local compressedUpgrade:THTTPWebSocketUpgrade = THTTPWebSocketUpgrade.Create(New TWebSocketHandler, 128, 512)
+If Not compressedUpgrade.SetSubprotocols(["chat.v2", "chat.v1"]) Then RuntimeError "WebSocket subprotocol configuration failed"
+compressedUpgrade.SetCompressionFactory(THTTPWebSocketDeflateFactory.Create())
+If Not server.RouteUpgrade("/ws-deflate", compressedUpgrade) Then RuntimeError "WebSocket deflate route failed"
 If Not server.Route("GET", "/ws-state", New TWebSocketStateHandler) Then RuntimeError "route failed"
 If Not server.RouteStream("POST", "/upload", New TUploadHandler) Then RuntimeError "stream route failed"
 If Not server.RouteStream("PUT", "/upload", New TUploadHandler) Then RuntimeError "PUT stream route failed"

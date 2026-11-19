@@ -40,6 +40,31 @@ server.RouteUpgrade("/messages", ..
     THTTPWebSocketUpgrade.Create(New TMessages, 4096, 4096))
 ```
 
+Subprotocols and compression are configured per route:
+
+```blitzmax
+Import Embedded.Network.WebSocketDeflate ' Only when this route needs compression.
+
+Local upgrade:THTTPWebSocketUpgrade = THTTPWebSocketUpgrade.Create(New TMessages, 4096, 4096)
+If Not upgrade.SetSubprotocols(["messages.v2", "messages.v1"]) Then ..
+    RuntimeError "Invalid WebSocket subprotocol"
+upgrade.SetCompressionFactory(THTTPWebSocketDeflateFactory.Create())
+server.RouteUpgrade("/messages", upgrade)
+```
+
+The server selects the first client-offered subprotocol it supports and exposes
+it through `socket.Subprotocol()`. With no match, the upgrade succeeds without
+a subprotocol. Invalid protocol tokens reject the handshake. Unknown extensions
+are ignored. `WebSocketDeflate` is a separate module, so applications that do
+not import it omit the compression code. A route only negotiates compression
+when `SetCompressionFactory` is called and the client offers
+`permessage-deflate` with `client_max_window_bits`. The response sets both
+directions to a 9-bit window with no context takeover. Offers that cannot
+support these limits are declined; the connection then uses uncompressed
+WebSocket messages. On negotiated connections, short messages may still be
+sent uncompressed when deflate would make them larger. Decompression is bounded
+by the route's `maxMessageBytes` limit.
+
 Callbacks run from `THTTPServer.Service()` on the managed application context.
 `SendText` and `SendBinary` return `False` when the bounded output queue is full
 or closing. The two `Create` limits set the maximum complete message
@@ -53,15 +78,15 @@ the session when its socket closes and calls `Closed` once.
 The module accepts masked client frames, reassembles fragmented text or binary
 messages within the configured limit, validates text as UTF-8, replies to
 pings, handles close frames, and sends idle pings. It rejects unsupported
-opcodes and RSV bits. It does not negotiate extensions, compression, or
-subprotocols. Applications should authenticate and check `Origin` in `Accept`;
+opcodes and unnegotiated RSV bits. Applications should authenticate and check
+`Origin` in `Accept`;
 the WebSocket handshake alone does not authorize a client.
 
 `tests/httpserver_ws_device.bmx` is a portable HTTPS test image. Fill a local
 copy with Wi-Fi and temporary test credentials, then run
 `python3 tests/test_httpserver_ws_device.py BOARD_IP test-cert.pem`. The host
 wire tests cover the handshake, frames, protocol errors, and rejected upgrades.
-All 20 host wire tests pass. Five repeated trusted WSS sessions pass on Pico
-2 W and ESP32-S31 with 256 KiB managed heaps, including fragmented text,
-ping/pong, binary echo, and close. A separate HTTP-only build confirms that
-this module is excluded unless imported.
+All 21 host wire tests pass. Five repeated trusted WSS sessions pass on Pico
+2 W and ESP32-S31 with 256 KiB managed heaps, including subprotocol selection,
+compressed round trips, fragmented text, ping/pong, binary echo, and close.
+A separate HTTP-only build confirms that this module is excluded unless imported.
