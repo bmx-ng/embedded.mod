@@ -34,18 +34,18 @@ def main():
     address = (args.ip, args.port)
 
     status = exchange(address, context, args.hostname,
-        [b"GET /status HTTP/1.1\r\nHost: blitzmax-test.local\r\n\r\n"])
+        [b"GET /status HTTP/1.1\r\nHost: blitzmax-test.local\r\nConnection: close\r\n\r\n"])
     assert b"200 OK" in status and b'"status":"ok"' in status, status
 
     echo = exchange(address, context, args.hostname, [
         b"POST /echo HTTP/1.1\r\nHost: blitzmax-test.local\r\n",
-        b"Content-Length: 11\r\n\r\nhello ",
+        b"Content-Length: 11\r\nConnection: close\r\n\r\nhello ",
         b"world",
     ])
     assert b"200 OK" in echo and echo.endswith(b"hello world"), echo
 
     missing = exchange(address, context, args.hostname,
-        [b"GET /missing HTTP/1.1\r\nHost: blitzmax-test.local\r\n\r\n"])
+        [b"GET /missing HTTP/1.1\r\nHost: blitzmax-test.local\r\nConnection: close\r\n\r\n"])
     assert b"404 Not Found" in missing, missing
     print("Verified HTTPS handshake, GET, fragmented POST, and 404 response")
 

@@ -177,4 +177,6 @@ For the optional connection reuse and chunked-body image, run
 one connection, a fragmented chunked echo, a 32 KiB streamed chunked upload,
 and conflicting framing rejection. These checks passed on an ESP32-S31 over
 both HTTP and verified HTTPS, including 20 repeated HTTP rounds and 10 HTTPS
-rounds.
+rounds. They also passed on a Pico 2 W over verified HTTPS, including 10
+repeated rounds. The original HTTPS handshake, GET, fragmented POST, and 404
+checks passed again on both boards with the connection-reuse image.
