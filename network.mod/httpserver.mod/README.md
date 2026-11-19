@@ -158,4 +158,7 @@ after restoration on both boards.
 Keep-alive, chunked transfer, range/cache responses, SSE, WebSockets,
 multipart, authentication helpers, captive-portal workflows and OTA are later
 layers. The HTTPS adapter has target build coverage, but its handshake and
-transfer behavior still needs an on-device test on both boards.
+transfer behavior still needs an on-device test on both boards. After flashing
+an HTTPS variant of the device example with a test certificate, run
+`python3 tests/test_httpserver_tls_device.py BOARD_IP test-cert.pem`. The test
+checks a trusted handshake, GET, a fragmented POST and a 404 response.
