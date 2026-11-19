@@ -32,6 +32,12 @@ typedef struct {
     int handshaken;
 } BMXHTTPSTLSConnection;
 
+static int tls_last_stage;
+static int tls_last_error;
+
+int bmx_httpstls_last_stage(void) { return tls_last_stage; }
+int bmx_httpstls_last_error(void) { return tls_last_error; }
+
 static int tls_send(void *context, const unsigned char *buffer, size_t count) {
     int result = bmx_net_try_send(((BMXHTTPSTLSConnection *)context)->socket, buffer, count);
     return result == -2 ? MBEDTLS_ERR_SSL_WANT_WRITE :
@@ -58,6 +64,8 @@ void bmx_httpstls_free(BMXHTTPSTLS *server) {
 
 BMXHTTPSTLS *bmx_httpstls_create(const unsigned char *certificate, size_t certificate_length,
     const unsigned char *key, size_t key_length) {
+    tls_last_stage = 0;
+    tls_last_error = 0;
     if (!certificate || !key || certificate_length < 2 || key_length < 2) return NULL;
     BMXHTTPSTLS *server = (BMXHTTPSTLS *)calloc(1, sizeof(*server));
     if (!server) return NULL;
@@ -76,16 +84,20 @@ BMXHTTPSTLS *bmx_httpstls_create(const unsigned char *certificate, size_t certif
     result = mbedtls_ctr_drbg_seed(&server->rng, mbedtls_entropy_func,
         &server->entropy, label, sizeof(label) - 1);
 #endif
+    if (result) tls_last_stage = 1;
     if (!result) result = mbedtls_x509_crt_parse(&server->certificate,
         certificate, certificate_length);
+    if (result && !tls_last_stage) tls_last_stage = 2;
 #if MBEDTLS_VERSION_MAJOR >= 4
     if (!result) result = mbedtls_pk_parse_key(&server->key, key, key_length, NULL, 0);
 #else
     if (!result) result = mbedtls_pk_parse_key(&server->key, key, key_length,
         NULL, 0, mbedtls_ctr_drbg_random, &server->rng);
 #endif
+    if (result && !tls_last_stage) tls_last_stage = 3;
     if (!result) result = mbedtls_ssl_config_defaults(&server->config,
         MBEDTLS_SSL_IS_SERVER, MBEDTLS_SSL_TRANSPORT_STREAM, MBEDTLS_SSL_PRESET_DEFAULT);
+    if (result && !tls_last_stage) tls_last_stage = 4;
     if (!result) {
 #if MBEDTLS_VERSION_MAJOR < 4
         mbedtls_ssl_conf_rng(&server->config, mbedtls_ctr_drbg_random, &server->rng);
@@ -93,7 +105,9 @@ BMXHTTPSTLS *bmx_httpstls_create(const unsigned char *certificate, size_t certif
         result = mbedtls_ssl_conf_own_cert(&server->config,
             &server->certificate, &server->key);
     }
+    if (result && !tls_last_stage) tls_last_stage = 5;
     if (result) {
+        tls_last_error = result;
         bmx_httpstls_free(server);
         return NULL;
     }

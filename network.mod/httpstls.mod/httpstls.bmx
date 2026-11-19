@@ -27,6 +27,8 @@ Extern "C"
 	Function _TLSRecv:Int(connection:Byte Ptr, buffer:Byte Ptr, count:Size_T) = "bmx_httpstls_recv"
 	Function _TLSSend:Int(connection:Byte Ptr, buffer:Byte Ptr, count:Size_T) = "bmx_httpstls_send"
 	Function _TLSClose(connection:Byte Ptr) = "bmx_httpstls_close"
+	Function _TLSLastStage:Int() = "bmx_httpstls_last_stage"
+	Function _TLSLastError:Int() = "bmx_httpstls_last_error"
 End Extern
 
 Public
@@ -93,7 +95,17 @@ Type THTTPSTLSListener Implements IHTTPListener
 		MemFree(certBytes)
 		MemFree(keyBytes)
 		If Not context Then
-			errorText = "TLS certificate, private key, or random source initialization failed"
+			Local stage:String
+			Select _TLSLastStage()
+				Case 1 stage = "random source"
+				Case 2 stage = "certificate"
+				Case 3 stage = "private key"
+				Case 4 stage = "TLS configuration"
+				Case 5 stage = "certificate and key pairing"
+				Default stage = "allocation"
+			End Select
+			errorText = "TLS initialization failed: " + stage + ..
+				" (mbedTLS " + _TLSLastError() + ")"
 			Return False
 		End If
 		listener = TSocket.CreateTCP()
