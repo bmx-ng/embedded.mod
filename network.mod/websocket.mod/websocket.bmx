@@ -23,6 +23,17 @@ Const WebSocketInvalidData:Int = 1007
 Const WebSocketMessageTooBig:Int = 1009
 Const WebSocketInternalError:Int = 1011
 
+Private
+' RFC 6455 frame opcodes. Continuation also marks no active fragmented message.
+Const WSOpcodeContinuation:Int = $0
+Const WSOpcodeText:Int = $1
+Const WSOpcodeBinary:Int = $2
+Const WSOpcodeClose:Int = $8
+Const WSOpcodePing:Int = $9
+Const WSOpcodePong:Int = $a
+Const WSOpcodeMask:Int = $0f
+
+Public
 Rem
 bbdoc: Callbacks for one WebSocket route.
 about: Accept runs before the upgrade, so applications can check Origin or
@@ -286,13 +297,13 @@ Type THTTPWebSocket Implements IHTTPUpgradedSession
 	End Function
 
 	Method _Queue:Int(opcode:Int, data:Byte[], compressed:Int = False)
-		If closed Or (closing And opcode <> 8 And opcode <> 10) Then Return False
+		If closed Or (closing And opcode <> WSOpcodeClose And opcode <> WSOpcodePong) Then Return False
 		Local length:Int = data.length
 		Local header:Int = 2
 		If length > 125 And length <= 65535 Then header = 4
 		If length > 65535 Then header = 10
 		Local available:Int = tx.length - txCount
-		If opcode = 1 Or opcode = 2 Then available :- 128
+		If opcode = WSOpcodeText Or opcode = WSOpcodeBinary Then available :- 128
 		If length + header > available Then Return False
 		Local frame:Byte[] = New Byte[length + header]
 		frame[0] = Byte($80 | opcode | (compressed Shl 6))
@@ -342,7 +353,7 @@ Type THTTPWebSocket Implements IHTTPUpgradedSession
 		If value.length > maxMessage Then Return False
 		Local data:Byte[] = _WSBytes(value)
 		If data.length > maxMessage Then Return False
-		Return _QueueMessage(1, data)
+		Return _QueueMessage(WSOpcodeText, data)
 	End Method
 
 	Rem
@@ -352,7 +363,7 @@ Type THTTPWebSocket Implements IHTTPUpgradedSession
 	End Rem
 	Method SendBinary:Int(data:Byte[])
 		If closed Or closing Or Not data Or data.length > maxMessage Then Return False
-		Return _QueueMessage(2, data)
+		Return _QueueMessage(WSOpcodeBinary, data)
 	End Method
 
 	Rem
@@ -395,7 +406,7 @@ Type THTTPWebSocket Implements IHTTPUpgradedSession
 		closing = True
 		closeCode = code
 		closeStarted = MilliSecs()
-		_QueueControl(8, payload)
+		_QueueControl(WSOpcodeClose, payload)
 	End Method
 
 	Rem
@@ -441,7 +452,7 @@ Type THTTPWebSocket Implements IHTTPUpgradedSession
 			Disconnect(WebSocketGoingAway)
 		End If
 		If Not closing And Not awaitingPong And MilliSecs() - lastActivity >= 30000 Then
-			If _Queue(9, New Byte[0]) Then
+			If _Queue(WSOpcodePing, New Byte[0]) Then
 				awaitingPong = True
 				pingStarted = MilliSecs()
 			End If
@@ -476,16 +487,16 @@ Type THTTPWebSocket Implements IHTTPUpgradedSession
 			payload = codec.Decode(payload, maxMessage)
 			If Not payload Then _Fail(codec.DecodeFailureCode()); Return
 		End If
-		If opcode = 1 And Not _WSValidUTF8(payload, 0, payload.length) Then
+		If opcode = WSOpcodeText And Not _WSValidUTF8(payload, 0, payload.length) Then
 			_Fail(WebSocketInvalidData)
 			Return
 		End If
-		handler.Message(Self, payload, opcode = 1)
+		handler.Message(Self, payload, opcode = WSOpcodeText)
 	End Method
 
 	Method _Frame(opcode:Int, fin:Int, payload:Byte[], compressed:Int)
 		Select opcode
-			Case 8
+			Case WSOpcodeClose
 				If payload.length = 1 Then _Fail(WebSocketProtocolError); Return
 				If payload.length >= 2 Then
 					Local code:Int = ((payload[0] & 255) Shl 8) | (payload[1] & 255)
@@ -500,14 +511,14 @@ Type THTTPWebSocket Implements IHTTPUpgradedSession
 				If Not closing Then
 					closing = True
 					closeStarted = MilliSecs()
-					If Not _QueueControl(8, payload) Then _Fail(WebSocketProtocolError)
+					If Not _QueueControl(WSOpcodeClose, payload) Then _Fail(WebSocketProtocolError)
 				End If
-			Case 9
-				If Not closing And Not _QueueControl(10, payload) Then _Fail(WebSocketProtocolError)
-			Case 10
+			Case WSOpcodePing
+				If Not closing And Not _QueueControl(WSOpcodePong, payload) Then _Fail(WebSocketProtocolError)
+			Case WSOpcodePong
 				If awaitingPong And payload.length = 0 Then awaitingPong = False
-			Case 0
-				If Not fragmentOpcode Then _Fail(WebSocketProtocolError); Return
+			Case WSOpcodeContinuation
+				If fragmentOpcode = WSOpcodeContinuation Then _Fail(WebSocketProtocolError); Return
 				If payload.length > maxMessage - messageCount Then _Fail(WebSocketMessageTooBig); Return
 				For Local i:Int = 0 Until payload.length
 					message[messageCount + i] = payload[i]
@@ -520,13 +531,13 @@ Type THTTPWebSocket Implements IHTTPUpgradedSession
 					Next
 					Local kind:Int = fragmentOpcode
 					Local wasCompressed:Int = fragmentCompressed
-					fragmentOpcode = 0
+					fragmentOpcode = WSOpcodeContinuation
 					fragmentCompressed = False
 					messageCount = 0
 					_Deliver(kind, complete, wasCompressed)
 				End If
-			Case 1, 2
-				If fragmentOpcode Then _Fail(WebSocketProtocolError); Return
+			Case WSOpcodeText, WSOpcodeBinary
+				If fragmentOpcode <> WSOpcodeContinuation Then _Fail(WebSocketProtocolError); Return
 				If fin Then
 					_Deliver(opcode, payload, compressed)
 				Else
@@ -547,12 +558,14 @@ Type THTTPWebSocket Implements IHTTPUpgradedSession
 			Local first:Int = rx[0] & 255
 			Local second:Int = rx[1] & 255
 			Local fin:Int = (first & $80) <> 0
-			Local opcode:Int = first & 15
+			Local opcode:Int = first & WSOpcodeMask
 			Local compressed:Int = (first & $40) <> 0
-			If (first & $30) <> 0 Or (compressed And (Not codec Or opcode <> 1 And opcode <> 2)) Or ..
+			If (first & $30) <> 0 Or (compressed And (Not codec Or ..
+				opcode <> WSOpcodeText And opcode <> WSOpcodeBinary)) Or ..
 				(second & $80) = 0 Or ..
-				(opcode <> 0 And opcode <> 1 And opcode <> 2 And ..
-					opcode <> 8 And opcode <> 9 And opcode <> 10) Then
+				(opcode <> WSOpcodeContinuation And opcode <> WSOpcodeText And ..
+					opcode <> WSOpcodeBinary And opcode <> WSOpcodeClose And ..
+					opcode <> WSOpcodePing And opcode <> WSOpcodePong) Then
 				_Fail(WebSocketProtocolError)
 				Return
 			End If
@@ -574,7 +587,8 @@ Type THTTPWebSocket Implements IHTTPUpgradedSession
 				If length < 65536 Then _Fail(WebSocketProtocolError); Return
 				header = 10
 			End If
-			If opcode >= 8 And (Not fin Or length > 125) Then _Fail(WebSocketProtocolError); Return
+			If opcode >= WSOpcodeClose And (Not fin Or length > 125) Then ..
+				_Fail(WebSocketProtocolError); Return
 			If length > maxMessage Or length + header + 4 > rx.length Then
 				_Fail(WebSocketMessageTooBig)
 				Return
