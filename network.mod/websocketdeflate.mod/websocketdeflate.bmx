@@ -38,11 +38,17 @@ End Rem
 Type THTTPWebSocketDeflateFactory Implements IHTTPWebSocketCompressionFactory
 	Rem
 	bbdoc: Creates a factory to negotiate compression per connection.
+	returns: A factory for THTTPWebSocketUpgrade.SetCompressionFactory.
 	End Rem
 	Function Create:THTTPWebSocketDeflateFactory()
 		Return New THTTPWebSocketDeflateFactory
 	End Function
 
+	Rem
+	bbdoc: Accepts a compatible permessage-deflate offer.
+	param: Combined extension offers from the client's handshake.
+	returns: A new codec, or Null when no compatible offer is present.
+	End Rem
 	Method Negotiate:IHTTPWebSocketCompression(offers:String)
 		For Local offer:String = EachIn offers.Split(",")
 			Local parts:String[] = offer.Split(";")
@@ -96,10 +102,19 @@ End Rem
 Type THTTPWebSocketDeflate Implements IHTTPWebSocketCompression
 	Field lastDecodeError:Int = WebSocketInvalidData
 
+	Rem
+	bbdoc: Describes the negotiated 9-bit, no-context-takeover extension.
+	returns: Value for the Sec-WebSocket-Extensions response header.
+	End Rem
 	Method ResponseHeader:String()
 		Return "permessage-deflate; server_no_context_takeover; client_no_context_takeover; server_max_window_bits=9; client_max_window_bits=9"
 	End Method
 
+	Rem
+	bbdoc: Compresses one outgoing WebSocket message.
+	param: Complete uncompressed message bytes.
+	returns: Encoded bytes, or Null if compression fails.
+	End Rem
 	Method Encode:Byte[](data:Byte[])
 		Local output:Byte[] = New Byte[data.length + 64]
 		Local count:Int = _ws_deflate(Varptr data[0], data.length, Varptr output[0], output.length)
@@ -107,6 +122,12 @@ Type THTTPWebSocketDeflate Implements IHTTPWebSocketCompression
 		Return output[..count]
 	End Method
 
+	Rem
+	bbdoc: Decompresses one message within the route's size limit.
+	param: Complete compressed message bytes.
+	param: Maximum permitted decoded bytes.
+	returns: Decoded bytes, or Null for invalid data or a limit failure.
+	End Rem
 	Method Decode:Byte[](data:Byte[], maxOutput:Int)
 		Local output:Byte[] = New Byte[maxOutput + 1]
 		Local input:Byte Ptr
@@ -121,6 +142,10 @@ Type THTTPWebSocketDeflate Implements IHTTPWebSocketCompression
 		Return output[..count]
 	End Method
 
+	Rem
+	bbdoc: Gets the close code for the latest decompression failure.
+	returns: Invalid-data, message-too-big or internal-error close code.
+	End Rem
 	Method DecodeFailureCode:Int()
 		Return lastDecodeError
 	End Method

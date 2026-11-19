@@ -49,6 +49,12 @@ Type THTTPSTLSConnection Implements IHTTPConnection
 	Field context:Byte Ptr
 
 	Public
+	Rem
+	bbdoc: Wraps an accepted socket and native TLS connection.
+	param: Accepted TCP socket owned by this wrapper.
+	param: Native TLS connection context owned by this wrapper.
+	returns: A connection wrapper for the HTTP listener.
+	End Rem
 	Function Create:THTTPSTLSConnection(accepted:TSocket, native:Byte Ptr)
 		Local connection:THTTPSTLSConnection = New THTTPSTLSConnection
 		connection.socket = accepted
@@ -56,21 +62,40 @@ Type THTTPSTLSConnection Implements IHTTPConnection
 		Return connection
 	End Function
 
+	Rem
+	bbdoc: Tries to read decrypted bytes without blocking.
+	param: Destination buffer for received bytes.
+	param: Maximum number of bytes to receive.
+	returns: Byte count, HTTPWouldBlock, zero on close, or a negative error.
+	End Rem
 	Method TryRecv:Int(buffer:Byte Ptr, count:Size_T)
 		If Not context Then Return -1
 		Return _TLSRecv(context, buffer, count)
 	End Method
 
+	Rem
+	bbdoc: Tries to send encrypted bytes without blocking.
+	param: Source buffer containing bytes to send.
+	param: Maximum number of bytes to send.
+	returns: Byte count, HTTPWouldBlock, zero on close, or a negative error.
+	End Rem
 	Method TrySend:Int(buffer:Byte Ptr, count:Size_T)
 		If Not context Then Return -1
 		Return _TLSSend(context, buffer, count)
 	End Method
 
+	Rem
+	bbdoc: Gets the accepted peer's IP address.
+	returns: Remote IP address as text.
+	End Rem
 	Method RemoteIP:String()
 		If socket Then Return socket.RemoteIp()
 		Return ""
 	End Method
 
+	Rem
+	bbdoc: Releases this TLS connection and its underlying socket.
+	End Rem
 	Method Close()
 		If context Then _TLSClose(context)
 		context = Null
@@ -97,7 +122,10 @@ Type THTTPSTLSListener Implements IHTTPListener
 	Public
 	Rem
 	bbdoc: Creates a listener from a PEM certificate and matching private key.
-	about: Returns Null when either input is empty. Start validates the pair.
+	param: PEM-encoded server certificate text.
+	param: PEM-encoded matching private key text.
+	returns: A listener, or Null when either credential is empty.
+	about: Start validates the pair before binding the socket.
 	End Rem
 	Function Create:THTTPSTLSListener(certificatePEM:String, privateKeyPEM:String)
 		If Not certificatePEM Or Not privateKeyPEM Then Return Null
@@ -109,8 +137,11 @@ Type THTTPSTLSListener Implements IHTTPListener
 
 	Rem
 	bbdoc: Creates a listener that reads PEM files from mounted storage at Start.
-	about: Returns Null for empty paths. Paths may use littlefs:: on Pico W or
-	ESP32. Each file is limited to #HTTPSTLSMaxPEMBytes bytes. Call
+	param: Mounted path to the PEM certificate file.
+	param: Mounted path to the matching PEM private key file.
+	returns: A listener, or Null when either path is empty.
+	about: Paths may use littlefs:: on Pico W or ESP32. Each file is limited
+	to #HTTPSTLSMaxPEMBytes bytes. Call
 	#ReplaceFromFiles between Stop and Start to read changed files.
 	End Rem
 	Function CreateFromFiles:THTTPSTLSListener(certificateFile:String, privateKeyFile:String)
@@ -219,6 +250,9 @@ Type THTTPSTLSListener Implements IHTTPListener
 	Public
 	Rem
 	bbdoc: Validates and replaces the certificate and key while stopped.
+	param: PEM-encoded replacement certificate text.
+	param: PEM-encoded matching replacement private key text.
+	returns: True when validated and installed; False with detail from LastError.
 	about: A failed replacement leaves the previous credentials available.
 	End Rem
 	Method ReplaceCredentials:Int(certificatePEM:String, privateKeyPEM:String)
@@ -234,6 +268,9 @@ Type THTTPSTLSListener Implements IHTTPListener
 
 	Rem
 	bbdoc: Reads and validates replacement PEM files for the next Start.
+	param: Mounted path to the replacement certificate file.
+	param: Mounted path to the matching replacement private key file.
+	returns: True when validated and installed; False with detail from LastError.
 	about: Call after THTTPServer.Stop. A failed replacement preserves the
 	previous credentials. The files need only be available during this call.
 	End Rem
@@ -256,6 +293,12 @@ Type THTTPSTLSListener Implements IHTTPListener
 		Return True
 	End Method
 
+	Rem
+	bbdoc: Starts the TLS listener after validating its credentials.
+	param: TCP port to bind.
+	param: Maximum pending connection backlog.
+	returns: True when listening; False with detail from LastError.
+	End Rem
 	Method Start:Int(port:Int, backlog:Int)
 		If listener Then Return True
 		If certificatePath And Not certificate Then
@@ -279,6 +322,10 @@ Type THTTPSTLSListener Implements IHTTPListener
 		Return False
 	End Method
 
+	Rem
+	bbdoc: Accepts a pending TLS connection without blocking.
+	returns: A connection, or Null when none is ready or allocation fails.
+	End Rem
 	Method Accept:IHTTPConnection()
 		If Not listener Then Return Null
 		Local socket:TSocket = listener.Accept(0)
@@ -292,6 +339,9 @@ Type THTTPSTLSListener Implements IHTTPListener
 		Return THTTPSTLSConnection.Create(socket, native)
 	End Method
 
+	Rem
+	bbdoc: Closes the listener and releases its TLS context.
+	End Rem
 	Method Close()
 		If listener Then listener.Close()
 		listener = Null
@@ -301,6 +351,7 @@ Type THTTPSTLSListener Implements IHTTPListener
 
 	Rem
 	bbdoc: Returns the latest listener or credential validation failure.
+	returns: Latest failure message, or an empty string when none is recorded.
 	End Rem
 	Method LastError:String()
 		Return errorText

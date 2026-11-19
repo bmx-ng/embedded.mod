@@ -96,6 +96,10 @@ Type THTTPServerConfig
 	End Rem
 	Field maxRequestsPerConnection:Int = 16
 
+	Rem
+	bbdoc: Copies all configuration values into a new object.
+	returns: A new configuration with the same field values.
+	End Rem
 	Method Copy:THTTPServerConfig()
 		Local result:THTTPServerConfig = New THTTPServerConfig
 		result.port = port
@@ -145,6 +149,8 @@ Type THTTPRequest
 
 	Rem
 	bbdoc: Returns a header value, or an empty string when absent.
+	param: Header name, matched without regard to case.
+	returns: The first matching value, or an empty string if absent.
 	End Rem
 	Method Header:String(name:String)
 		For Local item:THTTPField = EachIn headers
@@ -155,6 +161,8 @@ Type THTTPRequest
 
 	Rem
 	bbdoc: Returns a named path parameter, or an empty string when absent.
+	param: Parameter name captured by the route pattern.
+	returns: The captured value, or an empty string if absent.
 	End Rem
 	Method Parameter:String(name:String)
 		For Local item:THTTPField = EachIn parameters
@@ -165,6 +173,8 @@ Type THTTPRequest
 
 	Rem
 	bbdoc: Decodes the first matching query value, or returns an empty string.
+	param: Query field name to find after URL decoding.
+	returns: The decoded value, or an empty string if absent.
 	End Rem
 	Method QueryValue:String(name:String)
 		For Local part:String = EachIn query.Split("&")
@@ -180,6 +190,7 @@ Type THTTPRequest
 
 	Rem
 	bbdoc: Decodes a buffered request body as UTF-8 text.
+	returns: The decoded text, or an empty string for an empty body.
 	End Rem
 	Method BodyText:String()
 		If Not body Or body.length = 0 Then Return ""
@@ -205,6 +216,9 @@ Type THTTPResponse
 
 	Rem
 	bbdoc: Adds a response header, returning False if invalid or full.
+	param: Header field name.
+	param: Header field value.
+	returns: True when added; False for invalid, reserved or excessive headers.
 	about: Content-Length, Connection, Transfer-Encoding and Content-Type are
 	managed by the server and cannot be set here.
 	End Rem
@@ -226,6 +240,7 @@ Type THTTPResponse
 
 	Rem
 	bbdoc: Sets a UTF-8 plain-text response body.
+	param: Text to encode as the response body.
 	End Rem
 	Method Text(value:String)
 		contentType = "text/plain; charset=utf-8"
@@ -234,6 +249,7 @@ Type THTTPResponse
 
 	Rem
 	bbdoc: Sets a UTF-8 HTML response body.
+	param: HTML text to encode as the response body.
 	End Rem
 	Method Html(value:String)
 		contentType = "text/html; charset=utf-8"
@@ -242,6 +258,7 @@ Type THTTPResponse
 
 	Rem
 	bbdoc: Sets a UTF-8 JSON response body.
+	param: JSON text to encode as the response body.
 	End Rem
 	Method Json(value:String)
 		contentType = "application/json; charset=utf-8"
@@ -250,6 +267,8 @@ Type THTTPResponse
 
 	Rem
 	bbdoc: Sets a byte-array response body and its MIME type.
+	param: Bytes to send as the response body.
+	param: MIME type, defaulting to application/octet-stream.
 	End Rem
 	Method Bytes(value:Byte[], mime:String = "application/octet-stream")
 		contentType = mime
@@ -258,6 +277,8 @@ Type THTTPResponse
 
 	Rem
 	bbdoc: Sets a redirect status and Location header with an empty body.
+	param: Target URL for the Location header.
+	param: Redirect status code, defaulting to 302.
 	End Rem
 	Method Redirect(location:String, code:Int = 302)
 		status = code
@@ -267,6 +288,9 @@ Type THTTPResponse
 
 	Rem
 	bbdoc: Sends a known-length stream without buffering the full response.
+	param: Open stream to read and close when transfer ends.
+	param: Exact number of bytes to send.
+	param: MIME type, defaulting to application/octet-stream.
 	about: The server closes the stream after transfer or disconnection.
 	End Rem
 	Method StreamFile(value:TStream, size:Long, mime:String = "application/octet-stream")
@@ -279,6 +303,8 @@ Type THTTPResponse
 
 	Rem
 	bbdoc: Sends an unknown-length stream until Read returns zero.
+	param: Open stream to read and close at EOF or disconnection.
+	param: MIME type, defaulting to application/octet-stream.
 	End Rem
 	Method StreamUnknown(value:TStream, mime:String = "application/octet-stream")
 		StreamFile(value, -1, mime)
@@ -286,6 +312,8 @@ Type THTTPResponse
 
 	Rem
 	bbdoc: Sends bytes from a nonblocking producer until it reports completion.
+	param: Producer to read and close when transfer ends.
+	param: MIME type, defaulting to application/octet-stream.
 	End Rem
 	Method Produce(value:IHTTPResponseProducer, mime:String = "application/octet-stream")
 		producer = value
@@ -297,6 +325,8 @@ Type THTTPResponse
 
 	Rem
 	bbdoc: Sends a server-sent event stream with no cached response body.
+	param: Event stream to attach to this response.
+	returns: True when attached; False if the stream is absent or headers are full.
 	End Rem
 	Method Events:Int(value:THTTPEventStream)
 		If Not value Or Not SetHeader("Cache-Control", "no-cache") Then Return False
@@ -306,6 +336,8 @@ Type THTTPResponse
 
 	Rem
 	bbdoc: Transfers this response's connection to an upgraded protocol.
+	param: Session that will service the upgraded connection.
+	returns: True when accepted; False if no session was supplied.
 	End Rem
 	Method Upgrade:Int(value:IHTTPUpgradedSession)
 		If Not value Then Return False
@@ -320,6 +352,11 @@ bbdoc: Callback for a buffered HTTP route.
 about: Handle runs from THTTPServer.Service and should return promptly.
 End Rem
 Interface IHTTPHandler
+	Rem
+	bbdoc: Builds a response for a buffered request.
+	param: Parsed request, including its buffered body.
+	param: Response to populate.
+	End Rem
 	Method Handle(request:THTTPRequest, response:THTTPResponse)
 End Interface
 
@@ -332,18 +369,26 @@ End Rem
 Interface IHTTPBodyHandler
 	Rem
 	bbdoc: Initializes per-request state after headers are accepted.
+	param: Parsed request; context may hold handler state.
+	param: Response to populate after the body completes.
 	End Rem
 	Method Begin(request:THTTPRequest, response:THTTPResponse)
 	Rem
 	bbdoc: Receives at most ioBufferBytes of the request body per call.
+	param: Request whose body is being streamed.
+	param: Response to populate after the body completes.
+	param: Next bytes of the request body.
 	End Rem
 	Method Chunk(request:THTTPRequest, response:THTTPResponse, data:Byte[])
 	Rem
 	bbdoc: Finishes a complete streamed request body.
+	param: Request whose body has fully arrived.
+	param: Response to send to the client.
 	End Rem
 	Method Complete(request:THTTPRequest, response:THTTPResponse)
 	Rem
 	bbdoc: Cleans up a body interrupted before Complete.
+	param: Interrupted request, including any handler context.
 	End Rem
 	Method Abort(request:THTTPRequest)
 End Interface
@@ -358,8 +403,11 @@ End Rem
 Interface IHTTPResponseProducer
 	Rem
 	bbdoc: Provides available bytes without blocking the server loop.
-	about: Return 1..capacity bytes, HTTPWouldBlock, zero for EOF, or a
-	negative error value. The server calls this during Service.
+	param: Destination buffer for available bytes.
+	param: Maximum number of bytes to write.
+	returns: A positive byte count, HTTPWouldBlock, zero at EOF, or a negative error.
+	about: The server calls this during Service. Return promptly even when no
+	data is ready.
 	End Rem
 	Method TryRead:Int(buffer:Byte Ptr, capacity:Int)
 	Rem
@@ -403,9 +451,10 @@ Type THTTPEventStream Implements IHTTPResponseProducer
 	Public
 	Rem
 	bbdoc: Creates an event stream with a bounded queue and idle heartbeat.
-	about: Returns Null if the queue size is outside 64..65536 bytes, the
-	heartbeat is between 1 and 99 milliseconds, or allocation fails. Zero
-	disables the heartbeat.
+	param: Pending event bytes to buffer, from 64 to 65536.
+	param: Idle heartbeat interval in milliseconds; zero disables heartbeats.
+	returns: A new event stream, or Null for invalid limits or allocation failure.
+	about: A nonzero heartbeat interval must be at least 100 milliseconds.
 	End Rem
 	Function Create:THTTPEventStream(maxPendingBytes:Int = 4096, heartbeatIntervalMs:UInt = 5000)
 		If maxPendingBytes < 64 Or maxPendingBytes > 65536 Or ..
@@ -426,8 +475,12 @@ Type THTTPEventStream Implements IHTTPResponseProducer
 
 	Rem
 	bbdoc: Queues one event. Line breaks in data become separate data fields.
-	about: eventName and id must be single lines. The id is sent to clients on
-	reconnect as Last-Event-ID, which the route can read from the request.
+	param: Event data; line breaks become separate data fields.
+	param: Optional event type, restricted to one line.
+	param: Optional event ID, restricted to one line.
+	returns: True when queued; False if invalid, full, finished or closed.
+	about: The client sends the last received ID on reconnect as Last-Event-ID,
+	which the route can read from the request.
 	End Rem
 	Method Send:Int(data:String, eventName:String = "", id:String = "")
 		If closed Or finished Then Return False
@@ -467,6 +520,8 @@ Type THTTPEventStream Implements IHTTPResponseProducer
 
 	Rem
 	bbdoc: Queues a comment, which does not dispatch an event in the client.
+	param: Single-line comment text.
+	returns: True when queued; False if invalid, full, finished or closed.
 	End Rem
 	Method Comment:Int(value:String)
 		If value.Find(Chr(0)) >= 0 Or value.Find(Chr(13)) >= 0 Or ..
@@ -476,6 +531,8 @@ Type THTTPEventStream Implements IHTTPResponseProducer
 
 	Rem
 	bbdoc: Advises the browser how long to wait before reconnecting.
+	param: Nonnegative reconnect delay in milliseconds.
+	returns: True when queued; False if invalid, full, finished or closed.
 	End Rem
 	Method Retry:Int(milliseconds:Int)
 		If milliseconds < 0 Then Return False
@@ -491,6 +548,7 @@ Type THTTPEventStream Implements IHTTPResponseProducer
 
 	Rem
 	bbdoc: Reports whether this event stream has completed or disconnected.
+	returns: True after completion or disconnection; otherwise False.
 	End Rem
 	Method IsClosed:Int()
 		Return closed
@@ -498,11 +556,18 @@ Type THTTPEventStream Implements IHTTPResponseProducer
 
 	Rem
 	bbdoc: Returns the number of event bytes still queued for sending.
+	returns: Number of bytes waiting in the event queue.
 	End Rem
 	Method PendingBytes:Int()
 		Return pending
 	End Method
 
+	Rem
+	bbdoc: Reads queued event bytes or emits a due heartbeat.
+	param: Destination buffer for outgoing bytes.
+	param: Maximum number of bytes to write.
+	returns: Byte count, HTTPWouldBlock, zero after Finish drains, or a negative error.
+	End Rem
 	Method TryRead:Int(buffer:Byte Ptr, capacity:Int)
 		If closed Or Not buffer Or capacity <= 0 Then Return -1
 		If pending > 0 Then
@@ -527,6 +592,9 @@ Type THTTPEventStream Implements IHTTPResponseProducer
 		Return HTTPWouldBlock
 	End Method
 
+	Rem
+	bbdoc: Marks the event stream closed and releases its queue.
+	End Rem
 	Method Close()
 		closed = True
 		finished = True
@@ -539,6 +607,11 @@ Rem
 bbdoc: Optional callback that builds an HTTP error response.
 End Rem
 Interface IHTTPErrorHandler
+	Rem
+	bbdoc: Builds a response for an HTTP error status.
+	param: HTTP status code to handle.
+	param: Error response to populate.
+	End Rem
 	Method HandleError(status:Int, response:THTTPResponse)
 End Interface
 
@@ -546,9 +619,28 @@ Rem
 bbdoc: Optional nonblocking connection transport for HTTP, including TLS.
 End Rem
 Interface IHTTPConnection
+	Rem
+	bbdoc: Tries to receive bytes without blocking.
+	param: Destination buffer for received bytes.
+	param: Maximum number of bytes to receive.
+	returns: Byte count, HTTPWouldBlock, zero on close, or a negative error.
+	End Rem
 	Method TryRecv:Int(buffer:Byte Ptr, count:Size_T)
+	Rem
+	bbdoc: Tries to send bytes without blocking.
+	param: Source buffer containing bytes to send.
+	param: Maximum number of bytes to send.
+	returns: Byte count, HTTPWouldBlock, zero on close, or a negative error.
+	End Rem
 	Method TrySend:Int(buffer:Byte Ptr, count:Size_T)
+	Rem
+	bbdoc: Gets the remote peer address.
+	returns: Remote IP address as text.
+	End Rem
 	Method RemoteIP:String()
+	Rem
+	bbdoc: Releases the transport connection.
+	End Rem
 	Method Close()
 End Interface
 
@@ -556,8 +648,24 @@ Rem
 bbdoc: Transport view given to a protocol after an HTTP upgrade.
 End Rem
 Interface IHTTPUpgradedIO
+	Rem
+	bbdoc: Tries to receive bytes from the upgraded connection.
+	param: Destination buffer for received bytes.
+	param: Maximum number of bytes to receive.
+	returns: Byte count, HTTPWouldBlock, zero on close, or a negative error.
+	End Rem
 	Method TryRecv:Int(buffer:Byte Ptr, count:Size_T)
+	Rem
+	bbdoc: Tries to send bytes on the upgraded connection.
+	param: Source buffer containing bytes to send.
+	param: Maximum number of bytes to send.
+	returns: Byte count, HTTPWouldBlock, zero on close, or a negative error.
+	End Rem
 	Method TrySend:Int(buffer:Byte Ptr, count:Size_T)
+	Rem
+	bbdoc: Gets the remote peer address.
+	returns: Remote IP address as text.
+	End Rem
 	Method RemoteIP:String()
 End Interface
 
@@ -567,6 +675,8 @@ End Rem
 Interface IHTTPUpgradeHandler
 	Rem
 	bbdoc: Validates an upgrade request and prepares its response.
+	param: HTTP request carrying the upgrade headers.
+	param: Response to reject or transfer to an upgraded session.
 	End Rem
 	Method HandleUpgrade(request:THTTPRequest, response:THTTPResponse)
 End Interface
@@ -579,6 +689,8 @@ End Rem
 Interface IHTTPUpgradedSession
 	Rem
 	bbdoc: Advances one upgraded connection; return False to close it.
+	param: Nonblocking transport for the upgraded connection.
+	returns: True to keep the connection open; False to close it.
 	End Rem
 	Method Service:Int(io:IHTTPUpgradedIO)
 	Rem
@@ -591,9 +703,26 @@ Rem
 bbdoc: Listener interface for an optional connection transport such as TLS.
 End Rem
 Interface IHTTPListener
+	Rem
+	bbdoc: Starts listening for transport connections.
+	param: TCP port to bind.
+	param: Maximum pending connection backlog.
+	returns: True on success; False with detail from LastError on failure.
+	End Rem
 	Method Start:Int(port:Int, backlog:Int)
+	Rem
+	bbdoc: Accepts the next available connection without blocking.
+	returns: A connection, or Null when none is ready.
+	End Rem
 	Method Accept:IHTTPConnection()
+	Rem
+	bbdoc: Closes the listener and its shared transport resources.
+	End Rem
 	Method Close()
+	Rem
+	bbdoc: Gets the latest listener failure detail.
+	returns: Failure message, or an empty string when none is recorded.
+	End Rem
 	Method LastError:String()
 End Interface
 
@@ -900,8 +1029,11 @@ Type THTTPServer
 	Public
 	Rem
 	bbdoc: Creates a server with copied settings and an optional transport.
-	about: Returns Null for invalid limits or allocation failure. Pass an
-	HTTPSTLS listener as transport to serve HTTPS.
+	param: Resource and timeout settings; Null uses the defaults.
+	param: Optional connection listener, such as an HTTPS listener.
+	returns: A new server, or Null for invalid settings or allocation failure.
+	about: Pass an HTTPSTLS listener to serve HTTPS. The configuration is copied
+	so later changes to the supplied object do not affect this server.
 	End Rem
 	Function Create:THTTPServer(settings:THTTPServerConfig = Null, transport:IHTTPListener = Null)
 		If Not settings Then settings = New THTTPServerConfig
@@ -940,8 +1072,11 @@ Type THTTPServer
 
 	Rem
 	bbdoc: Registers a buffered route before the server starts.
-	about: Paths may contain named :parameters. Returns False for invalid
-	arguments, a full route table, or registration after Start.
+	param: HTTP method token, such as GET or POST.
+	param: URL path pattern beginning with /.
+	param: Callback that builds the response.
+	returns: True when registered; False if invalid, full or already running.
+	about: Paths may contain named :parameters. Register routes before Start.
 	End Rem
 	Method Route:Int(method:String, path:String, handler:IHTTPHandler)
 		If running Or routeCount = routes.length Or Not handler Or ..
@@ -957,6 +1092,9 @@ Type THTTPServer
 
 	Rem
 	bbdoc: Registers a GET route for an optional HTTP upgrade protocol.
+	param: URL path pattern beginning with /.
+	param: Protocol handler that validates and performs the upgrade.
+	returns: True when registered; False if invalid, full or already running.
 	End Rem
 	Method RouteUpgrade:Int(path:String, handler:IHTTPUpgradeHandler)
 		If running Or routeCount = routes.length Or Not handler Or ..
@@ -972,6 +1110,10 @@ Type THTTPServer
 
 	Rem
 	bbdoc: Registers a POST or PUT route that receives bounded body chunks.
+	param: POST or PUT method.
+	param: URL path pattern beginning with /.
+	param: Incremental request-body callback.
+	returns: True when registered; False if invalid, full or already running.
 	End Rem
 	Method RouteStream:Int(method:String, path:String, handler:IHTTPBodyHandler)
 		If running Or routeCount = routes.length Or Not handler Or ..
@@ -987,6 +1129,10 @@ Type THTTPServer
 
 	Rem
 	bbdoc: Maps a URL prefix ending in / to a mounted file directory.
+	param: URL prefix beginning and ending with /.
+	param: Mounted directory containing the files to serve.
+	param: Public cache lifetime in seconds; zero omits the cache header.
+	returns: True when registered; False if invalid, full or already running.
 	about: Optional cacheMaxAgeSeconds sets a public cache lifetime. Register
 	static routes before Start and after mounting their storage.
 	End Rem
@@ -1006,6 +1152,7 @@ Type THTTPServer
 
 	Rem
 	bbdoc: Sets the callback used to prepare HTTP error responses.
+	param: Error handler to use for later responses, or Null to clear it.
 	End Rem
 	Method OnError(handler:IHTTPErrorHandler)
 		errorHandler = handler
@@ -1013,6 +1160,7 @@ Type THTTPServer
 
 	Rem
 	bbdoc: Returns the latest server or route failure detail.
+	returns: Latest failure message, or an empty string if none was recorded.
 	End Rem
 	Method LastError:String()
 		Return _lastError
@@ -1020,6 +1168,7 @@ Type THTTPServer
 
 	Rem
 	bbdoc: Returns the number of currently occupied connection slots.
+	returns: Count of active HTTP, SSE and upgraded connections.
 	End Rem
 	Method ActiveConnections:Int()
 		Local count:Int
@@ -1031,6 +1180,7 @@ Type THTTPServer
 
 	Rem
 	bbdoc: Starts listening, returning False on failure.
+	returns: True when running; False with detail from LastError on failure.
 	about: Call LastError for the failure detail. Repeated calls while already
 	running succeed.
 	End Rem
@@ -1690,6 +1840,8 @@ Type THTTPServer
 	Public
 	Rem
 	bbdoc: Advances at most maxSteps accepts and connection operations.
+	param: Maximum number of accept and connection steps for this call.
+	returns: Number of accept and connection steps performed.
 	about: Call frequently from the managed application context. Route callbacks,
 	stream producers and upgraded sessions run during this call.
 	End Rem
