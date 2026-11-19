@@ -8,12 +8,14 @@ Import BRL.System
 Import BRL.SystemDefault
 Import BRL.FileSystem
 Import Embedded.Network.HTTPServer
+Import Embedded.Network.WebSocket
 
 Global restartRequested:Int
 Global uploadAborted:Int
 Global producerClosed:Int
 Global eventStream:THTTPEventStream
 Global lastEventID:String
+Global webSocketClosed:Int
 
 Type TGeneratedProducer Implements IHTTPResponseProducer
 	Field remaining:Int
@@ -121,6 +123,36 @@ Type TEventsStateHandler Implements IHTTPHandler
 	End Method
 End Type
 
+Type TWebSocketHandler Implements IHTTPWebSocketHandler
+	Method Accept:Int(request:THTTPRequest)
+		Return request.Header("Origin") = "https://local.test"
+	End Method
+
+	Method Open(socket:THTTPWebSocket, request:THTTPRequest)
+		If Not socket.SendText("ready") Then RuntimeError "WebSocket open send failed"
+	End Method
+
+	Method Message(socket:THTTPWebSocket, data:Byte[], isText:Int)
+		If isText Then
+			Local value:String = ""
+			If data.length Then value = String.FromUTF8Bytes(Varptr data[0], data.length)
+			If Not socket.SendText("echo:" + value) Then RuntimeError "WebSocket text send failed"
+		Else
+			If Not socket.SendBinary(data) Then RuntimeError "WebSocket binary send failed"
+		End If
+	End Method
+
+	Method Closed(socket:THTTPWebSocket, code:Int)
+		webSocketClosed :+ 1
+	End Method
+End Type
+
+Type TWebSocketStateHandler Implements IHTTPHandler
+	Method Handle(request:THTTPRequest, response:THTTPResponse)
+		response.Text(webSocketClosed)
+	End Method
+End Type
+
 Type TStatusHandler Implements IHTTPHandler
 	Method Handle(request:THTTPRequest, response:THTTPResponse)
 		response.Json("{~qstatus~q:~qok~q}")
@@ -205,7 +237,7 @@ If AppArgs.length < 3 Then RuntimeError "expected port and document root"
 Local config:THTTPServerConfig = New THTTPServerConfig
 config.port = AppArgs[1].ToInt()
 config.maxConnections = 2
-config.maxRoutes = 24
+config.maxRoutes = 26
 config.keepAlive = True
 config.keepAliveTimeoutMs = 500
 config.maxRequestsPerConnection = 4
@@ -237,6 +269,8 @@ If Not server.Route("GET", "/events", New TEventsHandler) Then RuntimeError "rou
 If Not server.Route("GET", "/events-send", New TEventsSendHandler) Then RuntimeError "route failed"
 If Not server.Route("GET", "/events-finish", New TEventsFinishHandler) Then RuntimeError "route failed"
 If Not server.Route("GET", "/events-state", New TEventsStateHandler) Then RuntimeError "route failed"
+If Not server.RouteUpgrade("/ws", THTTPWebSocketUpgrade.Create(New TWebSocketHandler, 128, 512)) Then RuntimeError "WebSocket route failed"
+If Not server.Route("GET", "/ws-state", New TWebSocketStateHandler) Then RuntimeError "route failed"
 If Not server.RouteStream("POST", "/upload", New TUploadHandler) Then RuntimeError "stream route failed"
 If Not server.RouteStream("PUT", "/upload", New TUploadHandler) Then RuntimeError "PUT stream route failed"
 If Not server.Static("/assets/", AppArgs[2]) Then RuntimeError "static route failed"

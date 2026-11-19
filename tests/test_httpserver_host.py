@@ -2,6 +2,9 @@
 """Wire-level regressions for the shared embedded HTTP server on a host."""
 
 import pathlib
+import base64
+import hashlib
+import os
 import socket
 import subprocess
 import sys
@@ -220,6 +223,89 @@ class HTTPServerWireTests(unittest.TestCase):
                 self.assertTrue(state.endswith(b"0:42"))
                 self.exchange(b"GET /events-finish HTTP/1.1\r\nHost: local\r\n\r\n")
                 self.assertEqual(read_chunk(stream), b"")
+
+    def test_websocket_upgrade_frames_and_errors(self):
+        def client_frame(opcode, payload=b"", fin=True, masked=True):
+            first = opcode | (0x80 if fin else 0)
+            if len(payload) < 126:
+                header = bytes((first, len(payload) | (0x80 if masked else 0)))
+            else:
+                header = bytes((first, 126 | (0x80 if masked else 0))) + len(payload).to_bytes(2, "big")
+            if not masked:
+                return header + payload
+            mask = os.urandom(4)
+            return header + mask + bytes(value ^ mask[i % 4] for i, value in enumerate(payload))
+
+        def server_frame(stream):
+            first = stream.read(1)
+            self.assertTrue(first)
+            second = stream.read(1)[0]
+            self.assertEqual(second & 0x80, 0)
+            size = second & 127
+            if size == 126:
+                size = int.from_bytes(stream.read(2), "big")
+            elif size == 127:
+                size = int.from_bytes(stream.read(8), "big")
+            return first[0] & 15, stream.read(size)
+
+        key = b"dGhlIHNhbXBsZSBub25jZQ=="
+        request = (b"GET /ws HTTP/1.1\r\nHost: local\r\nConnection: Upgrade\r\n"
+                   b"Upgrade: websocket\r\nSec-WebSocket-Version: 13\r\n"
+                   b"Sec-WebSocket-Key: " + key + b"\r\nOrigin: https://local.test\r\n\r\n")
+        with socket.create_connection(("127.0.0.1", self.port), timeout=2) as sock:
+            sock.settimeout(3)
+            with sock.makefile("rb") as stream:
+                sock.sendall(request)
+                headers = bytearray()
+                while not headers.endswith(b"\r\n\r\n"):
+                    headers.extend(stream.read(1))
+                self.assertIn(b"101 Switching Protocols", headers)
+                self.assertIn(b"Connection: Upgrade\r\n", headers)
+                expected = base64.b64encode(hashlib.sha1(
+                    key + b"258EAFA5-E914-47DA-95CA-C5AB0DC85B11").digest())
+                self.assertIn(b"Sec-WebSocket-Accept: " + expected + b"\r\n", headers)
+                self.assertEqual(server_frame(stream), (1, b"ready"))
+                sock.sendall(client_frame(1, b"hel", fin=False))
+                sock.sendall(client_frame(9, b"check"))
+                self.assertEqual(server_frame(stream), (10, b"check"))
+                sock.sendall(client_frame(0, b"lo"))
+                self.assertEqual(server_frame(stream), (1, b"echo:hello"))
+                sock.sendall(client_frame(2, b"\x00\x01\xff"))
+                self.assertEqual(server_frame(stream), (2, b"\x00\x01\xff"))
+                sock.sendall(client_frame(1, b"unmasked", masked=False))
+                opcode, payload = server_frame(stream)
+                self.assertEqual(opcode, 8)
+                self.assertEqual(payload[:2], (1002).to_bytes(2, "big"))
+                sock.sendall(client_frame(8, payload[:2]))
+                self.assertEqual(stream.read(1), b"")
+
+        bad_origin = request.replace(b"https://local.test", b"https://wrong.test")
+        self.assertIn(b"403 Forbidden", self.exchange(bad_origin))
+        bad_version = request.replace(b"Sec-WebSocket-Version: 13", b"Sec-WebSocket-Version: 12")
+        self.assertIn(b"426 Upgrade Required", self.exchange(bad_version))
+        self.assertIn(b"400 Bad Request", self.exchange(request.replace(key, b"invalid")))
+
+        for invalid, expected_code in (
+            (client_frame(1, b"\xff"), 1007),
+            (client_frame(2, b"x" * 129), 1009),
+            (client_frame(9, b"x", fin=False), 1002),
+        ):
+            with socket.create_connection(("127.0.0.1", self.port), timeout=2) as sock:
+                sock.settimeout(3)
+                with sock.makefile("rb") as stream:
+                    sock.sendall(request)
+                    while stream.readline() != b"\r\n":
+                        pass
+                    self.assertEqual(server_frame(stream), (1, b"ready"))
+                    sock.sendall(invalid)
+                    opcode, payload = server_frame(stream)
+                    self.assertEqual(opcode, 8)
+                    self.assertEqual(payload[:2], expected_code.to_bytes(2, "big"))
+                    sock.sendall(client_frame(8, payload[:2]))
+                    self.assertEqual(stream.read(1), b"")
+
+        state = self.exchange(b"GET /ws-state HTTP/1.1\r\nHost: local\r\n\r\n")
+        self.assertGreaterEqual(int(state.split(b"\r\n\r\n", 1)[1]), 4)
 
     def test_producer_failure_closes_connection_and_source(self):
         count = lambda: int(self.exchange(

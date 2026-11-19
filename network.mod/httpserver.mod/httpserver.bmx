@@ -117,6 +117,7 @@ Type THTTPResponse
 	Field stream:TStream
 	Field streamLength:Long = -1
 	Field producer:IHTTPResponseProducer
+	Field upgrade:IHTTPUpgradedSession
 	Field headers:THTTPField[] = New THTTPField[8]
 	Field headerCount:Int
 
@@ -194,6 +195,13 @@ Type THTTPResponse
 	Method Events:Int(value:THTTPEventStream)
 		If Not value Or Not SetHeader("Cache-Control", "no-cache") Then Return False
 		Produce(value, "text/event-stream; charset=utf-8")
+		Return True
+	End Method
+
+	Method Upgrade:Int(value:IHTTPUpgradedSession)
+		If Not value Then Return False
+		upgrade = value
+		status = 101
 		Return True
 	End Method
 End Type
@@ -393,6 +401,32 @@ Interface IHTTPConnection
 	Method Close()
 End Interface
 
+Rem
+bbdoc: Transport view given to a protocol after an HTTP upgrade.
+End Rem
+Interface IHTTPUpgradedIO
+	Method TryRecv:Int(buffer:Byte Ptr, count:Size_T)
+	Method TrySend:Int(buffer:Byte Ptr, count:Size_T)
+	Method RemoteIP:String()
+End Interface
+
+Rem
+bbdoc: Optional protocol handler for an HTTP upgrade route.
+End Rem
+Interface IHTTPUpgradeHandler
+	Method HandleUpgrade(request:THTTPRequest, response:THTTPResponse)
+End Interface
+
+Rem
+bbdoc: Nonblocking upgraded protocol serviced in the HTTP server loop.
+about: Service returns False when the connection should close. Close runs once
+when the socket closes. Service and Close run in the managed application context.
+End Rem
+Interface IHTTPUpgradedSession
+	Method Service:Int(io:IHTTPUpgradedIO)
+	Method Close()
+End Interface
+
 Interface IHTTPListener
 	Method Start:Int(port:Int, backlog:Int)
 	Method Accept:IHTTPConnection()
@@ -407,6 +441,7 @@ Type THTTPRoute
 	Field path:String
 	Field handler:IHTTPHandler
 	Field bodyHandler:IHTTPBodyHandler
+	Field upgradeHandler:IHTTPUpgradeHandler
 	Field staticRoot:String
 	Field cacheMaxAgeSeconds:Int
 End Type
@@ -426,6 +461,8 @@ Type THTTPConnection
 	Field output:Byte[]
 	Field outputOffset:Int
 	Field response:THTTPResponse
+	Field upgrade:IHTTPUpgradedSession
+	Field upgradeIO:THTTPUpgradeIO
 	Field request:THTTPRequest
 	Field streamRemaining:Long
 	Field responseChunked:Int
@@ -442,6 +479,37 @@ Type THTTPConnection
 	Field chunkRemaining:Long
 	Field trailerBytes:Int
 	Field trailerCount:Int
+End Type
+
+Type THTTPUpgradeIO Implements IHTTPUpgradedIO
+	Field socket:TSocket
+	Field transport:IHTTPConnection
+	Field buffered:Byte[]
+	Field offset:Int
+
+	Method TryRecv:Int(buffer:Byte Ptr, count:Size_T)
+		If buffered And offset < buffered.length Then
+			Local amount:Int = Min(Int(count), buffered.length - offset)
+			For Local i:Int = 0 Until amount
+				buffer[i] = buffered[offset + i]
+			Next
+			offset :+ amount
+			If offset = buffered.length Then buffered = Null
+			Return amount
+		End If
+		If transport Then Return transport.TryRecv(buffer, count)
+		Return socket.TryRecv(buffer, count)
+	End Method
+
+	Method TrySend:Int(buffer:Byte Ptr, count:Size_T)
+		If transport Then Return transport.TrySend(buffer, count)
+		Return socket.TrySend(buffer, count)
+	End Method
+
+	Method RemoteIP:String()
+		If transport Then Return transport.RemoteIP()
+		Return socket.RemoteIp()
+	End Method
 End Type
 
 Function _HTTPBytes:Byte[](value:String)
@@ -523,6 +591,7 @@ Function _HTTPReason:String(status:Int)
 		Case 403 Return "Forbidden"
 		Case 404 Return "Not Found"
 		Case 405 Return "Method Not Allowed"
+		Case 426 Return "Upgrade Required"
 		Case 408 Return "Request Timeout"
 		Case 411 Return "Length Required"
 		Case 413 Return "Content Too Large"
@@ -708,6 +777,18 @@ Type THTTPServer
 		Return True
 	End Method
 
+	Method RouteUpgrade:Int(path:String, handler:IHTTPUpgradeHandler)
+		If running Or routeCount = routes.length Or Not handler Or ..
+			Not path.StartsWith("/") Then Return False
+		Local route:THTTPRoute = New THTTPRoute
+		route.method = "GET"
+		route.path = path
+		route.upgradeHandler = handler
+		routes[routeCount] = route
+		routeCount :+ 1
+		Return True
+	End Method
+
 	Method RouteStream:Int(method:String, path:String, handler:IHTTPBodyHandler)
 		If running Or routeCount = routes.length Or Not handler Or ..
 			(method <> "POST" And method <> "PUT") Or Not path.StartsWith("/") Then Return False
@@ -821,6 +902,16 @@ Type THTTPServer
 			End Try
 			conn.response.producer = Null
 		End If
+		If conn.upgrade Then
+			Try
+				conn.upgrade.Close()
+			Catch error:Object
+				_lastError = "HTTP upgraded session close failed"
+			Catch error:String
+				_lastError = "HTTP upgraded session close failed: " + error
+			End Try
+			conn.upgrade = Null
+		End If
 		If conn.transport Then conn.transport.Close()
 		If conn.socket Then conn.socket.Close()
 		connections[index] = Null
@@ -871,6 +962,29 @@ Type THTTPServer
 
 	Method _Prepare(conn:THTTPConnection)
 		Local response:THTTPResponse = conn.response
+		If response.upgrade And response.status = 101 And conn.request.version = "HTTP/1.1" Then
+			Local wire:String = "HTTP/1.1 101 Switching Protocols~r~nConnection: Upgrade~r~n"
+			For Local i:Int = 0 Until response.headerCount
+				Local field:THTTPField = response.headers[i]
+				wire :+ field.name + ": " + field.value + "~r~n"
+			Next
+			wire :+ "~r~n"
+			conn.output = _HTTPBytes(wire)
+			conn.outputOffset = 0
+			conn.upgrade = response.upgrade
+			conn.upgradeIO = New THTTPUpgradeIO
+			conn.upgradeIO.socket = conn.socket
+			conn.upgradeIO.transport = conn.transport
+			If conn.inputCount > conn.headerEnd Then
+				conn.upgradeIO.buffered = New Byte[conn.inputCount - conn.headerEnd]
+				For Local i:Int = 0 Until conn.upgradeIO.buffered.length
+					conn.upgradeIO.buffered[i] = conn.input[conn.headerEnd + i]
+				Next
+			End If
+			conn.lastActivity = MilliSecs()
+			conn.state = 5
+			Return
+		End If
 		If response.status < 200 Or response.status > 599 Then response.status = 500
 		If response.contentType.length > 128 Or ..
 			response.contentType.Find(Chr(13)) >= 0 Or ..
@@ -1000,7 +1114,17 @@ Type THTTPServer
 				If route.method <> request.method And ..
 					Not (request.method = "HEAD" And route.method = "GET") Then Continue
 				request.parameters = params
-				If route.staticRoot <> "" Then
+				If route.upgradeHandler Then
+					Try
+						route.upgradeHandler.HandleUpgrade(request, response)
+					Catch error:Object
+						_HandlerFault(conn, "upgrade handler exception")
+						Return
+					Catch error:String
+						_HandlerFault(conn, error)
+						Return
+					End Try
+				Else If route.staticRoot <> "" Then
 					Try
 						_StaticFile(request, response, route)
 					Catch error:Object
@@ -1152,6 +1276,15 @@ Type THTTPServer
 		conn.chunked = transferEncoding
 		conn.closeAfterResponse = Not (config.keepAlive And request.version = "HTTP/1.1" And ..
 			Not connectionClose And conn.requestsServed + 1 < config.maxRequestsPerConnection)
+		If request.method = "GET" Then
+			For Local i:Int = 0 Until routeCount
+				Local route:THTTPRoute = routes[i]
+				If route.upgradeHandler And _Match(route.path, request.path, False) <> Null Then
+					If lengthSeen Or transferEncoding Then _Fail(conn, 400); Return
+					Exit
+				End If
+			Next
+		End If
 		For Local pass:Int = 0 To 1
 			For Local i:Int = 0 Until routeCount
 				Local route:THTTPRoute = routes[i]
@@ -1404,6 +1537,8 @@ Type THTTPServer
 					Else
 						_Read(conn)
 					End If
+				Else If conn.state = 4
+					If Not conn.upgrade.Service(conn.upgradeIO) Then conn.state = 3
 				Else
 					If now - conn.lastActivity >= config.writeTimeoutMs Then
 						conn.state = 3
@@ -1523,6 +1658,11 @@ Type THTTPServer
 			If count <= 0 Then conn.state = 3; Return
 			conn.outputOffset :+ count
 			conn.lastActivity = MilliSecs()
+			Return
+		End If
+		If conn.state = 5 Then
+			conn.output = Null
+			conn.state = 4
 			Return
 		End If
 		If conn.request And conn.request.method = "HEAD" Then _FinishResponse(conn); Return

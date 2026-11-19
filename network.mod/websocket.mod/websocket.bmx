@@ -1,0 +1,586 @@
+' Copyright (c) 2026 Bruce A Henderson and contributors
+' SPDX-License-Identifier: Zlib
+
+SuperStrict
+
+Rem
+bbdoc: Optional bounded WebSocket support for Embedded.Network.HTTPServer.
+about: Import this module only in applications with WebSocket routes. Sessions
+are serviced in the HTTP server's managed context on plain or TLS connections.
+End Rem
+Module Embedded.Network.WebSocket
+?not win32
+
+ModuleInfo "Version: 0.1"
+ModuleInfo "License: zlib/libpng"
+
+Import Embedded.Network.HTTPServer
+
+Const WebSocketNormalClosure:Int = 1000
+Const WebSocketGoingAway:Int = 1001
+Const WebSocketProtocolError:Int = 1002
+Const WebSocketInvalidData:Int = 1007
+Const WebSocketMessageTooBig:Int = 1009
+
+Rem
+bbdoc: Callbacks for one WebSocket route.
+about: Accept runs before the upgrade, so applications can check Origin or
+credentials. Open, Message and Closed run from THTTPServer.Service(). Message
+receives one complete bounded text or binary message.
+End Rem
+Interface IHTTPWebSocketHandler
+	Method Accept:Int(request:THTTPRequest)
+	Method Open(socket:THTTPWebSocket, request:THTTPRequest)
+	Method Message(socket:THTTPWebSocket, data:Byte[], isText:Int)
+	Method Closed(socket:THTTPWebSocket, code:Int)
+End Interface
+
+Rem
+bbdoc: Handler passed to THTTPServer.RouteUpgrade for a WebSocket endpoint.
+End Rem
+Type THTTPWebSocketUpgrade Implements IHTTPUpgradeHandler
+	Private
+	Field handler:IHTTPWebSocketHandler
+	Field maxMessage:Int
+	Field maxPending:Int
+
+	Public
+	Function Create:THTTPWebSocketUpgrade(handler:IHTTPWebSocketHandler, ..
+		maxMessageBytes:Int = 2048, maxPendingBytes:Int = 4096)
+		If Not handler Or maxMessageBytes < 64 Or maxMessageBytes > 65536 Or ..
+			maxPendingBytes < 256 Or maxPendingBytes > 65536 Then Return Null
+		Local result:THTTPWebSocketUpgrade = New THTTPWebSocketUpgrade
+		result.handler = handler
+		result.maxMessage = maxMessageBytes
+		result.maxPending = maxPendingBytes
+		Return result
+	End Function
+
+	Method HandleUpgrade(request:THTTPRequest, response:THTTPResponse)
+		If request.method <> "GET" Or request.version <> "HTTP/1.1" Or ..
+			Not _WSTokenContains(request.Header("Connection"), "upgrade") Or ..
+			Not _WSTokenContains(request.Header("Upgrade"), "websocket") Then
+			response.status = 400
+			response.Text("Bad Request")
+			Return
+		End If
+		Local version:String = request.Header("Sec-WebSocket-Version")
+		If version <> "13" Then
+			response.status = 426
+			response.SetHeader("Sec-WebSocket-Version", "13")
+			response.Text("Upgrade Required")
+			Return
+		End If
+		Local key:String = request.Header("Sec-WebSocket-Key")
+		If Not _WSValidKey(key) Or ..
+			_WSHeaderCount(request, "sec-websocket-key") <> 1 Or ..
+			_WSHeaderCount(request, "sec-websocket-version") <> 1 Or ..
+			_WSHeaderCount(request, "upgrade") <> 1 Then
+			response.status = 400
+			response.Text("Bad Request")
+			Return
+		End If
+		If Not handler.Accept(request) Then
+			response.status = 403
+			response.Text("Forbidden")
+			Return
+		End If
+		Local source:THTTPWebSocket = THTTPWebSocket._Create(handler, request, maxMessage, maxPending)
+		If Not source Then
+			response.status = 500
+			response.Text("Internal Server Error")
+			Return
+		End If
+		Local accept:String = _WSAccept(key)
+		If Not response.SetHeader("Upgrade", "websocket") Or ..
+			Not response.SetHeader("Sec-WebSocket-Accept", accept) Or ..
+			Not response.Upgrade(source) Then
+			response.status = 500
+			response.Text("Internal Server Error")
+		End If
+	End Method
+End Type
+
+Rem
+bbdoc: One bounded WebSocket connection.
+about: SendText and SendBinary queue complete messages and return False when
+the connection is closing or its output queue is full. Disconnect initiates a
+close handshake. Access the socket only in the managed application context.
+End Rem
+Type THTTPWebSocket Implements IHTTPUpgradedSession
+	Private
+	Field handler:IHTTPWebSocketHandler
+	Field request:THTTPRequest
+	Field rx:Byte[]
+	Field rxCount:Int
+	Field message:Byte[]
+	Field messageCount:Int
+	Field fragmentOpcode:Int
+	Field tx:Byte[]
+	Field txRead:Int
+	Field txWrite:Int
+	Field txCount:Int
+	Field maxMessage:Int
+	Field opened:Int
+	Field closed:Int
+	Field closing:Int
+	Field closeReceived:Int
+	Field closeCode:Int = 1006
+	Field closeStarted:UInt
+	Field lastActivity:UInt
+	Field pingStarted:UInt
+	Field awaitingPong:Int
+
+	Public
+	Function _Create:THTTPWebSocket(handler:IHTTPWebSocketHandler, request:THTTPRequest, ..
+		maxMessage:Int, maxPending:Int)
+		Local result:THTTPWebSocket
+		Try
+			result = New THTTPWebSocket
+			result.handler = handler
+			result.request = request
+			result.maxMessage = maxMessage
+			result.rx = New Byte[maxMessage + 14]
+			result.message = New Byte[maxMessage]
+			result.tx = New Byte[maxPending]
+		Catch error:Object
+			Return Null
+		Catch error:String
+			Return Null
+		End Try
+		result.lastActivity = MilliSecs()
+		Return result
+	End Function
+
+	Method _Queue:Int(opcode:Int, data:Byte[])
+		If closed Or (closing And opcode <> 8 And opcode <> 10) Then Return False
+		Local length:Int = data.length
+		Local header:Int = 2
+		If length > 125 And length <= 65535 Then header = 4
+		If length > 65535 Then header = 10
+		Local available:Int = tx.length - txCount
+		If opcode = 1 Or opcode = 2 Then available :- 128
+		If length + header > available Then Return False
+		Local frame:Byte[] = New Byte[length + header]
+		frame[0] = Byte($80 | opcode)
+		If header = 2
+			frame[1] = Byte(length)
+		Else If header = 4
+			frame[1] = 126
+			frame[2] = Byte(length Shr 8)
+			frame[3] = Byte(length)
+		Else
+			frame[1] = 127
+			frame[6] = Byte(length Shr 24)
+			frame[7] = Byte(length Shr 16)
+			frame[8] = Byte(length Shr 8)
+			frame[9] = Byte(length)
+		End If
+		For Local i:Int = 0 Until length
+			frame[header + i] = data[i]
+		Next
+		For Local i:Int = 0 Until frame.length
+			tx[txWrite] = frame[i]
+			txWrite :+ 1
+			If txWrite = tx.length Then txWrite = 0
+		Next
+		txCount :+ frame.length
+		Return True
+	End Method
+
+	Method _QueueControl:Int(opcode:Int, data:Byte[])
+		Return _Queue(opcode, data)
+	End Method
+
+	Method _Fail(code:Int)
+		Disconnect(code)
+		rxCount = 0
+	End Method
+
+	Public
+	Method SendText:Int(value:String)
+		If closed Or closing Then Return False
+		If value.length > maxMessage Then Return False
+		Local data:Byte[] = _WSBytes(value)
+		If data.length > maxMessage Then Return False
+		Return _Queue(1, data)
+	End Method
+
+	Method SendBinary:Int(data:Byte[])
+		If closed Or closing Or Not data Or data.length > maxMessage Then Return False
+		Return _Queue(2, data)
+	End Method
+
+	Method Disconnect(code:Int = WebSocketNormalClosure, reason:String = "")
+		If closed Or closing Then Return
+		If Not _WSValidCloseCode(code) Then code = WebSocketProtocolError
+		If reason.length > 123 Then reason = ""
+		Local reasonBytes:Byte[] = _WSBytes(reason)
+		If reasonBytes.length > 123 Then reasonBytes = New Byte[0]
+		Local payload:Byte[] = New Byte[reasonBytes.length + 2]
+		payload[0] = Byte(code Shr 8)
+		payload[1] = Byte(code)
+		For Local i:Int = 0 Until reasonBytes.length
+			payload[i + 2] = reasonBytes[i]
+		Next
+		closing = True
+		closeCode = code
+		closeStarted = MilliSecs()
+		_QueueControl(8, payload)
+	End Method
+
+	Method IsClosed:Int()
+		Return closed
+	End Method
+
+	Method PendingBytes:Int()
+		Return txCount
+	End Method
+
+	Method Service:Int(io:IHTTPUpgradedIO)
+		If closed Then Return False
+		If Not opened Then
+			opened = True
+			handler.Open(Self, request)
+		End If
+		If txCount > 0 Then
+			Local contiguous:Int = Min(txCount, tx.length - txRead)
+			Local sent:Int = io.TrySend(Varptr tx[txRead], Size_T(contiguous))
+			If sent = 0 Or (sent < 0 And sent <> HTTPWouldBlock) Then Return False
+			If sent > 0 Then
+				txRead = (txRead + sent) Mod tx.length
+				txCount :- sent
+				lastActivity = MilliSecs()
+			End If
+		End If
+		If closing And closeReceived And txCount = 0 Then Return False
+		If closing And MilliSecs() - closeStarted >= 3000 Then Return False
+		If Not closing And awaitingPong And MilliSecs() - pingStarted >= 10000 Then
+			Disconnect(WebSocketGoingAway)
+		End If
+		If Not closing And Not awaitingPong And MilliSecs() - lastActivity >= 30000 Then
+			If _Queue(9, New Byte[0]) Then
+				awaitingPong = True
+				pingStarted = MilliSecs()
+			End If
+		End If
+		If rxCount = rx.length Then _Fail(WebSocketMessageTooBig); Return True
+		Local received:Int = io.TryRecv(Varptr rx[rxCount], Size_T(rx.length - rxCount))
+		If received = 0 Or (received < 0 And received <> HTTPWouldBlock) Then Return False
+		If received > 0 Then
+			rxCount :+ received
+			lastActivity = MilliSecs()
+			_Parse()
+		End If
+		Return True
+	End Method
+
+	Method Close()
+		If closed Then Return
+		closed = True
+		handler.Closed(Self, closeCode)
+		rx = Null
+		message = Null
+		tx = Null
+	End Method
+
+	Private
+	Method _Deliver(opcode:Int, payload:Byte[])
+		If opcode = 1 And Not _WSValidUTF8(payload, 0, payload.length) Then
+			_Fail(WebSocketInvalidData)
+			Return
+		End If
+		handler.Message(Self, payload, opcode = 1)
+	End Method
+
+	Method _Frame(opcode:Int, fin:Int, payload:Byte[])
+		Select opcode
+			Case 8
+				If payload.length = 1 Then _Fail(WebSocketProtocolError); Return
+				If payload.length >= 2 Then
+					Local code:Int = ((payload[0] & 255) Shl 8) | (payload[1] & 255)
+					If Not _WSValidCloseCode(code) Or ..
+						Not _WSValidUTF8(payload, 2, payload.length - 2) Then
+						_Fail(WebSocketProtocolError)
+						Return
+					End If
+					closeCode = code
+				End If
+				closeReceived = True
+				If Not closing Then
+					closing = True
+					closeStarted = MilliSecs()
+					If Not _QueueControl(8, payload) Then _Fail(WebSocketProtocolError)
+				End If
+			Case 9
+				If Not closing And Not _QueueControl(10, payload) Then _Fail(WebSocketProtocolError)
+			Case 10
+				If awaitingPong And payload.length = 0 Then awaitingPong = False
+			Case 0
+				If Not fragmentOpcode Then _Fail(WebSocketProtocolError); Return
+				If payload.length > maxMessage - messageCount Then _Fail(WebSocketMessageTooBig); Return
+				For Local i:Int = 0 Until payload.length
+					message[messageCount + i] = payload[i]
+				Next
+				messageCount :+ payload.length
+				If fin Then
+					Local complete:Byte[] = New Byte[messageCount]
+					For Local i:Int = 0 Until messageCount
+						complete[i] = message[i]
+					Next
+					Local kind:Int = fragmentOpcode
+					fragmentOpcode = 0
+					messageCount = 0
+					_Deliver(kind, complete)
+				End If
+			Case 1, 2
+				If fragmentOpcode Then _Fail(WebSocketProtocolError); Return
+				If fin Then
+					_Deliver(opcode, payload)
+				Else
+					fragmentOpcode = opcode
+					messageCount = payload.length
+					For Local i:Int = 0 Until payload.length
+						message[i] = payload[i]
+					Next
+				End If
+			Default
+				_Fail(WebSocketProtocolError)
+		End Select
+	End Method
+
+	Method _Parse()
+		While rxCount >= 2
+			Local first:Int = rx[0] & 255
+			Local second:Int = rx[1] & 255
+			Local fin:Int = (first & $80) <> 0
+			Local opcode:Int = first & 15
+			If (first & $70) <> 0 Or (second & $80) = 0 Or ..
+				(opcode <> 0 And opcode <> 1 And opcode <> 2 And ..
+					opcode <> 8 And opcode <> 9 And opcode <> 10) Then
+				_Fail(WebSocketProtocolError)
+				Return
+			End If
+			Local length:Long = second & 127
+			Local header:Int = 2
+			If length = 126 Then
+				If rxCount < 4 Then Return
+				length = ((rx[2] & 255) Shl 8) | (rx[3] & 255)
+				If length < 126 Then _Fail(WebSocketProtocolError); Return
+				header = 4
+			Else If length = 127 Then
+				If rxCount < 10 Then Return
+				If rx[2] <> 0 Or rx[3] <> 0 Or rx[4] <> 0 Or rx[5] <> 0 Then
+					_Fail(WebSocketMessageTooBig)
+					Return
+				End If
+				length = (Long(rx[6] & 255) Shl 24) | (Long(rx[7] & 255) Shl 16) | ..
+					(Long(rx[8] & 255) Shl 8) | Long(rx[9] & 255)
+				If length < 65536 Then _Fail(WebSocketProtocolError); Return
+				header = 10
+			End If
+			If opcode >= 8 And (Not fin Or length > 125) Then _Fail(WebSocketProtocolError); Return
+			If length > maxMessage Or length + header + 4 > rx.length Then
+				_Fail(WebSocketMessageTooBig)
+				Return
+			End If
+			Local total:Int = header + 4 + Int(length)
+			If rxCount < total Then Return
+			Local payload:Byte[] = New Byte[Int(length)]
+			For Local i:Int = 0 Until payload.length
+				payload[i] = rx[header + 4 + i] ~ rx[header + (i Mod 4)]
+			Next
+			For Local i:Int = total Until rxCount
+				rx[i - total] = rx[i]
+			Next
+			rxCount :- total
+			_Frame(opcode, fin, payload)
+			If closing Then Return
+		End While
+	End Method
+End Type
+
+Private
+
+Function _WSRotl:UInt(value:UInt, count:Int)
+	Return (value Shl count) | (value Shr (32 - count))
+End Function
+
+' The WebSocket handshake always hashes a 24-byte key plus the 36-byte GUID.
+' That fixed 60-byte input takes exactly two SHA-1 compression blocks.
+Function _WSAccept:String(key:String)
+	Local source:Byte[] = _WSBytes(key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11")
+	Local padded:Byte[] = New Byte[128]
+	For Local i:Int = 0 Until source.length
+		padded[i] = source[i]
+	Next
+	padded[60] = $80
+	padded[126] = 1
+	padded[127] = $e0
+	Local h0:UInt = $67452301
+	Local h1:UInt = $efcdab89
+	Local h2:UInt = $98badcfe
+	Local h3:UInt = $10325476
+	Local h4:UInt = $c3d2e1f0
+	For Local block:Int = 0 To 1
+		Local words:UInt[] = New UInt[80]
+		For Local i:Int = 0 Until 16
+			Local offset:Int = block * 64 + i * 4
+			words[i] = (UInt(padded[offset] & 255) Shl 24) | ..
+				(UInt(padded[offset + 1] & 255) Shl 16) | ..
+				(UInt(padded[offset + 2] & 255) Shl 8) | UInt(padded[offset + 3] & 255)
+		Next
+		For Local i:Int = 16 Until 80
+			words[i] = _WSRotl(words[i - 3] ~ words[i - 8] ~ ..
+				words[i - 14] ~ words[i - 16], 1)
+		Next
+		Local a:UInt = h0
+		Local b:UInt = h1
+		Local c:UInt = h2
+		Local d:UInt = h3
+		Local e:UInt = h4
+		For Local i:Int = 0 Until 80
+			Local f:UInt
+			Local k:UInt
+			If i < 20
+				f = (b & c) | ((b ~ $ffffffff) & d)
+				k = $5a827999
+			Else If i < 40
+				f = b ~ c ~ d
+				k = $6ed9eba1
+			Else If i < 60
+				f = (b & c) | (b & d) | (c & d)
+				k = $8f1bbcdc
+			Else
+				f = b ~ c ~ d
+				k = $ca62c1d6
+			End If
+			Local nextA:UInt = _WSRotl(a, 5) + f + e + k + words[i]
+			e = d
+			d = c
+			c = _WSRotl(b, 30)
+			b = a
+			a = nextA
+		Next
+		h0 :+ a
+		h1 :+ b
+		h2 :+ c
+		h3 :+ d
+		h4 :+ e
+	Next
+	Local digest:Byte[] = New Byte[20]
+	Local parts:UInt[] = [h0, h1, h2, h3, h4]
+	For Local i:Int = 0 Until 5
+		digest[i * 4] = Byte(parts[i] Shr 24)
+		digest[i * 4 + 1] = Byte(parts[i] Shr 16)
+		digest[i * 4 + 2] = Byte(parts[i] Shr 8)
+		digest[i * 4 + 3] = Byte(parts[i])
+	Next
+	Return _WSBase64Encode(digest)
+End Function
+
+Function _WSBase64Encode:String(data:Byte[])
+	Const alphabet:String = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+	Local result:String = ""
+	For Local i:Int = 0 Until data.length Step 3
+		Local first:Int = data[i] & 255
+		Local second:Int
+		Local third:Int
+		If i + 1 < data.length Then second = data[i + 1] & 255
+		If i + 2 < data.length Then third = data[i + 2] & 255
+		result :+ Chr(alphabet[(first Shr 2) & 63])
+		result :+ Chr(alphabet[((first & 3) Shl 4) | (second Shr 4)])
+		If i + 1 < data.length Then
+			result :+ Chr(alphabet[((second & 15) Shl 2) | (third Shr 6)])
+		Else
+			result :+ "="
+		End If
+		If i + 2 < data.length Then
+			result :+ Chr(alphabet[third & 63])
+		Else
+			result :+ "="
+		End If
+	Next
+	Return result
+End Function
+
+Function _WSBytes:Byte[](value:String)
+	Local count:Size_T
+	Local ptr:Byte Ptr = value.ToUTF8String(count)
+	Local result:Byte[] = New Byte[Int(count)]
+	For Local i:Int = 0 Until result.length
+		result[i] = ptr[i]
+	Next
+	If ptr Then MemFree(ptr)
+	Return result
+End Function
+
+Function _WSTokenContains:Int(value:String, wanted:String)
+	For Local token:String = EachIn value.ToLower().Split(",")
+		If token.Trim() = wanted Then Return True
+	Next
+	Return False
+End Function
+
+Function _WSHeaderCount:Int(request:THTTPRequest, name:String)
+	Local result:Int
+	For Local field:THTTPField = EachIn request.headers
+		If field And field.name = name Then result :+ 1
+	Next
+	Return result
+End Function
+
+Function _WSValidKey:Int(key:String)
+	If key.length <> 24 Or key[22] <> 61 Or key[23] <> 61 Then Return False
+	For Local i:Int = 0 Until 22
+		If _WSBase64Value(key[i]) < 0 Then Return False
+	Next
+	Return (_WSBase64Value(key[21]) & 15) = 0
+End Function
+
+Function _WSBase64Value:Int(c:Int)
+	If c >= 65 And c <= 90 Then Return c - 65
+	If c >= 97 And c <= 122 Then Return c - 97 + 26
+	If c >= 48 And c <= 57 Then Return c - 48 + 52
+	If c = 43 Then Return 62
+	If c = 47 Then Return 63
+	Return -1
+End Function
+
+Function _WSValidCloseCode:Int(code:Int)
+	If code >= 3000 And code <= 4999 Then Return True
+	If code < 1000 Or code > 1014 Then Return False
+	Return code <> 1004 And code <> 1005 And code <> 1006
+End Function
+
+Function _WSValidUTF8:Int(data:Byte[], offset:Int, count:Int)
+	Local finish:Int = offset + count
+	Local i:Int = offset
+	While i < finish
+		Local first:Int = data[i] & 255
+		If first < $80 Then i :+ 1; Continue
+		Local more:Int
+		If first >= $c2 And first <= $df Then
+			more = 1
+		Else If first >= $e0 And first <= $ef Then
+			more = 2
+		Else If first >= $f0 And first <= $f4 Then
+			more = 3
+		Else
+			Return False
+		End If
+		If i + more >= finish Then Return False
+		Local second:Int = data[i + 1] & 255
+		If second < $80 Or second > $bf Then Return False
+		If first = $e0 And second < $a0 Then Return False
+		If first = $ed And second > $9f Then Return False
+		If first = $f0 And second < $90 Then Return False
+		If first = $f4 And second > $8f Then Return False
+		For Local j:Int = 2 To more
+			Local nextByte:Int = data[i + j] & 255
+			If nextByte < $80 Or nextByte > $bf Then Return False
+		Next
+		i :+ more + 1
+	Wend
+	Return True
+End Function

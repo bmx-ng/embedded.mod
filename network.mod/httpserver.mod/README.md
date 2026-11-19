@@ -15,6 +15,9 @@ transport uses `BRL.Socket`; handlers run only inside the application's call to
   one configured transfer buffer and one framed chunk per connection.
 - `Events()` sends server-sent events from a bounded queue. It supports named
   events, IDs, retry hints, comments, and idle heartbeats.
+- `RouteUpgrade()` hands an HTTP/1.1 connection to an optional protocol module.
+  Import `Embedded.Network.WebSocket` for bounded WebSocket endpoints on the
+  same plain or TLS listener.
 - Responses include `Content-Length`; HEAD sends the corresponding headers and
   no body. Connections close by default. Set `keepAlive = True` to reuse an
   HTTP/1.1 connection for sequential requests, bounded by
@@ -268,7 +271,7 @@ ESP32-S3 internal SRAM heap could not start. The ordinary example still uses
 the smaller resource defaults above and passed its device wire tests again
 after restoration on both boards.
 
-WebSockets, multipart, authentication helpers,
+Multipart, authentication helpers,
 captive-portal workflows and OTA are later layers. The HTTPS adapter builds
 for Pico 2 W and ESP32-S3. A
 verified handshake, GET, fragmented POST, 404 response, and 30 repeated connections
@@ -318,6 +321,10 @@ arrays, objects, and reusable heap space.
 local copy with Wi-Fi and a temporary test certificate, then run
 `python3 tests/test_httpserver_sse_device.py BOARD_IP test-cert.pem`. The test
 checks trusted TLS, named and multiline events, retry hints, idle heartbeats,
-completion, and `Last-Event-ID` on a second connection. All 19 host wire tests
+completion, and `Last-Event-ID` on a second connection. All 20 host wire tests
 pass; the verified HTTPS SSE test also passes on Pico 2 W with a 256 KiB managed
 heap and ESP32-S31 with a 256 KiB managed heap.
+
+WebSockets are supplied by the separate [WebSocket module](../websocket.mod/README.md)
+and are linked only when imported. The generic upgrade hook in this module
+does not allocate WebSocket buffers for ordinary HTTP or SSE connections.
