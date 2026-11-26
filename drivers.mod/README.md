@@ -43,6 +43,9 @@ application configuration.
 | --- | --- | --- | --- |
 | `Embedded.Drivers.Displays.SSD1306` | I2C | Mono1, up to 128x64 | Configurable window and 72x40 OLED preset |
 | `Embedded.Drivers.Displays.SH1107` | SPI | Mono1, up to 128x128 | Configurable window and 128x128 preset |
+| `Embedded.Drivers.Displays.CH1116` | SPI | Mono1, up to 128x64 | 128x64 preset, visual validation pending |
+| `Embedded.Drivers.Displays.ST7565` | SPI | Mono1, up to 128x64 | Configurable window and GMG12864-06D 128x64 preset |
+| `Embedded.Drivers.Displays.ST7567A` | SPI | Mono1, up to 128x64 | Configurable window and GM12864-01A 128x64 preset |
 | `Embedded.Drivers.Displays.ST7735` | SPI | RGB565 | Configurable window and 128x160 preset |
 | `Embedded.Drivers.Displays.ST7789` | SPI | RGB565 | Configurable window and 240x320 preset |
 | `Embedded.Drivers.Displays.ST7796` | SPI | RGB565 | Configurable window and 320x480 preset |
@@ -261,6 +264,39 @@ panels. `Create128x128()` covers the common full-size OLED, while `Create()`
 accepts smaller visible windows and controller-RAM offsets. Reset is optional
 when the module does not expose it. Dirty updates are expanded to the
 controller's eight-pixel page boundaries.
+
+### CH1116 SPI monochrome OLEDs
+
+`Embedded.Drivers.Displays.CH1116` provides page-based Mono1 presentation.
+Build and upload were verified on ESP32-C6-N4, but the available panel exhibited
+missing rows even in controller all-pixels-on mode. Visual validation is pending
+a replacement panel.
+
+### ST7567A SPI monochrome LCDs
+
+`Embedded.Drivers.Displays.ST7567A` supports page-based Mono1 presentation,
+contrast and inversion control. `Create128x64()` uses the four-column RAM offset
+and segment mapping verified on the GM12864-01A-style module. The 1 KiB
+framebuffer supports full and dirty-region updates. Connect the backlight
+according to the module's power and current requirements, independently of SPI.
+The optional font ROM is a separate peripheral and is not required to render
+Graphics2D bitmap fonts.
+
+The ESP32-C6-N4 diagnostic and bouncing-ball example are in
+[`tests/hardware/display`](../tests/hardware/display).
+
+### ST7565 and ST7565R SPI monochrome LCDs
+
+`Embedded.Drivers.Displays.ST7565` supports contrast, inversion, and full or
+dirty-region Mono1 presentation. `Create128x64()` uses the scan directions,
+zero column offset, and contrast verified on a GMG12864-06D module. Its
+framebuffer occupies 1024 bytes. Connect the backlight separately using
+appropriate current limiting for the module's LED anode and cathode.
+The font ROM is a separate SPI peripheral and is optional when rendering
+Graphics2D bitmap fonts.
+
+The ESP32-C6-N4 diagnostic and animation examples are in
+[`tests/hardware/display`](../tests/hardware/display).
 
 ## Touch input
 
